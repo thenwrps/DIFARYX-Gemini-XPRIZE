@@ -39,3 +39,7 @@ dist/
 **/.env
 **/.env.local
 **/.env.*.local
+
+# Nested duplicate project copy
+DIFARYX-demo/
+.vite-dev.pid
