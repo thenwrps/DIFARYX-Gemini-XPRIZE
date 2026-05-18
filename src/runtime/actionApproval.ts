@@ -71,24 +71,29 @@ function defaultRiskLevel(actionType: ApprovalActionType): ApprovalRiskLevel {
 }
 
 function collectClaimBoundary(snapshot: ProjectEvidenceSnapshot): string[] {
+  const claimBoundary = snapshot.claimBoundary ?? {
+    supported: [],
+    requiresValidation: [],
+    notSupportedYet: [],
+  };
   return [
-    ...snapshot.claimBoundary.supported.map((line) => `Supported: ${line}`),
-    ...snapshot.claimBoundary.requiresValidation.map((line) => `Requires validation: ${line}`),
-    ...snapshot.claimBoundary.notSupportedYet.map((line) => `Not supported yet: ${line}`),
-    ...(snapshot.claimBoundary.contextual ?? []).map((line) => `Contextual: ${line}`),
-    ...(snapshot.claimBoundary.pending ?? []).map((line) => `Pending: ${line}`),
+    ...(claimBoundary.supported ?? []).map((line) => `Supported: ${line}`),
+    ...(claimBoundary.requiresValidation ?? []).map((line) => `Requires validation: ${line}`),
+    ...(claimBoundary.notSupportedYet ?? []).map((line) => `Not supported yet: ${line}`),
+    ...(claimBoundary.contextual ?? []).map((line) => `Contextual: ${line}`),
+    ...(claimBoundary.pending ?? []).map((line) => `Pending: ${line}`),
   ];
 }
 
 function collectValidationGaps(snapshot: ProjectEvidenceSnapshot): string[] {
   return [
-    ...snapshot.validationGaps.map((gap) => `${gap.description} Resolution: ${gap.suggestedResolution}`),
-    ...snapshot.pendingTechniques.map((technique) => `${technique} validation evidence remains pending.`),
+    ...(snapshot.validationGaps ?? []).map((gap) => `${gap.description} Resolution: ${gap.suggestedResolution}`),
+    ...(snapshot.pendingTechniques ?? []).map((technique) => `${technique} validation evidence remains pending.`),
   ];
 }
 
 function collectEvidenceSummary(snapshot: ProjectEvidenceSnapshot): string[] {
-  const entries = snapshot.evidenceEntries.map((entry) =>
+  const entries = (snapshot.evidenceEntries ?? []).map((entry) =>
     `${entry.technique}: ${entry.support}${entry.limitations ? ` (${entry.limitations})` : ''}`,
   );
   return entries.length ? entries : ['No completed evidence entries are linked yet.'];
@@ -133,7 +138,7 @@ export function createApprovalActionPreview({
     projectName: evidenceSnapshot.projectName,
     sampleIdentity: evidenceSnapshot.sampleIdentity,
     activeDataset: evidenceSnapshot.activeDataset?.fileName ??
-      evidenceSnapshot.evidenceEntries[0]?.datasetLabel ??
+      evidenceSnapshot.evidenceEntries?.[0]?.datasetLabel ??
       'Pending evidence source',
     bundleId: evidenceBundle?.bundleId,
     bundleSourceMode: evidenceBundle?.sourceMode,

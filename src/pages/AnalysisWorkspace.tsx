@@ -50,6 +50,15 @@ import {
   saveCurrentAnalysisVersion,
   updateSessionProject,
 } from '../data/analysisSessions';
+import {
+  AXIS_DEFAULTS_BY_TECHNIQUE,
+  createUploadedSignalRun,
+  mapUploadedSignalColumns,
+  parseUploadedSignalText,
+  saveUploadedSignalRun,
+  type ParsedUploadedSignalSuccess,
+  type Technique as UploadedTechnique,
+} from '../data/uploadedSignalRuns';
 import { getRegistryProject, normalizeRegistryProjectId } from '../data/demoProjectRegistry';
 import { cn } from '../components/ui/Button';
 
@@ -71,7 +80,9 @@ const ROUTE_FLOW = [
 ];
 
 function quickWorkspacePath(session: AnalysisSession) {
-  return `/workspace/${session.technique}?mode=quick&sessionId=${encodeURIComponent(session.analysisId)}&source=quick_analysis&project_id=`;
+  const source = session.source === 'user_uploaded' ? 'user_uploaded' : 'quick_analysis';
+  const uploadedRunParam = session.uploadedRunId ? `&upload=${encodeURIComponent(session.uploadedRunId)}` : '';
+  return `/workspace/${session.technique}?mode=quick&sessionId=${encodeURIComponent(session.analysisId)}&source=${source}${uploadedRunParam}&project_id=`;
 }
 
 function techniqueLabel(technique: AnalysisTechnique) {
@@ -124,11 +135,8 @@ function formatProjectStatus(session: AnalysisSession) {
 }
 
 function getAcceptedFiles(technique: AnalysisTechnique | null) {
-  if (technique === 'xrd') return '.xy, .csv, .txt, .dat, .asc, .raw';
-  if (technique === 'xps') return '.xps, .csv, .txt, .dat, .asc';
-  if (technique === 'ftir') return '.csv, .txt, .dat, .asc';
-  if (technique === 'raman') return '.txt, .csv, .dat, .asc';
-  return '.xy, .csv, .txt, .dat, .asc, .xps, .raw';
+  if (technique) return '.xy, .csv, .txt, .dat';
+  return '.xy, .csv, .txt, .dat';
 }
 
 function formatBytes(bytes: number) {
@@ -140,6 +148,43 @@ function formatBytes(bytes: number) {
 
 function fileExtension(fileName: string) {
   return fileName.match(/\.[a-z0-9]+$/i)?.[0]?.toLowerCase() ?? 'unknown';
+}
+
+function techniqueToUploadedTechnique(technique: AnalysisTechnique): UploadedTechnique {
+  if (technique === 'xps') return 'XPS';
+  if (technique === 'ftir') return 'FTIR';
+  if (technique === 'raman') return 'Raman';
+  return 'XRD';
+}
+
+function uploadedTechniqueToAnalysisTechnique(technique: UploadedTechnique): AnalysisTechnique | null {
+  if (technique === 'XPS') return 'xps';
+  if (technique === 'FTIR') return 'ftir';
+  if (technique === 'Raman') return 'raman';
+  if (technique === 'XRD') return 'xrd';
+  return null;
+}
+
+function userUploadedProcessingState(technique: AnalysisTechnique, canInterpret: boolean) {
+  const label = techniqueLabel(technique);
+  if (technique === 'xrd' && canInterpret) return 'XRD parsed / processed from local upload';
+  if (canInterpret) return `${label} provenance-only upload - processing adapter pending`;
+  return `${label} metadata-only upload - review mapping and signal quality`;
+}
+
+function userUploadedNextPath(session: AnalysisSession, next: string | null) {
+  const base = quickWorkspacePath(session);
+  if (!next) return base;
+  return `${base}&next=${encodeURIComponent(next)}`;
+}
+
+function uploadHandoffPath(session: AnalysisSession, destination: 'agent' | 'notebook' | 'report' | 'multi') {
+  const uploadParam = session.uploadedRunId ? `&upload=${encodeURIComponent(session.uploadedRunId)}` : '';
+  const sessionParam = `sessionId=${encodeURIComponent(session.analysisId)}&source=user_uploaded${uploadParam}`;
+  if (destination === 'agent') return `/demo/agent?${sessionParam}`;
+  if (destination === 'notebook') return `/notebook?${sessionParam}`;
+  if (destination === 'multi') return `/workspace/multi?${sessionParam}`;
+  return `/reports?${sessionParam}`;
 }
 
 function getFeatureColumns(features: AnalysisFeature[]) {
@@ -512,10 +557,11 @@ function FileDropZone({
   );
 }
 
-function HistoryActionLink({ to, children }: { to: string; children: React.ReactNode }) {
+function HistoryActionLink({ to, children, onClick }: { to: string; children: React.ReactNode; onClick?: () => void }) {
   return (
     <Link
       to={to}
+      onClick={onClick}
       className="inline-flex h-7 items-center rounded-md border border-border bg-white px-2 text-[10px] font-semibold text-text-main hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
     >
       {children}
@@ -525,46 +571,134 @@ function HistoryActionLink({ to, children }: { to: string; children: React.React
 
 export function AnalysisWorkspaceHome() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const userUploadMode = searchParams.get('source') === 'user_uploaded';
+  const nextIntent = searchParams.get('next');
   const [selectedTechnique, setSelectedTechnique] = React.useState<AnalysisTechnique | null>(null);
   const [sessions, setSessions] = React.useState<AnalysisSession[]>(() => getAnalysisSessions());
-  const [uploadedFile, setUploadedFile] = React.useState<{ name: string; sizeLabel: string; extension: string } | null>(null);
+  const [uploadedFile, setUploadedFile] = React.useState<{ name: string; sizeLabel: string; extension: string; parsed: ParsedUploadedSignalSuccess } | null>(null);
+  const [uploadError, setUploadError] = React.useState('');
+  const [uploadNotice, setUploadNotice] = React.useState('');
+  const [createdUploadSessionId, setCreatedUploadSessionId] = React.useState<string | null>(null);
+  const [sessionMenuOpen, setSessionMenuOpen] = React.useState<string | null>(null);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const canBrowseForFile = userUploadMode || Boolean(selectedTechnique);
 
   const recentSessions = React.useMemo(
-    () => [...sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 6),
-    [sessions],
+    () => [...sessions]
+      .filter((session) => !userUploadMode || session.source === 'user_uploaded')
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 6),
+    [sessions, userUploadMode],
   );
 
-  const createQuickSession = (technique: AnalysisTechnique, file: { name: string; sizeLabel?: string }) => {
+  const createQuickSession = (
+    technique: AnalysisTechnique,
+    file: { name: string; sizeLabel?: string; parsed?: ParsedUploadedSignalSuccess },
+    options: { navigateAfterCreate?: boolean } = {},
+  ) => {
+    const navigateAfterCreate = options.navigateAfterCreate ?? true;
+    const uploadedTechnique = techniqueToUploadedTechnique(technique);
+    const axisDefaults = AXIS_DEFAULTS_BY_TECHNIQUE[uploadedTechnique];
+    const uploadedRun = file.parsed
+      ? createUploadedSignalRun({
+          fileName: file.parsed.fileName,
+          technique: uploadedTechnique,
+          sampleIdentity: file.parsed.fileName.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '),
+          xAxisLabel: axisDefaults.xAxisLabel,
+          yAxisLabel: axisDefaults.yAxisLabel,
+          referenceScope: 'User Workspace local upload',
+          points: mapUploadedSignalColumns(file.parsed, file.parsed.columnMapping.xColumn, file.parsed.columnMapping.yColumn),
+        })
+      : null;
+    if (uploadedRun) saveUploadedSignalRun(uploadedRun);
     const created = createAnalysisSession(technique, file.name);
     const session = saveAnalysisSession({
       ...created,
       fileSizeLabel: file.sizeLabel,
-      source: 'quick_analysis',
+      source: uploadedRun ? 'user_uploaded' : 'quick_analysis',
+      uploadedRunId: uploadedRun?.id,
       origin: 'quick-analysis',
       projectId: undefined,
       projectName: undefined,
-      status: 'processing',
+      status: uploadedRun
+        ? (technique === 'xrd' && uploadedRun.evidenceQuality.canInterpret ? 'completed' : 'needs-review')
+        : 'processing',
+      processingState: uploadedRun
+        ? userUploadedProcessingState(technique, uploadedRun.evidenceQuality.canInterpret)
+        : created.processingState,
       processingLog: [
-        `Quick analysis session ${created.analysisId} created from ${file.name}`,
-        'Source: quick_analysis',
+        `${uploadedRun ? 'User-uploaded evidence session' : 'Quick analysis session'} ${created.analysisId} created from ${file.name}`,
+        `Source: ${uploadedRun ? 'user_uploaded' : 'quick_analysis'}`,
+        uploadedRun
+          ? `Upload run: ${uploadedRun.id}`
+          : 'Upload run: not created',
+        uploadedRun
+          ? `Parse status: ${uploadedRun.technique === 'XRD' ? 'XRD parsed/processed' : `${uploadedRun.technique} provenance-only / validation-limited`}`
+          : 'Parse status: filename-only quick session',
         'Project: No project',
         ...created.processingLog,
       ],
     });
-    setSessions(getAnalysisSessions());
-    navigate(quickWorkspacePath(session));
+    const nextSessions = getAnalysisSessions();
+    setSessions(nextSessions);
+    if (navigateAfterCreate) {
+      navigate(userUploadedNextPath(session, nextIntent));
+    }
+    return session;
   };
 
-  const onFiles = (files: FileList | null) => {
+  const onFiles = async (files: FileList | null) => {
     const file = files?.[0];
-    if (!file || !selectedTechnique) return;
-    setUploadedFile({ name: file.name, sizeLabel: formatBytes(file.size), extension: fileExtension(file.name) });
+    if (!file) return;
+    setUploadError('');
+    setUploadNotice('');
+    setUploadedFile(null);
+    setCreatedUploadSessionId(null);
+
+    try {
+      const parsed = parseUploadedSignalText(file.name, await file.text());
+      if (!parsed.ok) {
+        setUploadError(parsed.error);
+        return;
+      }
+      const fileState = { name: file.name, sizeLabel: formatBytes(file.size), extension: fileExtension(file.name), parsed };
+      const inferredTechnique =
+        selectedTechnique ||
+        inferTechniqueFromFile(file.name) ||
+        uploadedTechniqueToAnalysisTechnique(parsed.suggestedTechnique);
+      setUploadedFile(fileState);
+
+      if (!inferredTechnique) {
+        setUploadNotice('Signal parsed. Choose XRD, XPS, FTIR, or Raman to create a user workspace session.');
+        return;
+      }
+
+      if (inferredTechnique !== selectedTechnique) {
+        setSelectedTechnique(inferredTechnique);
+      }
+
+      if (userUploadMode) {
+        const session = createQuickSession(inferredTechnique, fileState, { navigateAfterCreate: false });
+        setCreatedUploadSessionId(session.analysisId);
+        setUploadNotice(`${file.name} saved as user_uploaded evidence. Recent Sessions is ready for handoff.`);
+      }
+    } catch {
+      setUploadError('DIFARYX could not read the selected file in the browser.');
+    }
   };
 
   const handleStartProcessing = () => {
     if (!selectedTechnique || !uploadedFile) return;
-    createQuickSession(selectedTechnique, uploadedFile);
+    if (createdUploadSessionId) {
+      const existing = getAnalysisSession(createdUploadSessionId);
+      if (existing) {
+        navigate(userUploadedNextPath(existing, nextIntent));
+        return;
+      }
+    }
+    const session = createQuickSession(selectedTechnique, uploadedFile);
+    setCreatedUploadSessionId(session.analysisId);
   };
 
   const handleSaveSession = (session: AnalysisSession) => {
@@ -582,9 +716,13 @@ export function AnalysisWorkspaceHome() {
         <div className="mx-auto flex max-w-7xl flex-col gap-3 p-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-text-main">Quick Analysis</h1>
+              <h1 className="text-xl font-bold tracking-tight text-text-main">
+                {userUploadMode ? 'User Workspace Upload' : 'Quick Analysis'}
+              </h1>
               <p className="mt-1 text-xs text-text-muted">
-                Select technique, upload a file, start processing, then save, export, or attach to a project later.
+                {userUploadMode
+                  ? 'Upload local evidence into User Workspace, then open the workspace or hand it to Agent, Notebook, or Report.'
+                  : 'Select technique, upload a file, start processing, then save, export, or attach to a project later.'}
               </p>
             </div>
             <div className="hidden items-center gap-1 rounded-full border border-border bg-white px-2.5 py-1 text-[10px] font-semibold text-text-muted lg:flex">
@@ -606,7 +744,12 @@ export function AnalysisWorkspaceHome() {
                 selected={selectedTechnique === technique}
                 onClick={() => {
                   setSelectedTechnique(technique);
-                  setUploadedFile(null);
+                  setUploadError('');
+                  if (userUploadMode && uploadedFile && !createdUploadSessionId) {
+                    const session = createQuickSession(technique, uploadedFile, { navigateAfterCreate: false });
+                    setCreatedUploadSessionId(session.analysisId);
+                    setUploadNotice(`${uploadedFile.name} saved as user_uploaded evidence. Recent Sessions is ready for handoff.`);
+                  }
                 }}
               />
             ))}
@@ -622,7 +765,7 @@ export function AnalysisWorkspaceHome() {
                 }}
                 className={cn(
                   'flex min-h-[116px] items-center gap-4 rounded-lg border border-dashed p-4',
-                  selectedTechnique ? 'border-primary/35 bg-blue-50/40' : 'border-slate-200 bg-slate-50',
+                  canBrowseForFile ? 'border-primary/35 bg-blue-50/40' : 'border-slate-200 bg-slate-50',
                 )}
               >
                 <input
@@ -630,7 +773,7 @@ export function AnalysisWorkspaceHome() {
                   type="file"
                   className="hidden"
                   accept={getAcceptedFiles(selectedTechnique)}
-                  disabled={!selectedTechnique}
+                  disabled={!canBrowseForFile}
                   onChange={(e) => onFiles(e.target.files)}
                 />
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white text-primary ring-1 ring-border">
@@ -639,7 +782,7 @@ export function AnalysisWorkspaceHome() {
                 <div className="min-w-0 flex-1">
                   <button
                     type="button"
-                    disabled={!selectedTechnique}
+                    disabled={!canBrowseForFile}
                     onClick={() => inputRef.current?.click()}
                     className="text-left text-sm font-bold text-text-main hover:text-primary disabled:cursor-not-allowed disabled:text-text-muted"
                   >
@@ -651,13 +794,35 @@ export function AnalysisWorkspaceHome() {
                       : 'Select a technique to configure file requirements.'}
                   </p>
                   {uploadedFile && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                      <span className="max-w-[260px] truncate rounded-md border border-border bg-white px-2 py-1 font-semibold text-text-main">
-                        {uploadedFile.name}
-                      </span>
-                      <span className="rounded-md bg-slate-100 px-2 py-1 text-text-muted">{uploadedFile.sizeLabel}</span>
-                      <span className="rounded-md bg-slate-100 px-2 py-1 uppercase text-text-muted">{uploadedFile.extension}</span>
+                    <div className="mt-2 space-y-2 text-[11px]">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="max-w-[260px] truncate rounded-md border border-border bg-white px-2 py-1 font-semibold text-text-main">
+                          {uploadedFile.name}
+                        </span>
+                        <span className="rounded-md bg-slate-100 px-2 py-1 text-text-muted">{uploadedFile.sizeLabel}</span>
+                        <span className="rounded-md bg-slate-100 px-2 py-1 uppercase text-text-muted">{uploadedFile.extension}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[10px] font-semibold text-text-muted">
+                        <span className="rounded-md border border-border bg-white px-2 py-1">
+                          Detected: {uploadedFile.parsed.suggestedTechnique}
+                        </span>
+                        <span className="rounded-md border border-border bg-white px-2 py-1">
+                          Rows: {uploadedFile.parsed.numericRows}
+                        </span>
+                        <span className="rounded-md border border-border bg-white px-2 py-1">
+                          Mapping: {uploadedFile.parsed.columnMapping.summary}
+                        </span>
+                      </div>
+                      {uploadedFile.parsed.warnings.length > 0 && (
+                        <p className="text-[10px] font-semibold text-amber-700">{uploadedFile.parsed.warnings.join(' ')}</p>
+                      )}
                     </div>
+                  )}
+                  {uploadError && (
+                    <p className="mt-2 text-[11px] font-semibold text-red-600">{uploadError}</p>
+                  )}
+                  {uploadNotice && !uploadError && (
+                    <p className="mt-2 text-[11px] font-semibold text-emerald-700">{uploadNotice}</p>
                   )}
                 </div>
               </div>
@@ -669,7 +834,10 @@ export function AnalysisWorkspaceHome() {
                     {selectedTechnique ? `${techniqueLabel(selectedTechnique)} Workspace` : 'No technique selected'}
                   </p>
                   <p className="mt-1 text-[11px] text-text-muted">Project: No project</p>
-                  <p className="mt-1 text-[11px] text-text-muted">Source: quick_analysis</p>
+                  <p className="mt-1 text-[11px] text-text-muted">Source: {userUploadMode ? 'user_uploaded' : 'quick_analysis'}</p>
+                  {nextIntent && (
+                    <p className="mt-1 text-[11px] text-text-muted">Next: {nextIntent}</p>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -678,7 +846,11 @@ export function AnalysisWorkspaceHome() {
                   className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-xs font-bold text-white shadow-sm shadow-primary/20 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Play size={14} />
-                  {uploadedFile && selectedTechnique ? `Start ${techniqueLabel(selectedTechnique)} Processing` : 'Upload file to continue'}
+                  {createdUploadSessionId
+                    ? 'Open Workspace'
+                    : uploadedFile && selectedTechnique
+                      ? `Start ${techniqueLabel(selectedTechnique)} Processing`
+                      : 'Upload file to continue'}
                 </button>
               </div>
             </div>
@@ -687,7 +859,9 @@ export function AnalysisWorkspaceHome() {
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
               <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">Recent Sessions</h2>
-              <span className="text-[11px] text-text-muted">Quick and attached sessions stay visible here.</span>
+              <span className="text-[11px] text-text-muted">
+                {userUploadMode ? 'Showing local user_uploaded evidence sessions.' : 'Quick and attached sessions stay visible here.'}
+              </span>
             </div>
             <div className="overflow-hidden rounded-lg border border-border bg-white">
               <div className="grid grid-cols-[86px_minmax(180px,1.2fr)_minmax(150px,0.9fr)_120px_92px_minmax(260px,1fr)] border-b border-border bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-text-muted">
@@ -701,14 +875,16 @@ export function AnalysisWorkspaceHome() {
               {recentSessions.map((session) => (
                 <div
                   key={session.analysisId}
-                  className="grid grid-cols-[86px_minmax(180px,1.2fr)_minmax(150px,0.9fr)_120px_92px_minmax(260px,1fr)] items-center gap-2 border-b border-border px-3 py-2 last:border-b-0"
+                  className="grid grid-cols-[86px_minmax(180px,1.2fr)_minmax(150px,0.9fr)_120px_92px_minmax(180px,1fr)] items-center gap-2 border-b border-border px-3 py-2 last:border-b-0"
                 >
                   <span className={cn('w-fit rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase', techniqueClass(session.technique))}>
                     {techniqueLabel(session.technique)}
                   </span>
                   <div className="min-w-0">
                     <p className="truncate text-xs font-bold text-text-main">{session.fileName}</p>
-                    <p className="truncate text-[10px] text-text-muted">{session.analysisId}</p>
+                    <p className="truncate text-[10px] text-text-muted">
+                      {session.analysisId} / {session.source ?? 'quick_analysis'}
+                    </p>
                   </div>
                   <p className="truncate text-[11px] font-semibold text-text-muted">{formatProjectStatus(session)}</p>
                   <span className={cn('w-fit rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase', statusClass(session.status))}>
@@ -717,42 +893,68 @@ export function AnalysisWorkspaceHome() {
                   <p className="text-[11px] text-text-muted">{session.updatedLabel}</p>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <HistoryActionLink to={quickWorkspacePath(session)}>Open Workspace</HistoryActionLink>
-                    <HistoryActionLink to={`${quickWorkspacePath(session)}&action=attach`}>Attach</HistoryActionLink>
-                    <button
-                      type="button"
-                      onClick={() => downloadQuickSessionCsv(session, 'raw')}
-                      className="inline-flex h-7 items-center rounded-md border border-border bg-white px-2 text-[10px] font-semibold text-text-main hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                    >
-                      Raw CSV
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => downloadQuickSessionCsv(session, 'features')}
-                      className="inline-flex h-7 items-center rounded-md border border-border bg-white px-2 text-[10px] font-semibold text-text-main hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                    >
-                      Features
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => downloadQuickSessionCsv(session, 'summary')}
-                      className="inline-flex h-7 items-center rounded-md border border-border bg-white px-2 text-[10px] font-semibold text-text-main hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                    >
-                      Summary CSV
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSaveSession(session)}
-                      className="inline-flex h-7 items-center rounded-md border border-border bg-white px-2 text-[10px] font-semibold text-text-main hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                    >
-                      Save
-                    </button>
-                    <HistoryActionLink to={session.projectId ? `/notebook?project=${session.projectId}` : quickWorkspacePath(session)}>Notebook</HistoryActionLink>
-                    <HistoryActionLink to={session.projectId ? `/reports?project=${session.projectId}` : quickWorkspacePath(session)}>
-                      Report Draft
-                    </HistoryActionLink>
+                    {session.source === 'user_uploaded' && (
+                      <>
+                        <HistoryActionLink to={uploadHandoffPath(session, 'agent')}>Send to Agent</HistoryActionLink>
+                        <HistoryActionLink to={uploadHandoffPath(session, 'notebook')}>Send to Notebook</HistoryActionLink>
+                        <HistoryActionLink to={uploadHandoffPath(session, 'report')}>Create Report</HistoryActionLink>
+                        <HistoryActionLink to={uploadHandoffPath(session, 'multi')}>Open Multi-Tech</HistoryActionLink>
+                      </>
+                    )}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setSessionMenuOpen(sessionMenuOpen === session.analysisId ? null : session.analysisId)}
+                        className="inline-flex h-7 items-center rounded-md border border-border bg-white px-2 text-[10px] font-semibold text-text-main hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                      >
+                        More
+                      </button>
+                      {sessionMenuOpen === session.analysisId && (
+                        <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-border rounded-lg shadow-lg z-50">
+                          <HistoryActionLink to={`${quickWorkspacePath(session)}&action=attach`} onClick={() => setSessionMenuOpen(null)}>Attach</HistoryActionLink>
+                          <button
+                            type="button"
+                            onClick={() => { downloadQuickSessionCsv(session, 'raw'); setSessionMenuOpen(null); }}
+                            className="w-full px-3 py-2 text-left text-[10px] font-semibold text-text-main hover:bg-surface-hover flex items-center"
+                          >
+                            Raw CSV
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { downloadQuickSessionCsv(session, 'features'); setSessionMenuOpen(null); }}
+                            className="w-full px-3 py-2 text-left text-[10px] font-semibold text-text-main hover:bg-surface-hover flex items-center"
+                          >
+                            Features
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { downloadQuickSessionCsv(session, 'summary'); setSessionMenuOpen(null); }}
+                            className="w-full px-3 py-2 text-left text-[10px] font-semibold text-text-main hover:bg-surface-hover flex items-center"
+                          >
+                            Summary CSV
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { handleSaveSession(session); setSessionMenuOpen(null); }}
+                            className="w-full px-3 py-2 text-left text-[10px] font-semibold text-text-main hover:bg-surface-hover flex items-center border-t border-border"
+                          >
+                            Save
+                          </button>
+                          <HistoryActionLink to={session.source === 'user_uploaded' ? uploadHandoffPath(session, 'notebook') : session.projectId ? `/notebook?project=${session.projectId}` : quickWorkspacePath(session)} onClick={() => setSessionMenuOpen(null)}>Notebook</HistoryActionLink>
+                          <HistoryActionLink to={session.source === 'user_uploaded' ? uploadHandoffPath(session, 'report') : session.projectId ? `/reports?project=${session.projectId}` : quickWorkspacePath(session)} onClick={() => setSessionMenuOpen(null)}>
+                            Report Draft
+                          </HistoryActionLink>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
+              {recentSessions.length === 0 && (
+                <div className="px-3 py-6 text-center text-xs font-semibold text-text-muted">
+                  {userUploadMode ? 'No user_uploaded evidence sessions yet.' : 'No quick analysis sessions yet.'}
+                </div>
+              )}
             </div>
           </div>
         </div>

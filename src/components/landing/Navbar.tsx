@@ -13,8 +13,8 @@ export default function Navbar() {
             {[
               ['Product', '#product'],
               ['Techniques', '#techniques'],
-              ['Notebook Lab', '/notebook?project=cu-fe2o4-spinel'],
-              ['Agent Demo', '/demo/agent'],
+              ['Notebook Lab', '/notebook?project=cu-fe2o4-spinel&mode=demo'],
+              ['Agent Demo', '/demo/agent?project=cu-fe2o4-spinel&mode=demo'],
               ['Roadmap', '#roadmap'],
               ['Company', '#company'],
               ['Investor Briefing', '#roadmap'],

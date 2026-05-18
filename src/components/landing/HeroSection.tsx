@@ -227,7 +227,7 @@ export default function HeroSection() {
                   Explore Workflow
                 </Link>
                 <Link
-                  to="/demo/agent"
+                  to="/demo/agent?project=cu-fe2o4-spinel&mode=demo"
                   aria-label="Run Agent Demo"
                   className="inline-flex h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-6 text-[15px] font-bold text-slate-900 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-400 hover:shadow-md"
                 >

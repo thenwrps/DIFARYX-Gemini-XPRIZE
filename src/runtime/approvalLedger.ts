@@ -65,15 +65,68 @@ const EMPTY_STATE: ApprovalLedgerState = {
 };
 
 function canUseLocalStorage() {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+  try {
+    return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+  } catch {
+    return false;
+  }
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function asLedgerDecision(value: unknown): ApprovalLedgerDecision {
+  if (
+    value === 'preview_opened' ||
+    value === 'local_preview_continued' ||
+    value === 'blocked_connected_write' ||
+    value === 'cancelled'
+  ) {
+    return value;
+  }
+  return 'preview_opened';
+}
+
+function normalizeLedgerEntry(value: unknown): ApprovalLedgerEntry | null {
+  if (!value || typeof value !== 'object') return null;
+  const entry = value as Partial<ApprovalLedgerEntry>;
+  if (!entry.actionId || !entry.actionLabel || !entry.projectId) return null;
+  return {
+    ledgerId: typeof entry.ledgerId === 'string' ? entry.ledgerId : createLedgerId(),
+    timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : new Date().toISOString(),
+    actionId: String(entry.actionId),
+    actionType: entry.actionType ?? 'external_share',
+    actionLabel: String(entry.actionLabel),
+    projectId: String(entry.projectId),
+    projectName: typeof entry.projectName === 'string' ? entry.projectName : 'Unknown project',
+    sampleIdentity: typeof entry.sampleIdentity === 'string' ? entry.sampleIdentity : 'Unknown sample',
+    bundleId: typeof entry.bundleId === 'string' ? entry.bundleId : undefined,
+    sourceMode: entry.sourceMode ?? 'demo_preloaded',
+    runtimeMode: entry.runtimeMode ?? 'demo',
+    permissionMode: entry.permissionMode ?? 'read_only',
+    approvalStatus: entry.approvalStatus ?? 'not_required',
+    decision: asLedgerDecision(entry.decision),
+    riskLevel: entry.riskLevel ?? 'medium',
+    destinationLabel: typeof entry.destinationLabel === 'string' ? entry.destinationLabel : 'Local preview',
+    evidenceSummary: asStringArray(entry.evidenceSummary),
+    validationGaps: asStringArray(entry.validationGaps),
+    claimBoundary: asStringArray(entry.claimBoundary),
+    supportedAssignment: typeof entry.supportedAssignment === 'string' ? entry.supportedAssignment : 'Evidence-linked assignment pending',
+    reviewerLabel: typeof entry.reviewerLabel === 'string' ? entry.reviewerLabel : 'Local demo reviewer',
+    notes: typeof entry.notes === 'string' ? entry.notes : 'Local approval preview ledger entry.',
+  };
 }
 
 function safeParseState(value: string | null): ApprovalLedgerState {
   if (!value) return EMPTY_STATE;
   try {
     const parsed = JSON.parse(value) as Partial<ApprovalLedgerState>;
+    const entries = Array.isArray(parsed.entries)
+      ? parsed.entries.map(normalizeLedgerEntry).filter((entry): entry is ApprovalLedgerEntry => Boolean(entry))
+      : [];
     return {
-      entries: Array.isArray(parsed.entries) ? parsed.entries.filter(Boolean) as ApprovalLedgerEntry[] : [],
+      entries,
       lastUpdatedAt: typeof parsed.lastUpdatedAt === 'string' ? parsed.lastUpdatedAt : null,
     };
   } catch {
@@ -83,8 +136,12 @@ function safeParseState(value: string | null): ApprovalLedgerState {
 
 function writeApprovalLedgerState(state: ApprovalLedgerState) {
   if (!canUseLocalStorage()) return;
-  window.localStorage.setItem(APPROVAL_LEDGER_STORAGE_KEY, JSON.stringify(state));
-  window.dispatchEvent(new Event('difaryx-approval-ledger-updated'));
+  try {
+    window.localStorage.setItem(APPROVAL_LEDGER_STORAGE_KEY, JSON.stringify(state));
+    window.dispatchEvent(new Event('difaryx-approval-ledger-updated'));
+  } catch {
+    // Ledger persistence is best-effort and must never break the route.
+  }
 }
 
 function createLedgerId() {
@@ -123,10 +180,10 @@ export function createApprovalLedgerEntry(
     decision,
     riskLevel: action.riskLevel,
     destinationLabel: action.destinationLabel,
-    evidenceSummary: action.evidenceSummary.slice(0, 6),
-    validationGaps: action.validationGaps.slice(0, 6),
-    claimBoundary: action.claimBoundary.slice(0, 6),
-    supportedAssignment: action.supportedAssignment,
+    evidenceSummary: (action.evidenceSummary ?? []).slice(0, 6),
+    validationGaps: (action.validationGaps ?? []).slice(0, 6),
+    claimBoundary: (action.claimBoundary ?? []).slice(0, 6),
+    supportedAssignment: action.supportedAssignment ?? 'Evidence-linked assignment pending',
     reviewerLabel: options.reviewerLabel ?? 'Local demo reviewer',
     notes: options.notes ?? defaultNotes(decision, action),
   };
@@ -135,7 +192,7 @@ export function createApprovalLedgerEntry(
 export function appendApprovalLedgerEntry(entry: ApprovalLedgerEntry): ApprovalLedgerState {
   const current = getApprovalLedgerState();
   const nextState = {
-    entries: [entry, ...current.entries].slice(0, MAX_LEDGER_ENTRIES),
+    entries: [entry, ...(current.entries ?? [])].slice(0, MAX_LEDGER_ENTRIES),
     lastUpdatedAt: entry.timestamp,
   };
   writeApprovalLedgerState(nextState);
@@ -144,7 +201,11 @@ export function appendApprovalLedgerEntry(entry: ApprovalLedgerEntry): ApprovalL
 
 export function getApprovalLedgerState(): ApprovalLedgerState {
   if (!canUseLocalStorage()) return EMPTY_STATE;
-  return safeParseState(window.localStorage.getItem(APPROVAL_LEDGER_STORAGE_KEY));
+  try {
+    return safeParseState(window.localStorage.getItem(APPROVAL_LEDGER_STORAGE_KEY));
+  } catch {
+    return EMPTY_STATE;
+  }
 }
 
 export function getApprovalLedgerEntries(): ApprovalLedgerEntry[] {
@@ -171,7 +232,7 @@ export function summarizeApprovalLedger(options: {
   limit?: number;
 } = {}): ApprovalLedgerSummary {
   const state = getApprovalLedgerState();
-  const filtered = state.entries.filter((entry) => {
+  const filtered = (state.entries ?? []).filter((entry) => {
     if (options.projectId && entry.projectId !== options.projectId) return false;
     if (options.bundleId && entry.bundleId !== options.bundleId) return false;
     return true;
@@ -197,4 +258,3 @@ export function summarizeApprovalLedger(options: {
     recentLines,
   };
 }
-

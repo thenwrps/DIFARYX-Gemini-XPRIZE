@@ -5,6 +5,7 @@ import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Graph } from '../components/ui/Graph';
+import { useAuth } from '../contexts/AuthContext';
 import { LockedScientificContext } from '../components/locked-context/LockedScientificContext';
 import {
   DEFAULT_PROJECT_ID,
@@ -21,6 +22,10 @@ import {
   createProcessingResultFromXrdDemo,
   saveProcessingResult,
 } from '../data/workflowPipeline';
+import {
+  readProjectWorkspaceParameters,
+} from '../utils/workspaceParameterOverrides';
+import { getProjectTechniques } from '../utils/projectEvidence';
 import {
   AXIS_DEFAULTS_BY_TECHNIQUE,
   BETA_TECHNIQUES,
@@ -61,6 +66,15 @@ import {
   getEvidenceBundleBadgeLabel,
   getTechniqueCoverageFromBundle,
 } from '../runtime/evidenceBundle';
+import {
+  getStoredWorkspaceMode,
+  setWorkspaceMode,
+} from '../utils/workspaceMode';
+import {
+  buildEvidenceRouteSearch,
+  getEvidenceRouteContext,
+  type EvidenceRouteContext,
+} from '../utils/evidenceRouteContext';
 
 // Cross-tech evidence types
 interface CrossTechEvidence {
@@ -697,7 +711,172 @@ function getUploadedTechniqueLimitations(technique: UploadedTechnique): string[]
   ];
 }
 
+function MultiTechDemoProjectPrompt({ projectId }: { projectId: string }) {
+  return (
+    <DashboardLayout>
+      <div className="h-full overflow-y-auto bg-slate-50 p-6">
+        <Card className="mx-auto max-w-4xl rounded-lg bg-white p-6">
+          <h1 className="text-xl font-bold text-text-main">Demo project requires Demo Mode</h1>
+          <p className="mt-2 text-sm text-text-muted">
+            User Workspace will not auto-load the preloaded multi-tech comparison after Google sign-in.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link
+              to={`/workspace/multi?project=${projectId}&mode=demo`}
+              onClick={() => setWorkspaceMode('demo')}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
+            >
+              Open in Demo Mode
+            </Link>
+            <Link
+              to="/workspace"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50"
+            >
+              Return to User Workspace
+            </Link>
+          </div>
+        </Card>
+      </div>
+    </DashboardLayout>
+  );
+}
+
+function UploadedMultiTechWorkspace({ routeContext }: { routeContext: EvidenceRouteContext }) {
+  const snapshot = getProjectEvidenceSnapshot(null, {
+    source: routeContext.source,
+    analysisSessionId: routeContext.sessionId,
+    uploadedRunId: routeContext.uploadedRunId,
+    driveFileId: routeContext.driveFileId,
+    projectIdExplicit: false,
+  });
+  const activeDataset = snapshot.activeDataset;
+  const evidenceQuery = buildEvidenceRouteSearch(routeContext);
+  const suffix = evidenceQuery ? `?${evidenceQuery}` : '';
+  const technique = snapshot.primaryTechnique.toLowerCase();
+  const techniquePath = `/workspace/${technique}?mode=quick${evidenceQuery ? `&${evidenceQuery}` : ''}`;
+
+  return (
+    <DashboardLayout>
+      <div className="h-full overflow-y-auto bg-slate-50 p-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-blue-700">User-uploaded evidence</p>
+              <h1 className="mt-1 text-2xl font-bold text-text-main">Multi-Tech Workspace</h1>
+              <p className="mt-1 text-sm text-text-muted">Single uploaded evidence source is active. No demo comparison package is loaded.</p>
+            </div>
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+              source=user_uploaded
+            </span>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <Card className="rounded-lg bg-white p-5">
+              <h2 className="text-lg font-bold text-text-main">No evidence bundle created yet</h2>
+              <p className="mt-2 text-sm text-text-muted">Add another evidence source to compare techniques.</p>
+              <div className="mt-4 rounded-md border border-border bg-slate-50 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Uploaded coverage</p>
+                <p className="mt-1 text-sm font-bold text-text-main">{activeDataset?.fileName ?? snapshot.sampleIdentity}</p>
+                <p className="mt-1 text-xs text-text-muted">
+                  {snapshot.availableTechniques.join(', ') || 'Metadata only'} / {snapshot.sourceLabel ?? 'User-uploaded evidence'}
+                </p>
+              </div>
+              <div className="mt-4 h-[280px] rounded-md border border-border bg-white">
+                {activeDataset?.dataPoints.length ? (
+                  <Graph
+                    type={technique as 'xrd' | 'xps' | 'ftir' | 'raman'}
+                    height="100%"
+                    externalData={activeDataset.dataPoints}
+                    showCalculated={false}
+                    showResidual={false}
+                    showLegend={false}
+                    peakMarkers={activeDataset.detectedFeatures.map((feature) => ({
+                      position: feature.position,
+                      intensity: feature.intensity,
+                      label: feature.label,
+                    }))}
+                    xAxisLabel={activeDataset.xLabel}
+                    yAxisLabel={activeDataset.yLabel}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-sm font-semibold text-text-muted">Metadata-only upload</div>
+                )}
+              </div>
+            </Card>
+
+            <Card className="rounded-lg bg-white p-4">
+              <h2 className="text-sm font-bold text-text-main">Next actions</h2>
+              <div className="mt-3 grid gap-2">
+                <Link to={techniquePath} className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90">
+                  Open technique workspace
+                </Link>
+                <Link to={`/demo/agent${suffix}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
+                  Send to Agent
+                </Link>
+                <Link to={`/notebook${suffix}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
+                  Send to Notebook
+                </Link>
+                <Link to={`/reports${suffix}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
+                  Create Report
+                </Link>
+                <Link to="/analysis?source=user_uploaded" className="inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20">
+                  Add another evidence source
+                </Link>
+              </div>
+              <p className="mt-4 text-xs font-semibold text-amber-700">External writes disabled</p>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
+
 export default function MultiTechWorkspace() {
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  const requestedProjectId = searchParams.get('project');
+  const routeContext = getEvidenceRouteContext({
+    authUser: user,
+    searchParams,
+    storedMode: getStoredWorkspaceMode(),
+  });
+  const effectiveWorkspaceMode = routeContext.effectiveWorkspaceMode;
+
+  if (routeContext.isUploadedContext) {
+    return <UploadedMultiTechWorkspace routeContext={routeContext} />;
+  }
+
+  if (effectiveWorkspaceMode === 'user' && requestedProjectId && isKnownProjectId(requestedProjectId)) {
+    return <MultiTechDemoProjectPrompt projectId={requestedProjectId} />;
+  }
+
+  if (effectiveWorkspaceMode === 'user') {
+    return (
+      <DashboardLayout>
+        <div className="h-full overflow-y-auto bg-slate-50 p-6">
+          <Card className="mx-auto max-w-5xl rounded-lg border-dashed bg-white p-10 text-center">
+            <Upload size={42} className="mx-auto text-text-dim" />
+            <h1 className="mt-4 text-lg font-bold text-text-main">No active user project</h1>
+            <p className="mt-2 text-sm text-text-muted">Upload evidence to start multi-tech comparison.</p>
+            <div className="mt-6 flex justify-center">
+              <Link
+                to="/analysis?source=user_uploaded&next=workspace"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
+              >
+                Upload evidence
+              </Link>
+            </div>
+          </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return <MultiTechWorkspaceContent />;
+}
+
+function MultiTechWorkspaceContent() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const requestedProjectId = searchParams.get('project');
@@ -705,6 +884,7 @@ export default function MultiTechWorkspace() {
   const invalidProjectRequested =
     Boolean(requestedProjectId) && !isKnownProjectId(requestedProjectId);
   const project = getProject(resolvedProjectId) ?? getProject(DEFAULT_PROJECT_ID)!;
+  const withDemoMode = (path: string) => path.includes('?') ? `${path}&mode=demo` : `${path}?mode=demo`;
 
   // Canonical registry project - shared source of truth for cross-page data.
   const registryProject = useMemo(() => getRegistryProject(project.id), [project.id]);
@@ -715,14 +895,39 @@ export default function MultiTechWorkspace() {
     analysisSessionId: searchParams.get('sessionId') ?? searchParams.get('analysisId'),
     driveFileId: searchParams.get('driveFileId') ?? searchParams.get('driveImportId'),
   }), [project.id, searchParams]);
-  const evidenceBundle = useMemo(
-    () => createEvidenceBundleFromSnapshot(evidenceSnapshot, {
-      includeDemoContext: searchParams.get('bundle') === 'mixed' || searchParams.get('source') === 'mixed',
-    }),
-    [evidenceSnapshot, searchParams],
-  );
+
+  const evidenceBundle = useMemo(() => {
+    const techniqueCount = evidenceSnapshot.availableTechniques.length;
+    const hasDemoPreloadedBundle = project.id === 'cu-fe2o4-spinel';
+    const hasMixedIntent = searchParams.get('bundle') === 'mixed' || searchParams.get('source') === 'mixed';
+    const isSingleFileContext = Boolean(
+      searchParams.get('upload') ||
+      searchParams.get('uploadedRunId') ||
+      searchParams.get('driveFileId') ||
+      searchParams.get('driveImportId') ||
+      searchParams.get('analysisId') ||
+      searchParams.get('sessionId'),
+    );
+
+    if (!hasDemoPreloadedBundle && isSingleFileContext && techniqueCount < 2) {
+      return null;
+    }
+
+    const shouldPreview = hasDemoPreloadedBundle || hasMixedIntent || techniqueCount >= 2;
+    if (!shouldPreview) return null;
+
+    return createEvidenceBundleFromSnapshot(evidenceSnapshot, {
+      includeDemoContext: hasMixedIntent,
+      lifecycleState: 'preview',
+      creationReason: hasDemoPreloadedBundle
+        ? 'demo_preloaded'
+        : hasMixedIntent
+          ? 'mixed_source_comparison'
+          : 'multi_tech_comparison',
+    });
+  }, [evidenceSnapshot, searchParams, project.id]);
   const bundleTechniqueCoverage = useMemo(
-    () => getTechniqueCoverageFromBundle(evidenceBundle),
+    () => evidenceBundle ? getTechniqueCoverageFromBundle(evidenceBundle) : [],
     [evidenceBundle],
   );
 
@@ -748,6 +953,12 @@ export default function MultiTechWorkspace() {
   const [parsedUpload, setParsedUpload] = useState<ParsedUploadedSignalSuccess | null>(null);
   const [uploadError, setUploadError] = useState('');
   const [uploadErrorQuality, setUploadErrorQuality] = useState<UploadedSignalRun['evidenceQuality'] | null>(null);
+
+  // Read workspace parameters for the current project
+  const workspaceParameters = useMemo(
+    () => readProjectWorkspaceParameters(project.id, getProjectTechniques(project)),
+    [project.id],
+  );
   const [selectedUploadTechnique, setSelectedUploadTechnique] = useState<UploadedTechnique>('Unknown');
   const [sampleIdentity, setSampleIdentity] = useState('');
   const [xAxisLabel, setXAxisLabel] = useState(AXIS_DEFAULTS_BY_TECHNIQUE.Unknown.xAxisLabel);
@@ -1129,16 +1340,16 @@ export default function MultiTechWorkspace() {
   };
 
   const handleSaveProcessingResult = () => {
-    const processingResult = createProcessingResultFromXrdDemo(project.id);
+    const processingResult = createProcessingResultFromXrdDemo(project.id, workspaceParameters);
     saveProcessingResult(processingResult);
     setWorkflowFeedback('Processing result saved');
     window.setTimeout(() => setWorkflowFeedback(''), 1800);
   };
 
   const handleRefineInterpretation = () => {
-    const processingResult = createProcessingResultFromXrdDemo(project.id);
+    const processingResult = createProcessingResultFromXrdDemo(project.id, workspaceParameters);
     saveProcessingResult(processingResult);
-    navigate(`/demo/agent?project=${project.id}&scope=fusion&processing=${processingResult.id}&template=research`);
+    navigate(`/demo/agent?project=${project.id}&mode=demo&scope=fusion&processing=${processingResult.id}&template=research`);
   };
 
   // Build notebook draft from FusionResult
@@ -1180,12 +1391,26 @@ ${result.decision}
               </p>
             </div>
             <div className="flex max-w-full flex-wrap items-center justify-start gap-1.5 sm:justify-end">
-              <div
-                className="inline-flex h-8 max-w-[260px] items-center gap-1.5 rounded border border-cyan-200 bg-cyan-50 px-2.5 text-[10px] font-semibold text-cyan-700"
-                title={`${evidenceBundle.bundleId}: ${bundleTechniqueCoverage.map((item) => `${item.technique} ${item.status}`).join(', ')}`}
-              >
-                <span className="truncate">{getEvidenceBundleBadgeLabel(evidenceBundle)} / {evidenceBundle.evidenceCompletenessScore}%</span>
-              </div>
+              {evidenceBundle ? (
+                <div
+                  className="inline-flex h-8 max-w-[320px] items-center gap-1.5 rounded border border-cyan-200 bg-cyan-50 px-2.5 text-[10px] font-semibold text-cyan-700"
+                  title={evidenceBundle.lifecycleState === 'preview'
+                    ? bundleTechniqueCoverage.map((item) => `${item.technique} ${item.status}`).join(', ')
+                    : `${evidenceBundle.bundleId}: ${bundleTechniqueCoverage.map((item) => `${item.technique} ${item.status}`).join(', ')}`
+                  }
+                >
+                  <span className="truncate">{getEvidenceBundleBadgeLabel(evidenceBundle)} · Coverage {evidenceBundle.evidenceCompletenessScore}%</span>
+                  {evidenceBundle.lifecycleState === 'preview' && (
+                    <span className="rounded border border-cyan-200 bg-cyan-100 px-1.5 py-0.5 text-[9px] font-bold text-cyan-700">
+                      Validation-limited
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="inline-flex h-8 max-w-[360px] items-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2.5 text-[10px] font-semibold text-slate-600">
+                  <span className="truncate">No evidence bundle created yet · Select 2+ sources to compare</span>
+                </div>
+              )}
               <select
                 value={project.id}
                 onChange={(event) => {
@@ -1268,7 +1493,7 @@ ${result.decision}
                   <BookOpen size={14} />
                 </button>
               </Link>
-              <Link to={`/notebook?project=${project.id}&source=fusion&template=research`}>
+              <Link to={`/notebook?project=${project.id}&mode=demo&source=fusion&template=research`}>
                 <button
                   type="button"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-surface-hover hover:text-text-main"
@@ -1283,7 +1508,14 @@ ${result.decision}
           <div className="mt-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-muted">
               <span className="font-bold text-emerald-700">
-                {Array.from(activeTechniques).length === 1 ? 'Processed Signal Ready' : 'Processed Evidence Ready'}
+                {evidenceBundle?.lifecycleState === 'preview'
+                  ? 'Comparison Preview Ready'
+                  : evidenceBundle
+                    ? 'Comparison Package Ready'
+                    : Array.from(activeTechniques).length === 1
+                      ? 'Processed Signal Ready'
+                      : 'No comparison package yet'
+                }
               </span>
               <span>
                 {Array.from(activeTechniques).length === 1
@@ -1291,31 +1523,23 @@ ${result.decision}
                   : `Techniques: ${Array.from(activeTechniques).length}`
                 }
               </span>
+              {evidenceBundle?.lifecycleState === 'preview' && (
+                <span>Coverage: {evidenceBundle.evidenceCompletenessScore}%</span>
+              )}
+              {evidenceBundle?.lifecycleState === 'preview' && (
+                <span>Validation-limited comparison</span>
+              )}
               <span>Working assignment: {formatChemicalFormula(project.material)}</span>
               <span className="font-semibold text-text-main">
-                {Array.from(activeTechniques).length === 1 ? 'Next: Review evidence' : 'Next: Agent refinement'}
+                {evidenceBundle
+                  ? 'Next: Run cross-tech review'
+                  : Array.from(activeTechniques).length === 1
+                    ? 'Next: Review evidence'
+                    : 'Next: Select evidence sources'
+                }
               </span>
               {workflowFeedback && <span className="font-semibold text-primary">{workflowFeedback}</span>}
             </div>
-          </div>
-        </div>
-
-        <div className="mb-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-text-muted">
-            <span className="font-semibold text-text-main">Bundle: {evidenceBundle.bundleId}</span>
-            <span>Source: {evidenceBundle.sourceLabel}</span>
-            <span>Files: {evidenceBundle.files.length}</span>
-            <span>Available: {evidenceBundle.availableTechniques.join(', ') || 'None'}</span>
-            <span>Missing: {evidenceBundle.missingRequiredTechniques.join(', ') || 'None'}</span>
-            <span>Permission: {evidenceBundle.permissionMode}</span>
-          </div>
-          <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-4">
-            {bundleTechniqueCoverage.map((item) => (
-              <div key={item.technique} className="rounded border border-border bg-background px-2 py-1">
-                <div className="text-[10px] font-bold text-text-main">{item.technique}</div>
-                <div className="truncate text-[10px] text-text-muted">{item.status} / {item.sourceLabel}</div>
-              </div>
-            ))}
           </div>
         </div>
 
@@ -1764,7 +1988,7 @@ ${result.decision}
                         <li>Experiment conditions: {conditionLockStatus}</li>
                         <li>Limitations retained for report/export review.</li>
                       </ul>
-                      <Link to={`/notebook?project=${project.id}&source=uploaded-beta&upload=${encodeURIComponent(latestUploadedRun.id)}&template=analytical`}>
+                      <Link to={`/notebook?source=user_uploaded&upload=${encodeURIComponent(latestUploadedRun.id)}&template=analytical`}>
                         <Button variant="outline" size="sm" className="mt-3 w-full gap-1.5">
                           <BookOpen size={13} /> Continue to Notebook
                         </Button>
@@ -1876,7 +2100,7 @@ ${result.decision}
                     <div className="border-b border-border bg-surface-hover/40 px-3 py-1.5">
                       <div className="flex items-center justify-between">
                         <h2 className="min-w-0 truncate text-sm font-bold text-text-main">{technique} - {metadata?.role || 'Analysis'}</h2>
-                        <Link to={getWorkspaceRoute(project, technique, dataset?.id)}>
+                      <Link to={withDemoMode(getWorkspaceRoute(project, technique, dataset?.id))}>
                           <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs px-3">
                             Open <ArrowRight size={12} />
                           </Button>
@@ -1922,7 +2146,7 @@ ${result.decision}
                           <div className="border-b border-border bg-surface-hover/40 px-3 py-1.5">
                             <div className="flex items-center justify-between">
                               <h2 className="min-w-0 truncate text-sm font-bold text-text-main">{technique} - {metadata?.role || 'Analysis'}</h2>
-                              <Link to={getWorkspaceRoute(project, technique, dataset?.id)}>
+                              <Link to={withDemoMode(getWorkspaceRoute(project, technique, dataset?.id))}>
                                 <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs px-3">
                                   Open <ArrowRight size={12} />
                                 </Button>
@@ -1989,7 +2213,7 @@ ${result.decision}
                           <div className="border-b border-border bg-surface-hover/40 px-3 py-1.5">
                             <div className="flex items-center justify-between">
                               <h2 className="min-w-0 truncate text-sm font-bold text-text-main">{technique} - {metadata?.role || 'Analysis'}</h2>
-                              <Link to={getWorkspaceRoute(project, technique, dataset?.id)}>
+                              <Link to={withDemoMode(getWorkspaceRoute(project, technique, dataset?.id))}>
                                 <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs px-3">
                                   Open <ArrowRight size={12} />
                                 </Button>
@@ -2035,7 +2259,7 @@ ${result.decision}
                             <div className="border-b border-border bg-surface-hover/40 px-2 py-1">
                               <div className="flex items-center justify-between">
                                 <h2 className="min-w-0 truncate text-xs font-bold text-text-main">{technique} - {metadata?.role || 'Analysis'}</h2>
-                                <Link to={getWorkspaceRoute(project, technique, dataset?.id)}>
+                                <Link to={withDemoMode(getWorkspaceRoute(project, technique, dataset?.id))}>
                                   <Button variant="ghost" size="sm" className="h-6 gap-1 text-[10px] px-2">
                                     Open <ArrowRight size={10} />
                                   </Button>
@@ -2085,7 +2309,7 @@ ${result.decision}
                           <div className="border-b border-border bg-surface-hover/40 px-2 py-1">
                             <div className="flex items-center justify-between">
                               <h2 className="min-w-0 truncate text-xs font-bold text-text-main">{technique} - {metadata?.role || 'Analysis'}</h2>
-                              <Link to={getWorkspaceRoute(project, technique, dataset?.id)}>
+                              <Link to={withDemoMode(getWorkspaceRoute(project, technique, dataset?.id))}>
                                 <Button variant="ghost" size="sm" className="h-6 gap-1 text-[10px] px-2">
                                   Open <ArrowRight size={10} />
                                 </Button>

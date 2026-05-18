@@ -170,10 +170,10 @@ export function isDriveFileSupportedForTechnique(
 }
 
 export function getDriveImportBadgeLabel(status: GoogleDriveImportStatus): string {
-  if (status === 'shell_ready') return 'Drive import shell';
+  if (status === 'shell_ready') return 'Drive import preview';
   if (status === 'selected_mock_file') return 'Mock Drive evidence preview';
   if (status === 'imported_read_only') return 'Read-only connected evidence';
-  if (status === 'error') return 'Drive import shell error';
+  if (status === 'error') return 'Drive import preview error';
   return 'Drive import not configured';
 }
 
@@ -192,7 +192,7 @@ export function createMockDriveEvidencePreview({
   const validationGaps: ValidationGap[] = [
     {
       id: `${projectId}-drive-read-only-boundary`,
-      description: 'Drive import shell uses mock read-only metadata; no real Drive file access or write action has occurred.',
+      description: 'Drive import preview uses mock read-only metadata; no real Drive file access or write action has occurred.',
       severity: 'moderate',
       suggestedResolution: 'Use the preview for local workflow readiness only until a real read adapter and approval ledger are implemented.',
     },
@@ -228,7 +228,7 @@ export function createMockDriveEvidencePreview({
       notSupportedYet: [`Drive preview does not by itself confirm the assignment for ${projectName}.`],
       contextual: [
         'Source: Google Drive connected evidence',
-        'Mode: Drive import shell',
+        'Mode: Drive import preview',
         `File: ${selectedFile.fileName}`,
         'External writes disabled',
       ],

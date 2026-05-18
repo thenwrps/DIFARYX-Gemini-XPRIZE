@@ -74,12 +74,14 @@ export function getRuntimeBadgeLabel(
   }
 
   if (kind === 'runtime') {
+    if (resolved.sourceMode === 'user_uploaded') return 'User workspace';
     return resolved.runtimeMode === 'connected' ? 'Connected mode' : 'Demo mode';
   }
 
   if (kind === 'permission') {
     if (resolved.permissionMode === 'approval_required') return 'Approval required';
     if (resolved.permissionMode === 'write_enabled') return 'Write enabled';
+    if (resolved.sourceMode === 'user_uploaded') return 'Read-only local';
     return 'Read-only demo';
   }
 

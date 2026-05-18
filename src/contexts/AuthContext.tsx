@@ -4,6 +4,8 @@ export interface AuthUser {
   name: string;
   email: string;
   organization?: string;
+  picture?: string;
+  provider?: 'google' | 'email' | 'guest';
 }
 
 interface AuthContextType {

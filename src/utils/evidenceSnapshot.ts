@@ -86,6 +86,7 @@ export interface ProjectEvidenceSnapshotOptions {
   driveFileId?: string | null;
   driveImportPreview?: GoogleDriveImportPreview | null;
   runtimeMode?: RuntimeMode;
+  projectIdExplicit?: boolean;
 }
 
 const TECHNIQUE_ORDER: Technique[] = ['XRD', 'XPS', 'FTIR', 'Raman'];
@@ -158,6 +159,12 @@ function getLatestUserSessionForProject(projectId: string): AnalysisSession | nu
 
 function getUploadedRun(options?: ProjectEvidenceSnapshotOptions): UploadedSignalRun | null {
   const runs = readUploadedSignalRuns();
+  const sessionRunId = options?.analysisSessionId
+    ? getAnalysisSession(options.analysisSessionId)?.uploadedRunId
+    : null;
+  if (sessionRunId) {
+    return runs.find((run) => run.id === sessionRunId) ?? null;
+  }
   if (options?.uploadedRunId) {
     return runs.find((run) => run.id === options.uploadedRunId) ?? null;
   }
@@ -165,6 +172,30 @@ function getUploadedRun(options?: ProjectEvidenceSnapshotOptions): UploadedSigna
     return runs[0] ?? null;
   }
   return null;
+}
+
+function getUploadedSnapshotIdentity(
+  project: DemoProject,
+  options: ProjectEvidenceSnapshotOptions | undefined,
+  sampleIdentity: string,
+) {
+  const attachedToProject = options?.projectIdExplicit === true;
+  return {
+    attachedToProject,
+    projectId: attachedToProject ? project.id : 'user-uploaded-workspace',
+    projectName: attachedToProject ? project.name : 'User Workspace',
+    sampleIdentity,
+    material: attachedToProject ? project.material : sampleIdentity,
+    phase: attachedToProject ? project.phase : 'uploaded evidence',
+  };
+}
+
+function getUploadedExpectedTechniques(
+  expectedTechniques: Technique[],
+  availableTechniques: Technique[],
+  options?: ProjectEvidenceSnapshotOptions,
+) {
+  return options?.projectIdExplicit === true ? expectedTechniques : availableTechniques;
 }
 
 function isUploadedSnapshotRequested(options?: ProjectEvidenceSnapshotOptions) {
@@ -339,16 +370,21 @@ function buildUploadedSessionSnapshot(
 ): ProjectEvidenceSnapshot {
   const technique = analysisTechniqueToTechnique(session.technique);
   const runtimeContext = getRuntimeContextForEvidenceSource('user_uploaded', options?.runtimeMode);
-  const pendingTechniques = expectedTechniques.filter((candidate) => candidate !== technique);
+  const identity = getUploadedSnapshotIdentity(project, options, session.projectName ?? session.title);
+  const scopedExpectedTechniques = getUploadedExpectedTechniques(expectedTechniques, [technique], options);
+  const pendingTechniques = scopedExpectedTechniques.filter((candidate) => candidate !== technique);
   const activeDataset = makeSessionDataset(project, session, technique);
+  activeDataset.projectId = identity.projectId;
+  activeDataset.sampleName = identity.sampleIdentity;
+  activeDataset.metadata.materialSystem = identity.material;
   const sourceLabel = 'User-uploaded evidence';
   const support = `${technique} uploaded session "${session.fileName}" is available with ${session.extractedFeatures.length} extracted feature${session.extractedFeatures.length === 1 ? '' : 's'}; assignment remains validation-limited until project-specific references are reviewed.`;
   const validationGaps = makeUploadValidationGaps(project, pendingTechniques, sourceLabel);
 
   return {
-    projectId: project.id,
-    projectName: project.name,
-    sampleIdentity: session.projectName ?? session.title,
+    projectId: identity.projectId,
+    projectName: identity.projectName,
+    sampleIdentity: identity.sampleIdentity,
     primaryTechnique: technique,
     availableTechniques: [technique],
     pendingTechniques,
@@ -367,7 +403,11 @@ function buildUploadedSessionSnapshot(
     claimBoundary: {
       supported: [support],
       requiresValidation: validationGaps.map((gap) => gap.description),
-      notSupportedYet: [`Uploaded ${technique} evidence does not by itself confirm ${project.phase}.`],
+      notSupportedYet: [
+        identity.attachedToProject
+          ? `Uploaded ${technique} evidence does not by itself confirm ${identity.phase}.`
+          : 'Uploaded evidence is not attached to a project claim boundary.',
+      ],
       contextual: [`Source: ${sourceLabel}`, `File: ${session.fileName}`],
       pending: pendingTechniques.map((candidate) => `${candidate} validation evidence pending`),
     },
@@ -393,8 +433,13 @@ function buildUploadedRunSnapshot(
   const hasKnownTechnique = run.technique !== 'Unknown';
   const runtimeContext = getRuntimeContextForEvidenceSource('user_uploaded', options?.runtimeMode);
   const availableTechniques = hasKnownTechnique ? [technique] : [];
-  const pendingTechniques = expectedTechniques.filter((candidate) => !availableTechniques.includes(candidate));
+  const identity = getUploadedSnapshotIdentity(project, options, run.sampleIdentity);
+  const scopedExpectedTechniques = getUploadedExpectedTechniques(expectedTechniques, availableTechniques, options);
+  const pendingTechniques = scopedExpectedTechniques.filter((candidate) => !availableTechniques.includes(candidate));
   const activeDataset = makeUploadedRunDataset(project, run, technique);
+  activeDataset.projectId = identity.projectId;
+  activeDataset.sampleName = identity.sampleIdentity;
+  activeDataset.metadata.materialSystem = identity.material;
   const sourceLabel = 'User-uploaded evidence';
   const support = hasKnownTechnique
     ? `${technique} uploaded signal "${run.fileName}" produced ${run.extractedFeatures.length} bounded feature${run.extractedFeatures.length === 1 ? '' : 's'} for ${run.sampleIdentity}.`
@@ -414,9 +459,9 @@ function buildUploadedRunSnapshot(
   ];
 
   return {
-    projectId: project.id,
-    projectName: project.name,
-    sampleIdentity: run.sampleIdentity,
+    projectId: identity.projectId,
+    projectName: identity.projectName,
+    sampleIdentity: identity.sampleIdentity,
     primaryTechnique: technique,
     availableTechniques,
     pendingTechniques,
@@ -435,13 +480,59 @@ function buildUploadedRunSnapshot(
     claimBoundary: {
       supported: hasKnownTechnique ? [support] : [],
       requiresValidation: validationGaps.map((gap) => gap.description),
-      notSupportedYet: [`Uploaded evidence does not by itself confirm ${project.phase}.`],
+      notSupportedYet: [
+        identity.attachedToProject
+          ? `Uploaded evidence does not by itself confirm ${identity.phase}.`
+          : 'Uploaded evidence is not attached to a project claim boundary.',
+      ],
       contextual: [`Source: ${sourceLabel}`, `File: ${run.fileName}`, `Reference scope: ${run.lockedContext.referenceScope}`],
       pending: pendingTechniques.map((candidate) => `${candidate} validation evidence pending`),
     },
     supportedAssignment: hasKnownTechnique
       ? `Uploaded ${technique} evidence for ${run.sampleIdentity}`
       : `Uploaded evidence for ${run.sampleIdentity}`,
+    notebookContext: null,
+    reportContext: null,
+    sourceMode: runtimeContext.sourceMode,
+    runtimeMode: runtimeContext.runtimeMode,
+    permissionMode: runtimeContext.permissionMode,
+    sourceLabel: runtimeContext.sourceLabel,
+    approvalStatus: runtimeContext.approvalStatus,
+  };
+}
+
+function buildMissingUploadedSnapshot(options?: ProjectEvidenceSnapshotOptions): ProjectEvidenceSnapshot {
+  const runtimeContext = getRuntimeContextForEvidenceSource('user_uploaded', options?.runtimeMode);
+  const contextId = options?.uploadedRunId ?? options?.analysisSessionId ?? 'local-upload';
+  const validationGaps: ValidationGap[] = [{
+    id: `user-uploaded-missing-${contextId}`,
+    description: 'Uploaded evidence context was requested, but no matching local upload/session was found in browser storage.',
+    severity: 'moderate',
+    suggestedResolution: 'Re-upload the evidence file or open a saved user_uploaded session before continuing the workflow.',
+  }];
+
+  return {
+    projectId: 'user-uploaded-workspace',
+    projectName: 'User Workspace',
+    sampleIdentity: options?.uploadedRunId ?? options?.analysisSessionId ?? 'Uploaded evidence',
+    primaryTechnique: 'XRD',
+    availableTechniques: [],
+    pendingTechniques: [],
+    evidenceEntries: [],
+    activeDataset: null,
+    validationGaps,
+    claimBoundary: {
+      supported: [],
+      requiresValidation: validationGaps.map((gap) => gap.description),
+      notSupportedYet: ['Uploaded evidence is not available in local browser storage.'],
+      contextual: [
+        'Source: User-uploaded evidence',
+        `Upload: ${options?.uploadedRunId ?? 'not found'}`,
+        `Session: ${options?.analysisSessionId ?? 'not found'}`,
+      ],
+      pending: ['Re-upload evidence or restore the saved local session'],
+    },
+    supportedAssignment: 'Uploaded evidence context unavailable',
     notebookContext: null,
     reportContext: null,
     sourceMode: runtimeContext.sourceMode,
@@ -511,6 +602,10 @@ export function getProjectEvidenceSnapshot(
 
   if ((explicitSession || projectUserSession) && isUploadedSnapshotRequested(options)) {
     return buildUploadedSessionSnapshot(project, explicitSession ?? projectUserSession!, expectedTechniques, options);
+  }
+
+  if (isUploadedSnapshotRequested(options)) {
+    return buildMissingUploadedSnapshot(options);
   }
 
   if (isGoogleConnectedSnapshotRequested(options)) {

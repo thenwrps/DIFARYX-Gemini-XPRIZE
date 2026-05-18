@@ -1,14 +1,23 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Bot, Database, Download, Link2, User } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Card } from '../components/ui/Card';
 import { DEFAULT_PROJECT_ID } from '../data/demoProjects';
 import { ConnectedAccountStatus } from '../components/runtime/ConnectedAccountStatus';
+import { useAuth } from '../contexts/AuthContext';
 import {
   getDefaultConnectedAccountState,
   getGoogleConnectedShellState,
 } from '../runtime/connectedAccounts';
+import {
+  getEffectiveWorkspaceMode,
+  getStoredWorkspaceMode,
+  getWorkspaceModeBadgeClass,
+  getWorkspaceModeLabel,
+  setWorkspaceMode,
+  toWorkspaceMode,
+} from '../utils/workspaceMode';
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -38,10 +47,20 @@ function ToggleRow({ label, description, checked = true }: { label: string; desc
 }
 
 export default function SettingsPage() {
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  const effectiveWorkspaceMode = getEffectiveWorkspaceMode({
+    authUser: user,
+    searchParams,
+    storedMode: getStoredWorkspaceMode(),
+  });
+  const workspaceMode = toWorkspaceMode(effectiveWorkspaceMode);
   const localAccountState = getDefaultConnectedAccountState();
   const googleAccountShell = getGoogleConnectedShellState();
-  const mockDriveWorkspacePath = '/workspace/xrd?project=cu-fe2o4-spinel&source=google_drive_connected&driveFileId=drive-cufe2o4-xrd';
-  const mockDriveReportPath = '/reports?project=cu-fe2o4-spinel&source=google_drive_connected&driveFileId=drive-cufe2o4-xrd';
+  const isGoogleUser = user?.provider === 'google';
+  const signedInEmail = isGoogleUser ? user?.email ?? 'Google account connected' : 'Not connected';
+  const mockDriveWorkspacePath = '/workspace/xrd?project=cu-fe2o4-spinel&mode=demo&source=google_drive_connected&driveFileId=drive-cufe2o4-xrd';
+  const mockDriveReportPath = '/reports?project=cu-fe2o4-spinel&mode=demo&source=google_drive_connected&driveFileId=drive-cufe2o4-xrd';
 
   return (
     <DashboardLayout>
@@ -60,12 +79,43 @@ export default function SettingsPage() {
             </p>
           </Card>
 
+          <Card className="p-5 xl:col-span-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2"><User size={16} className="text-primary" /> Workspace Mode</h2>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className={`rounded-full border px-3 py-1 text-xs font-bold ${getWorkspaceModeBadgeClass(workspaceMode)}`}>
+                {getWorkspaceModeLabel(workspaceMode)}
+              </span>
+              <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
+                External writes disabled
+              </span>
+            </div>
+            <p className="mt-3 text-sm text-text-muted">
+              Google account: <span className="font-semibold text-text-main">{signedInEmail}</span>. Drive and Gmail are preview/gated surfaces only; write_enabled is not active.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                to="/dashboard"
+                onClick={() => setWorkspaceMode('user')}
+                className="inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-xs font-bold text-text-main hover:bg-surface-hover"
+              >
+                User Workspace
+              </Link>
+              <Link
+                to="/dashboard?mode=demo"
+                onClick={() => setWorkspaceMode('demo')}
+                className="inline-flex h-8 items-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20"
+              >
+                Demo Mode
+              </Link>
+            </div>
+          </Card>
+
           <Card className="p-5">
             <h2 className="text-sm font-semibold flex items-center gap-2"><User size={16} className="text-primary" /> Profile</h2>
             <div className="mt-5 grid gap-4">
-              <Field label="Name" value="Demo Researcher" />
-              <Field label="Email" value="researcher@example.com" />
-              <Field label="Organization" value="DIFARYX Demo Lab" />
+              <Field label="Name" value={user?.name ?? 'Demo Researcher'} />
+              <Field label="Email" value={user?.email ?? 'researcher@example.com'} />
+              <Field label="Organization" value={user?.organization ?? (isGoogleUser ? 'Google OAuth preview' : 'DIFARYX Demo Lab')} />
             </div>
           </Card>
 
@@ -100,7 +150,7 @@ export default function SettingsPage() {
           <Card className="p-5 xl:col-span-2">
             <h2 className="text-sm font-semibold flex items-center gap-2"><Link2 size={16} className="text-primary" /> Connected Accounts</h2>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-text-muted">
-              Connection shell only. Google Drive and Gmail destinations are represented for approval readiness, but no OAuth scopes, backend calls, or external writes are active.
+              Preview/gated only. Google Drive and Gmail destinations are represented for approval readiness, but no Drive/Gmail writes, backend calls, or external write scopes are active.
             </p>
             <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
               <ConnectedAccountStatus state={localAccountState} capabilities={['storage_future']} />

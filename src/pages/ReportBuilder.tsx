@@ -4,6 +4,7 @@ import { ArrowRight, Clipboard, Download, FileText, Save, ShieldCheck } from 'lu
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { useAuth } from '../contexts/AuthContext';
 import { getProject, getWorkspaceRoute } from '../data/demoProjects';
 import {
   claimStatusColorClass,
@@ -54,6 +55,26 @@ import {
   getValidationGapsFromBundle,
   type EvidenceBundle,
 } from '../runtime/evidenceBundle';
+import {
+  readProjectWorkspaceParameters,
+} from '../utils/workspaceParameterOverrides';
+import { getProjectTechniques } from '../utils/projectEvidence';
+import {
+  getParameterProvenanceSummary,
+  formatParameterValueForDisplay,
+  formatProvenanceSource,
+  formatProvenanceTimestamp,
+} from '../utils/parameterProvenanceSummary';
+import type { TechniqueWorkspaceId } from '../data/techniqueWorkspaceContent';
+import {
+  getStoredWorkspaceMode,
+  setWorkspaceMode,
+} from '../utils/workspaceMode';
+import {
+  buildEvidenceRouteSearch,
+  getEvidenceRouteContext,
+  type EvidenceRouteContext,
+} from '../utils/evidenceRouteContext';
 
 function reportTypeLabel(mode: NotebookTemplateMode) {
   if (mode === 'rd') return 'Technical Evidence Report';
@@ -63,14 +84,14 @@ function reportTypeLabel(mode: NotebookTemplateMode) {
 
 function buildReportSections(
   snapshot: ProjectEvidenceSnapshot,
-  bundle: EvidenceBundle,
+  bundle: EvidenceBundle | null,
   registryProject: ReturnType<typeof getRegistryProject>,
   reportSection: ReturnType<typeof createReportSectionFromNotebookEntry>,
 ): DemoExportSection[] {
   const availableTechniques = snapshot.availableTechniques.join(', ') || 'No technique evidence linked';
   const pendingTechniques = snapshot.pendingTechniques.join(', ') || 'None';
-  const bundleCoverage = getTechniqueCoverageFromBundle(bundle);
-  const bundleValidationLines = getValidationGapsFromBundle(bundle).map((gap) => `${gap.description} Resolution: ${gap.suggestedResolution}`);
+  const bundleCoverage = bundle ? getTechniqueCoverageFromBundle(bundle) : [];
+  const bundleValidationLines = bundle ? getValidationGapsFromBundle(bundle).map((gap) => `${gap.description} Resolution: ${gap.suggestedResolution}`) : [];
   const validationLines = [
     ...snapshot.validationGaps.map((gap) => `${gap.description} Resolution: ${gap.suggestedResolution}`),
     ...snapshot.pendingTechniques.map((technique) => `${technique} validation evidence remains pending.`),
@@ -84,9 +105,27 @@ function buildReportSections(
   ];
   const ledgerSummary = summarizeApprovalLedger({
     projectId: snapshot.projectId,
-    bundleId: bundle.bundleId,
+    bundleId: bundle?.bundleId ?? `single-${snapshot.projectId}`,
     limit: 4,
   });
+
+  // Parameter provenance for reproducibility
+  const availableTechniqueIds = snapshot.availableTechniques.map(t => t.toLowerCase() as TechniqueWorkspaceId);
+  const parameterSummaries = availableTechniqueIds.map(technique =>
+    getParameterProvenanceSummary(snapshot.projectId, technique)
+  );
+  const hasAnyOverrides = parameterSummaries.some(s => s.hasOverrides);
+  const parameterProvenanceLines = hasAnyOverrides
+    ? parameterSummaries.flatMap(summary => {
+        if (!summary.hasOverrides) return [];
+        return [
+          `${summary.techniqueLabel}: ${summary.overrideCount} parameter${summary.overrideCount !== 1 ? 's' : ''} modified (last updated by ${formatProvenanceSource(summary.lastUpdatedBy)})`,
+          ...summary.changedParameters.map(param =>
+            `  ${param.label}: ${formatParameterValueForDisplay(param.defaultValue)}${param.unit ? ` ${param.unit}` : ''} → ${formatParameterValueForDisplay(param.effectiveValue)}${param.unit ? ` ${param.unit}` : ''} (${formatProvenanceSource(param.provenance.updatedBy)})`
+          ),
+        ];
+      })
+    : ['Default processing parameters used for all techniques.'];
 
   return [
     {
@@ -112,9 +151,10 @@ function buildReportSections(
     },
     {
       heading: 'Evidence Bundle',
-      lines: snapshot.evidenceEntries.length
+      lines: bundle
         ? [
-            `Bundle: ${bundle.bundleId}`,
+            ...(bundle.lifecycleState === 'preview' ? ['Evidence package preview (not finalized).'] : []),
+            ...(bundle.lifecycleState === 'preview' ? [] : [`Bundle: ${bundle.bundleId}`]),
             `Bundle source: ${getEvidenceBundleBadgeLabel(bundle)} / ${bundle.permissionMode}`,
             `Files: ${bundle.files.map((file) => `${file.technique}:${file.fileName}`).join('; ')}`,
             `Technique coverage: ${bundleCoverage.map((item) => `${item.technique}:${item.status}`).join(', ')}`,
@@ -122,7 +162,7 @@ function buildReportSections(
             ...snapshot.evidenceEntries.map((item) => `${item.technique}: ${item.support}`),
             ...snapshot.pendingTechniques.map((technique) => `${technique}: pending validation evidence`),
           ]
-        : ['No structured evidence is linked to this project yet.'],
+        : ['No evidence package created yet.'],
     },
     {
       heading: 'Interpretation',
@@ -149,6 +189,10 @@ function buildReportSections(
       lines: [registryProject.crossTechniqueComparison.recommendedNextAction, registryProject.notebook.decision],
     },
     {
+      heading: 'Processing Parameters / Reproducibility',
+      lines: parameterProvenanceLines,
+    },
+    {
       heading: 'Appendix / Provenance',
       lines: [
         `Notebook entry: ${reportSection.notebookEntryId}`,
@@ -156,7 +200,7 @@ function buildReportSections(
         `Runtime source: ${snapshot.sourceLabel ?? 'Demo evidence'}`,
         `Runtime mode: ${snapshot.runtimeMode ?? 'demo'} / ${snapshot.permissionMode ?? 'read_only'}`,
         `Evidence snapshot: ${snapshot.projectId} / ${availableTechniques} / pending ${pendingTechniques}`,
-        `Evidence bundle: ${bundle.bundleId} / ${bundle.sourceMode} / ${bundle.sourceLabel}`,
+        ...(bundle ? [`Evidence bundle: ${bundle.bundleId} / ${bundle.sourceMode} / ${bundle.sourceLabel}`] : []),
         `Local approval preview ledger: ${ledgerSummary.total} browser-local entries for this project/bundle.`,
         ...(ledgerSummary.recentLines.length ? ledgerSummary.recentLines : ['No approval preview history recorded in this browser.']),
         ...registryProject.experimentHistory.map((event) => `${event.timestampLabel}: ${event.title} - ${event.summary}`),
@@ -165,7 +209,218 @@ function buildReportSections(
   ];
 }
 
+function ReportEmptyState({ email }: { email?: string }) {
+  return (
+    <DashboardLayout>
+      <div className="h-full overflow-y-auto bg-slate-50 p-6">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Reports</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-text-main">User Report Drafts</h1>
+            {email && <p className="mt-1 text-sm text-text-muted">Signed in as {email}</p>}
+          </div>
+          <Card className="rounded-lg border-dashed bg-white p-10 text-center">
+            <FileText size={42} className="mx-auto text-text-dim" />
+            <h2 className="mt-4 text-lg font-bold text-text-main">No user report drafts yet</h2>
+            <p className="mt-2 text-sm text-text-muted">Create report from uploaded evidence</p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <Link
+                to="/analysis?source=user_uploaded&next=report"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
+              >
+                Upload evidence
+              </Link>
+              <Link
+                to="/notebook"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50"
+              >
+                Create report draft
+              </Link>
+              <Link
+                to="/reports?project=cu-fe2o4-spinel&mode=demo"
+                onClick={() => setWorkspaceMode('demo')}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20"
+              >
+                Use demo report
+              </Link>
+            </div>
+            <p className="mt-5 text-xs font-semibold text-amber-700">External writes disabled</p>
+          </Card>
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
+
+function ReportDemoProjectPrompt({ projectId }: { projectId: string }) {
+  return (
+    <DashboardLayout>
+      <div className="h-full overflow-y-auto bg-slate-50 p-6">
+        <Card className="mx-auto max-w-4xl rounded-lg bg-white p-6">
+          <h1 className="text-xl font-bold text-text-main">This is a demo project. Open in Demo Mode?</h1>
+          <p className="mt-2 text-sm text-text-muted">
+            User Workspace does not auto-load the preloaded report after Google sign-in.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link
+              to={`/reports?project=${projectId}&mode=demo`}
+              onClick={() => setWorkspaceMode('demo')}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
+            >
+              Open in Demo Mode
+            </Link>
+            <Link
+              to="/reports"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50"
+            >
+              Return to User Reports
+            </Link>
+          </div>
+        </Card>
+      </div>
+    </DashboardLayout>
+  );
+}
+
+function UploadedReportContext({ routeContext }: { routeContext: EvidenceRouteContext }) {
+  const snapshot = getProjectEvidenceSnapshot(null, {
+    source: routeContext.source,
+    analysisSessionId: routeContext.sessionId,
+    uploadedRunId: routeContext.uploadedRunId,
+    driveFileId: routeContext.driveFileId,
+    projectIdExplicit: false,
+  });
+  const dataset = snapshot.activeDataset;
+  const evidenceQuery = buildEvidenceRouteSearch(routeContext);
+  const suffix = evidenceQuery ? `?${evidenceQuery}` : '';
+  const technique = snapshot.primaryTechnique.toLowerCase();
+  const workspacePath = `/workspace/${technique}?mode=quick${evidenceQuery ? `&${evidenceQuery}` : ''}`;
+  const reportSections: DemoExportSection[] = [
+    {
+      heading: 'Uploaded Evidence Context',
+      lines: [
+        `Dataset: ${dataset?.fileName ?? snapshot.sampleIdentity}`,
+        `Source: user_uploaded`,
+        `Technique: ${snapshot.availableTechniques.join(', ') || 'metadata-only'}`,
+      ],
+    },
+    {
+      heading: 'Evidence Summary',
+      lines: [snapshot.evidenceEntries[0]?.support ?? 'Uploaded evidence is available as metadata-only context.'],
+    },
+    {
+      heading: 'Validation Boundary',
+      lines: snapshot.claimBoundary.requiresValidation.length
+        ? snapshot.claimBoundary.requiresValidation
+        : ['Uploaded evidence remains validation-limited until project-specific references are reviewed.'],
+    },
+    {
+      heading: 'Safety',
+      lines: ['Local export only.', 'No Google Drive write.', 'No Gmail action.', 'write_enabled inactive.'],
+    },
+  ];
+  const exportUploadedReport = (format: DemoExportFormat) => {
+    exportDemoArtifact(format, {
+      filenameBase: `difaryx_uploaded_${dataset?.fileName ?? routeContext.uploadedRunId ?? 'evidence'}`,
+      title: `${dataset?.fileName ?? snapshot.sampleIdentity} Evidence Report`,
+      sections: reportSections,
+    });
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="h-full overflow-y-auto bg-slate-50 p-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-blue-700">Report / User Workspace</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-text-main">{dataset?.fileName ?? snapshot.sampleIdentity} Evidence Report</h1>
+              <p className="mt-1 text-sm text-text-muted">Validation-limited report draft from user-uploaded evidence. No demo report is loaded.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportUploadedReport('md')}><Download size={13} /> Export Markdown</Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportUploadedReport('pdf')}><Download size={13} /> Export PDF</Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportUploadedReport('docx')}><Download size={13} /> Export DOCX</Button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <Card className="rounded-lg bg-white p-5">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-md border border-border bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Active dataset</p>
+                  <p className="mt-1 truncate text-sm font-bold text-text-main">{dataset?.fileName ?? 'Uploaded evidence'}</p>
+                </div>
+                <div className="rounded-md border border-border bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Source</p>
+                  <p className="mt-1 text-sm font-bold text-text-main">source=user_uploaded</p>
+                </div>
+                <div className="rounded-md border border-border bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">External writes</p>
+                  <p className="mt-1 text-sm font-bold text-text-main">Disabled</p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {reportSections.map((section) => (
+                  <section key={section.heading} className="rounded-md border border-border bg-white p-3">
+                    <h2 className="text-sm font-bold text-text-main">{section.heading}</h2>
+                    <div className="mt-2 space-y-1 text-sm leading-relaxed text-text-muted">
+                      {section.lines.map((line) => <p key={String(line)}>{line}</p>)}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </Card>
+
+            <Card className="rounded-lg bg-white p-4">
+              <h2 className="text-sm font-bold text-text-main">Next actions</h2>
+              <div className="mt-3 grid gap-2">
+                <Link to={workspacePath} className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90">
+                  Open Workspace
+                </Link>
+                <Link to={`/demo/agent${suffix}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
+                  Send to Agent
+                </Link>
+                <Link to={`/notebook${suffix}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
+                  Send to Notebook
+                </Link>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
+
 export default function ReportBuilder() {
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  const requestedProjectId = searchParams.get('project');
+  const routeContext = getEvidenceRouteContext({
+    authUser: user,
+    searchParams,
+    storedMode: getStoredWorkspaceMode(),
+  });
+  const effectiveWorkspaceMode = routeContext.effectiveWorkspaceMode;
+
+  if (routeContext.isUploadedContext) {
+    return <UploadedReportContext routeContext={routeContext} />;
+  }
+
+  if (effectiveWorkspaceMode === 'user' && requestedProjectId && isKnownProjectId(requestedProjectId)) {
+    return <ReportDemoProjectPrompt projectId={requestedProjectId} />;
+  }
+
+  if (effectiveWorkspaceMode === 'user') {
+    return <ReportEmptyState email={user?.email} />;
+  }
+
+  return <ReportBuilderContent />;
+}
+
+function ReportBuilderContent() {
   const [searchParams] = useSearchParams();
   const requestedProjectId = searchParams.get('project');
   const project = (getProject(requestedProjectId) ?? getProject(null))!;
@@ -179,16 +434,41 @@ export default function ReportBuilder() {
     uploadedRunId: searchParams.get('upload') ?? searchParams.get('uploadedRunId'),
     driveFileId: searchParams.get('driveFileId') ?? searchParams.get('driveImportId'),
   }), [project.id, feedback, searchParams]);
-  const evidenceBundle = useMemo(
-    () => createEvidenceBundleFromSnapshot(evidenceSnapshot, {
+
+  // Bundle gating: only create bundle when appropriate
+  const evidenceBundle = useMemo(() => {
+    const techniqueCount = evidenceSnapshot.availableTechniques.length;
+    const context: import('../runtime/evidenceBundle').BundleCreationContext = {
+      route: '/reports',
+      techniqueCount,
+      hasMultiTechIntent: techniqueCount >= 2 || searchParams.get('bundle') === 'mixed',
+      isDemoProject: evidenceSnapshot.sourceMode === 'demo_preloaded',
+      hasDemoPreloadedBundle: project.id === 'cu-fe2o4-spinel' && techniqueCount >= 2,
+      userAction: 'send_to_report',
+    };
+
+    // Only create bundle if gating logic approves
+    const shouldCreate = techniqueCount >= 2 || context.hasDemoPreloadedBundle;
+    if (!shouldCreate) {
+      return null;
+    }
+
+    return createEvidenceBundleFromSnapshot(evidenceSnapshot, {
       includeDemoContext: searchParams.get('bundle') === 'mixed' || searchParams.get('source') === 'mixed',
-    }),
-    [evidenceSnapshot, searchParams],
+      lifecycleState: 'sent_to_report',
+      creationReason: 'notebook_report_handoff',
+    });
+  }, [evidenceSnapshot, searchParams, project.id]);
+
+  // Read workspace parameters for the current project
+  const workspaceParameters = useMemo(
+    () => readProjectWorkspaceParameters(project.id, getProjectTechniques(project)),
+    [project.id],
   );
 
   const workflowProcessingResult = useMemo(
-    () => evidenceSnapshot.reportContext ?? getLatestProcessingResult(project.id) ?? createProcessingResultFromXrdDemo(project.id),
-    [project.id, evidenceSnapshot.reportContext],
+    () => evidenceSnapshot.reportContext ?? getLatestProcessingResult(project.id) ?? createProcessingResultFromXrdDemo(project.id, workspaceParameters),
+    [project.id, evidenceSnapshot.reportContext, workspaceParameters],
   );
   const workflowRefinement = useMemo(
     () => getLatestAgentDiscussionRefinement(project.id, templateMode) ?? refineDiscussionFromProcessing(workflowProcessingResult, templateMode),
@@ -213,7 +493,7 @@ export default function ReportBuilder() {
   );
   const reportTemplate = NOTEBOOK_TEMPLATES[templateMode];
   const reportStatus =
-    evidenceBundle.missingRequiredTechniques.length > 0 || evidenceBundle.validationGaps.length > 0 || registryProject.reportReadiness < 80
+    (evidenceBundle?.missingRequiredTechniques.length ?? 0) > 0 || (evidenceBundle?.validationGaps.length ?? 0) > 0 || registryProject.reportReadiness < 80
       ? 'Draft - validation-limited'
       : 'Ready for internal review';
   const runtimeContext = {
@@ -235,6 +515,7 @@ export default function ReportBuilder() {
     if (value) uploadedRouteParams.set(key, value);
   });
   const uploadedRouteSuffix = uploadedRouteParams.toString() ? `&${uploadedRouteParams.toString()}` : '';
+  const withDemoMode = (path: string) => path.includes('?') ? `${path}&mode=demo` : `${path}?mode=demo`;
 
   const showFeedback = (message: string) => {
     setFeedback(message);
@@ -332,10 +613,10 @@ export default function ReportBuilder() {
   const openFutureExportPreview = (actionType: 'google_drive_export_future' | 'gmail_draft_future') => {
     openApprovalPreview(
       actionType,
-      actionType === 'google_drive_export_future' ? 'Google Drive export' : 'Gmail draft',
+      actionType === 'google_drive_export_future' ? 'Preview Drive Export' : 'Preview Gmail Draft',
       actionType === 'google_drive_export_future'
-        ? 'Future Google Drive export placeholder'
-        : 'Future Gmail draft placeholder',
+        ? 'Preview Drive Export / Approval required'
+        : 'Preview Gmail Draft / Approval required',
       'high',
     );
   };
@@ -366,7 +647,7 @@ export default function ReportBuilder() {
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportReport('docx')}><Download size={13} /> Export DOCX</Button>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={copyReport}><Clipboard size={13} /> Copy report</Button>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openFutureExportPreview('google_drive_export_future')}><Download size={13} /> Drive export</Button>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openFutureExportPreview('gmail_draft_future')}><FileText size={13} /> Gmail draft</Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openFutureExportPreview('gmail_draft_future')}><FileText size={13} /> Preview Gmail Draft</Button>
               <Button size="sm" className="gap-1.5" onClick={saveReportVersion}><Save size={13} /> Save version</Button>
             </div>
           </div>
@@ -376,7 +657,7 @@ export default function ReportBuilder() {
               capabilities={['drive_import', 'drive_export_future', 'gmail_draft_future']}
               compact
             />
-            <span className="text-[11px] font-semibold text-text-muted">Drive/Gmail destinations are connection-shell previews only.</span>
+            <span className="text-[11px] font-semibold text-text-muted">Drive/Gmail destinations are preview/gated only.</span>
           </div>
           {requestedProjectId && !isKnownProjectId(requestedProjectId) && (
             <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -392,9 +673,11 @@ export default function ReportBuilder() {
                 ['Project', evidenceSnapshot.projectName],
                 ['Sample', evidenceSnapshot.sampleIdentity],
                 ['Evidence bundle', evidenceSnapshot.availableTechniques.join(', ') || 'Pending'],
-                ['Bundle source', getEvidenceBundleBadgeLabel(evidenceBundle)],
-                ['Bundle files', String(evidenceBundle.files.length)],
-                ['Completeness', `${evidenceBundle.evidenceCompletenessScore}%`],
+                ...(evidenceBundle ? [
+                  ['Bundle source', getEvidenceBundleBadgeLabel(evidenceBundle)],
+                  ['Bundle files', String(evidenceBundle.files.length)],
+                  ['Completeness', `${evidenceBundle.evidenceCompletenessScore}%`],
+                ] : []),
                 ['Pending validation', evidenceSnapshot.pendingTechniques.join(', ') || 'None'],
                 ['Report type', reportTypeLabel(templateMode)],
                 ['Prepared from', workflowNotebookEntry.title],
@@ -418,14 +701,16 @@ export default function ReportBuilder() {
                 {reportSections.find((section) => section.heading === 'Validation Boundary')?.lines[0] ?? registryProject.notebook.validationBoundary}
               </p>
             </div>
-            <div className="mt-3">
-              <ApprovalLedgerPanel projectId={project.id} bundleId={evidenceBundle.bundleId} limit={4} compact />
-            </div>
+            {evidenceBundle && (
+              <div className="mt-3">
+                <ApprovalLedgerPanel projectId={project.id} bundleId={evidenceBundle.bundleId} limit={4} compact />
+              </div>
+            )}
             <div className="mt-3 flex flex-col gap-2">
-              <Link to={`/notebook?project=${project.id}&template=${templateMode}&entry=${workflowNotebookEntry.id}${uploadedRouteSuffix}`} className="inline-flex h-8 items-center justify-center rounded-md border border-border bg-background px-3 text-xs font-bold text-text-main hover:border-primary/40 hover:text-primary">
+              <Link to={`/notebook?project=${project.id}&mode=demo&template=${templateMode}&entry=${workflowNotebookEntry.id}${uploadedRouteSuffix}`} className="inline-flex h-8 items-center justify-center rounded-md border border-border bg-background px-3 text-xs font-bold text-text-main hover:border-primary/40 hover:text-primary">
                 Open source notebook <ArrowRight size={13} className="ml-1" />
               </Link>
-              <Link to={getWorkspaceRoute(project)} className="inline-flex h-8 items-center justify-center rounded-md border border-border bg-background px-3 text-xs font-bold text-text-main hover:border-primary/40 hover:text-primary">
+              <Link to={withDemoMode(getWorkspaceRoute(project))} className="inline-flex h-8 items-center justify-center rounded-md border border-border bg-background px-3 text-xs font-bold text-text-main hover:border-primary/40 hover:text-primary">
                 Open Workspace <ArrowRight size={13} className="ml-1" />
               </Link>
             </div>

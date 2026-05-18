@@ -18,12 +18,12 @@ import {
   Workflow,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ExperimentModal } from '../components/workspace/ExperimentModal';
 import { CreateMenu } from '../components/dashboard/CreateMenu';
 import { ProjectNotebookWizard } from '../components/dashboard/ProjectNotebookWizard';
 import { QuickExperimentSetup } from '../components/dashboard/QuickExperimentSetup';
-import { ImportDataFilesModal } from '../components/dashboard/ImportDataFilesModal';
+import { useAuth } from '../contexts/AuthContext';
 import {
   DEFAULT_PROJECT_ID,
   DemoExperiment,
@@ -59,6 +59,15 @@ import {
 import { DemoProjectGraph } from '../components/graphs/DemoProjectGraph';
 import { getProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
 import { getRuntimeBadgeClass, getRuntimeBadgeLabel } from '../runtime/difaryxRuntimeMode';
+import {
+  getStoredWorkspaceMode,
+  setWorkspaceMode,
+  getWorkspaceModeLabel,
+  getWorkspaceModeBadgeClass,
+  getEffectiveWorkspaceMode,
+  toWorkspaceMode,
+  type WorkspaceMode,
+} from '../utils/workspaceMode';
 
 /* ─── workflow chain (top of dashboard) ─── */
 const WORKFLOW_STEPS = [
@@ -167,7 +176,7 @@ function ProjectCard({ project }: { project: RegistryProject }) {
   return (
     <Card
       className="cursor-pointer hover:border-primary/50 transition-colors group flex flex-col h-full"
-      onClick={() => navigate(`/workspace/analysis?project=${project.id}`)}
+      onClick={() => navigate(`/workspace/analysis?project=${project.id}&mode=demo`)}
     >
       {/* header */}
       <div className="p-4 border-b border-border bg-surface-hover/30 flex justify-between items-start">
@@ -255,14 +264,14 @@ function ProjectCard({ project }: { project: RegistryProject }) {
       <div className="mt-auto p-3 pt-0 border-t border-border">
         <div className="grid grid-cols-5 gap-1.5 pt-3">
           <Link
-            to={`/workspace/analysis?project=${project.id}`}
+            to={`/workspace/analysis?project=${project.id}&mode=demo`}
             onClick={(e) => e.stopPropagation()}
             className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
           >
             Analyze
           </Link>
           <Link
-            to={`/workspace/multi?project=${project.id}`}
+            to={`/workspace/multi?project=${project.id}&mode=demo`}
             onClick={(e) => e.stopPropagation()}
             className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
             title="Review cross-technique comparison"
@@ -270,14 +279,14 @@ function ProjectCard({ project }: { project: RegistryProject }) {
             Review
           </Link>
           <Link
-            to={`/notebook?project=${project.id}`}
+            to={`/notebook?project=${project.id}&mode=demo`}
             onClick={(e) => e.stopPropagation()}
             className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
           >
             Notebook
           </Link>
           <Link
-            to={`/history?project=${project.id}`}
+            to={`/history?project=${project.id}&mode=demo`}
             onClick={(e) => e.stopPropagation()}
             className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
           >
@@ -309,7 +318,10 @@ function ProjectCard({ project }: { project: RegistryProject }) {
 /* ─── main dashboard ─── */
 
 export default function Dashboard() {
+  const location = useLocation();
   const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
+  const isOAuthUser = isAuthenticated && user?.provider === 'google';
   const [feedback, setFeedback] = useState('');
   const [localExperiments, setLocalExperiments] = useState<DemoExperiment[]>([]);
   const [localNotebooks, setLocalNotebooks] = useState<ProjectNotebook[]>([]);
@@ -318,16 +330,67 @@ export default function Dashboard() {
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [projectNotebookWizardOpen, setProjectNotebookWizardOpen] = useState(false);
   const [quickExperimentSetupOpen, setQuickExperimentSetupOpen] = useState(false);
-  const [importDataFilesModalOpen, setImportDataFilesModalOpen] = useState(false);
   const [experimentContext, setExperimentContext] = useState<{
     type: 'research' | 'rd' | 'analytical';
     attachment: 'standalone' | 'attach';
   } | null>(null);
+  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>('demo');
 
   useEffect(() => {
     setLocalExperiments(getLocalExperiments());
     setLocalNotebooks(getLocalProjectNotebooks());
+
+    const handleModeChange = (e: CustomEvent) => {
+      setWorkspaceModeState(e.detail.mode);
+    };
+
+    window.addEventListener('workspace-mode-changed', handleModeChange as EventListener);
+
+    return () => {
+      window.removeEventListener('workspace-mode-changed', handleModeChange as EventListener);
+    };
   }, []);
+
+  useEffect(() => {
+    const storedMode = getStoredWorkspaceMode();
+    const effectiveMode = getEffectiveWorkspaceMode({
+      authUser: user,
+      searchParams: new URLSearchParams(location.search),
+      storedMode,
+    });
+    const resolvedMode = toWorkspaceMode(effectiveMode);
+
+    setWorkspaceModeState((current) => (current === resolvedMode ? current : resolvedMode));
+
+    if (isOAuthUser && storedMode === null && resolvedMode === 'user') {
+      setWorkspaceMode('user');
+    }
+  }, [isOAuthUser, location.search, user]);
+
+  const handleSwitchMode = (mode: WorkspaceMode) => {
+    if (mode === 'user' && !isOAuthUser) {
+      navigate('/signin', { state: { from: location } });
+      return;
+    }
+
+    setWorkspaceMode(mode);
+    setWorkspaceModeState(mode);
+    setFeedback(mode === 'demo' ? 'Switched to Demo Mode' : 'Switched to User Workspace');
+    setTimeout(() => setFeedback(''), 2000);
+
+    if (mode === 'demo') {
+      navigate('/dashboard?mode=demo', { replace: true });
+    } else {
+      navigate('/dashboard', { replace: true });
+    }
+  };
+
+  const handleGoogleSignIn = () => {
+    navigate('/signin', { state: { from: location } });
+  };
+
+  const showUserWorkspace = workspaceMode === 'user' && isOAuthUser;
+  const showDemoProjects = !showUserWorkspace;
 
   /* aggregate stats */
   const totalGaps = demoProjectRegistry.reduce((sum, p) => sum + p.validationGapCount, 0);
@@ -341,10 +404,25 @@ export default function Dashboard() {
         {/* header */}
         <div className="flex justify-between items-center mb-4">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Workflow Intelligence Dashboard</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight">Workflow Intelligence Dashboard</h1>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getWorkspaceModeBadgeClass(workspaceMode)}`}>
+                {getWorkspaceModeLabel(workspaceMode)}
+              </span>
+              {showUserWorkspace && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold border bg-amber-50 border-amber-300 text-amber-700">
+                  External writes disabled
+                </span>
+              )}
+            </div>
             <p className="text-text-muted mt-0.5 text-xs">
-              Research projects, evidence coverage, validation gaps, and scientific decisions.
+              {showDemoProjects ? 'Research projects, evidence coverage, validation gaps, and scientific decisions.' : 'User workspace ready for evidence upload and project creation.'}
             </p>
+            {isOAuthUser && user?.email && (
+              <p className="text-text-muted mt-1 text-xs">
+                Signed in as <span className="font-semibold text-text-main">{user.email}</span>
+              </p>
+            )}
           </div>
           <div className="flex gap-3">
             {feedback && (
@@ -352,67 +430,117 @@ export default function Dashboard() {
                 {feedback}
               </span>
             )}
+            {!isOAuthUser && showDemoProjects && (
+              <Button variant="outline" className="gap-2" onClick={handleGoogleSignIn}>
+                Sign in with Google
+              </Button>
+            )}
             <Button variant="primary" className="gap-2" onClick={() => setCreateMenuOpen(true)}>
               <Plus size={16} /> New
             </Button>
           </div>
         </div>
 
-        {/* workflow chain */}
-        <div className="mb-4 rounded-md border border-border bg-surface px-3 py-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-              Workflow
-            </span>
-            {WORKFLOW_STEPS.map((step, index) => (
-              <React.Fragment key={step}>
-                <span className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-semibold text-text-main">
-                  {step}
+        {showDemoProjects && (
+          <>
+            <div className="mb-4 rounded-md border border-border bg-surface px-3 py-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                  Workflow
                 </span>
-                {index < WORKFLOW_STEPS.length - 1 && (
-                  <ArrowRight size={10} className="text-primary/50" />
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-
-        {/* aggregate stats bar */}
-        <div className="mb-4 grid grid-cols-4 gap-3">
-          <div className="rounded-md border border-border bg-surface px-3 py-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Projects</div>
-            <div className="text-lg font-bold text-text-main">{demoProjectRegistry.length}</div>
-            <div className="text-[10px] text-text-dim">Active research</div>
-          </div>
-          <div className="rounded-md border border-border bg-surface px-3 py-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Validation Gaps</div>
-            <div className={`text-lg font-bold ${criticalGaps > 0 ? 'text-red-600' : 'text-amber-600'}`}>{totalGaps}</div>
-            <div className="text-[10px] text-text-dim">{criticalGaps} critical</div>
-          </div>
-          <div className="rounded-md border border-border bg-surface px-3 py-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Decisions Pending</div>
-            <div className="text-lg font-bold text-cyan">
-              {demoProjectRegistry.reduce((sum, p) => sum + p.decisionPendingCount, 0)}
+                {WORKFLOW_STEPS.map((step, index) => (
+                  <React.Fragment key={step}>
+                    <span className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-semibold text-text-main">
+                      {step}
+                    </span>
+                    {index < WORKFLOW_STEPS.length - 1 && (
+                      <ArrowRight size={10} className="text-primary/50" />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
             </div>
-            <div className="text-[10px] text-text-dim">Next experiments</div>
-          </div>
-          <div className="rounded-md border border-border bg-surface px-3 py-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Report Readiness</div>
-            <div className={`text-lg font-bold ${readinessLabelColor(avgReadiness)}`}>{avgReadiness}%</div>
-            <div className="text-[10px] text-text-dim">Average across projects</div>
-          </div>
-        </div>
 
-        {/* section: Active Research Projects */}
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <FlaskConical size={14} className="text-primary" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">Active Research Projects</h2>
+            <div className="mb-4 grid grid-cols-4 gap-3">
+              <div className="rounded-md border border-border bg-surface px-3 py-2">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Projects</div>
+                <div className="text-lg font-bold text-text-main">{demoProjectRegistry.length}</div>
+                <div className="text-[10px] text-text-dim">Active research</div>
+              </div>
+              <div className="rounded-md border border-border bg-surface px-3 py-2">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Validation Gaps</div>
+                <div className={`text-lg font-bold ${criticalGaps > 0 ? 'text-red-600' : 'text-amber-600'}`}>{totalGaps}</div>
+                <div className="text-[10px] text-text-dim">{criticalGaps} critical</div>
+              </div>
+              <div className="rounded-md border border-border bg-surface px-3 py-2">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Decisions Pending</div>
+                <div className="text-lg font-bold text-cyan">
+                  {demoProjectRegistry.reduce((sum, p) => sum + p.decisionPendingCount, 0)}
+                </div>
+                <div className="text-[10px] text-text-dim">Next experiments</div>
+              </div>
+              <div className="rounded-md border border-border bg-surface px-3 py-2">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Report Readiness</div>
+                <div className={`text-lg font-bold ${readinessLabelColor(avgReadiness)}`}>{avgReadiness}%</div>
+                <div className="text-[10px] text-text-dim">Average across projects</div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* User Workspace Empty State */}
+        {showUserWorkspace && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <FlaskConical size={14} className="text-primary" />
+                <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">User Projects</h2>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => handleSwitchMode('demo')}>
+                Use Demo Project
+              </Button>
+            </div>
+            <div className="rounded-lg border-2 border-dashed border-border bg-surface/50 p-12 text-center">
+              <div className="mx-auto max-w-md">
+                <FlaskConical size={48} className="mx-auto text-text-dim mb-4" />
+                <h3 className="text-lg font-bold text-text-main mb-2">No user projects yet</h3>
+                <p className="text-sm text-text-muted mb-6">
+                  Upload evidence files to start your first project, or switch to Demo Mode to explore example workflows.
+                </p>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <Button variant="primary" className="gap-2" onClick={() => navigate('/analysis?source=user_uploaded')}>
+                    <Plus size={16} /> Upload Evidence
+                  </Button>
+                  <Button variant="outline" className="gap-2" onClick={() => setCreateMenuOpen(true)}>
+                    <Plus size={16} /> Create Project
+                  </Button>
+                  <Button variant="outline" className="gap-2" onClick={() => handleSwitchMode('demo')}>
+                    Use Demo Project
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {demoProjectRegistry.map((project) => (
-              <ProjectCard key={project.id} project={project} />
-            ))}
+        )}
+
+        {/* section: Active Research Projects (Demo Mode) */}
+        {showDemoProjects && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <FlaskConical size={14} className="text-primary" />
+                <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">Active Research Projects</h2>
+              </div>
+              {isOAuthUser && (
+                <Button variant="outline" size="sm" onClick={() => handleSwitchMode('user')}>
+                  Switch to User Workspace
+                </Button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {demoProjectRegistry.map((project) => (
+                <ProjectCard key={project.id} project={project} />
+              ))}
             {/* local experiments */}
             {localExperiments.map((experiment) => {
               const project = getProject(experiment.projectId);
@@ -425,7 +553,7 @@ export default function Dashboard() {
                 <Card
                   key={experiment.id}
                   className="cursor-pointer hover:border-primary/50 transition-colors group flex flex-col h-full"
-                  onClick={() => navigate(`/workspace/${workspaceTechnique.toLowerCase()}?project=${project.id}`)}
+                  onClick={() => navigate(`/workspace/${workspaceTechnique.toLowerCase()}?project=${project.id}&mode=demo`)}
                 >
                   <div className="p-4 border-b border-border bg-primary/5 flex justify-between items-start">
                     <div>
@@ -460,14 +588,14 @@ export default function Dashboard() {
                   <div className="mt-auto p-4 pt-3 border-t border-border">
                     <div className="grid grid-cols-3 gap-1.5">
                       <Link
-                        to={`/workspace/${workspaceTechnique.toLowerCase()}?project=${project.id}`}
+                        to={`/workspace/${workspaceTechnique.toLowerCase()}?project=${project.id}&mode=demo`}
                         onClick={(e) => e.stopPropagation()}
                         className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
                       >
                         Analyze
                       </Link>
                       <Link
-                        to={getNotebookPath(project)}
+                        to={`${getNotebookPath(project)}&mode=demo`}
                         onClick={(e) => e.stopPropagation()}
                         className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
                       >
@@ -497,7 +625,7 @@ export default function Dashboard() {
                 <Card
                   key={notebook.id}
                   className="cursor-pointer hover:border-primary/50 transition-colors group flex flex-col h-full"
-                  onClick={() => navigate(`/notebook?project=${notebook.id}`)}
+                  onClick={() => navigate(`/notebook?project=${notebook.id}&mode=demo`)}
                 >
                   <div className="p-4 border-b border-border bg-surface-hover/30">
                     <div className="flex items-start justify-between">
@@ -527,7 +655,7 @@ export default function Dashboard() {
                   <div className="mt-auto p-4 pt-3 border-t border-border">
                     <div className="grid grid-cols-3 gap-1.5">
                       <Link
-                        to={`/notebook?project=${notebook.id}`}
+                        to={`/notebook?project=${notebook.id}&mode=demo`}
                         onClick={(e) => e.stopPropagation()}
                         className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
                       >
@@ -560,6 +688,7 @@ export default function Dashboard() {
             })}
           </div>
         </div>
+        )}
       </div>
     </DashboardLayout>
 
@@ -572,7 +701,7 @@ export default function Dashboard() {
         } else if (option === 'project') {
           setProjectNotebookWizardOpen(true);
         } else if (option === 'import') {
-          setImportDataFilesModalOpen(true);
+          navigate('/analysis?source=user_uploaded');
         }
       }}
     />
@@ -596,21 +725,6 @@ export default function Dashboard() {
         setExperimentContext(data);
         setExperimentProjectId(DEFAULT_PROJECT_ID);
         setExperimentModalOpen(true);
-      }}
-    />
-
-    <ImportDataFilesModal
-      open={importDataFilesModalOpen}
-      onClose={() => setImportDataFilesModalOpen(false)}
-      onAction={(action) => {
-        if (action === 'quick') {
-          setFeedback('Quick Analysis: File import coming soon');
-        } else if (action === 'attach') {
-          setFeedback('Attach to Project: File import coming soon');
-        } else if (action === 'convert') {
-          setFeedback('Convert to Project Notebook: File import coming soon');
-        }
-        window.setTimeout(() => setFeedback(''), 2500);
       }}
     />
 

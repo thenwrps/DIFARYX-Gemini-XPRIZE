@@ -40,25 +40,37 @@ import {
   type TechniqueWorkspaceId,
   type TechniqueWorkspaceConfig,
 } from '../../data/techniqueWorkspaceContent';
+import { ParameterControlField } from './ParameterControlField';
 import {
   getAnalysisSession,
   getStatusLabel,
   type AnalysisSession,
   type PipelineStepStatus,
 } from '../../data/analysisSessions';
-import type { Technique } from '../../data/demoProjects';
+import type { DemoDataset, Technique } from '../../data/demoProjects';
 import {
-  clearTechniqueParameterOverrides,
-  getParameterOverrideStorageKey,
-  readTechniqueParameterOverrides,
-  writeTechniqueParameterOverrides,
-} from '../../utils/workspaceParameterOverrides';
+  readParameterState,
+  setParameterOverride,
+  resetParameters as resetParameterState,
+  getParameterStateStorageKey,
+} from '../../utils/parameterStateManager';
 import { getProjectEvidenceSnapshot } from '../../utils/evidenceSnapshot';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  getEffectiveWorkspaceMode,
+  getStoredWorkspaceMode,
+  setWorkspaceMode,
+} from '../../utils/workspaceMode';
+import {
+  buildEvidenceRouteSearch,
+  getEvidenceRouteContext,
+} from '../../utils/evidenceRouteContext';
 import {
   getRuntimeBadgeClass,
   getRuntimeBadgeLabel,
   getRuntimeContextForEvidenceSource,
 } from '../../runtime/difaryxRuntimeMode';
+import { readUploadedSignalRuns } from '../../data/uploadedSignalRuns';
 
 const RIGHT_TABS = ['Evidence', 'Parameters', 'Graph', 'Boundary', 'Trace'] as const;
 type RightTab = (typeof RIGHT_TABS)[number];
@@ -482,6 +494,24 @@ function loadPaneLayout(storageKey: string) {
 function buildQuickGraphData(session: AnalysisSession | null) {
   if (!session) return null;
 
+  const uploadedRun = session.uploadedRunId
+    ? readUploadedSignalRuns().find((run) => run.id === session.uploadedRunId) ?? null
+    : null;
+
+  if (uploadedRun && uploadedRun.points.length > 0) {
+    return {
+      data: uploadedRun.points,
+      peaks: uploadedRun.extractedFeatures.map((feature) => ({
+        position: feature.position,
+        intensity: feature.intensity,
+        label: feature.label,
+        role: 'selected' as const,
+      })),
+      xLabel: uploadedRun.xAxisLabel,
+      yLabel: uploadedRun.yAxisLabel,
+    };
+  }
+
   const markers = session.graphData.markers;
   const markerPositions = markers.map((marker) => marker.position);
   const min = Math.min(...markerPositions, session.technique === 'xps' ? 0 : session.technique === 'ftir' ? 400 : 10);
@@ -508,6 +538,21 @@ function buildQuickGraphData(session: AnalysisSession | null) {
     })),
     xLabel: session.graphData.axisLabel,
     yLabel: session.graphData.yLabel,
+  };
+}
+
+function buildSnapshotGraphData(dataset: DemoDataset | null) {
+  if (!dataset?.dataPoints.length) return null;
+  return {
+    data: dataset.dataPoints,
+    peaks: dataset.detectedFeatures.map((feature) => ({
+      position: feature.position,
+      intensity: feature.intensity,
+      label: feature.label,
+      role: 'selected' as const,
+    })),
+    xLabel: dataset.xLabel,
+    yLabel: dataset.yLabel,
   };
 }
 
@@ -538,26 +583,40 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   const isQuickMode = mode === 'quick';
   const config = useMemo(() => getTechniqueWorkspaceConfig(technique), [technique]);
   const [searchParams] = useSearchParams();
-  const querySessionId = searchParams.get('sessionId') ?? sessionId;
+  const { user } = useAuth();
+  const routeContext = getEvidenceRouteContext({
+    authUser: user,
+    searchParams,
+    storedMode: getStoredWorkspaceMode(),
+  });
+  const effectiveWorkspaceMode = routeContext.effectiveWorkspaceMode;
+  const isUploadedContext = routeContext.isUploadedContext;
+  const querySessionId = routeContext.sessionId ?? sessionId;
+  const nextIntent = searchParams.get('next');
   const quickAnalysisSession = useMemo(
-    () => (isQuickMode && querySessionId ? getAnalysisSession(querySessionId) : null),
-    [isQuickMode, querySessionId],
+    () => ((isQuickMode || isUploadedContext) && querySessionId ? getAnalysisSession(querySessionId) : null),
+    [isQuickMode, isUploadedContext, querySessionId],
   );
   const requestedProjectId = searchParams.get('project');
-  const project = useMemo(() => getProjectFromQuery(requestedProjectId), [requestedProjectId]);
+  const blocksDemoProject = !isQuickMode && !isUploadedContext && effectiveWorkspaceMode === 'user' && Boolean(requestedProjectId) && isKnownProjectId(requestedProjectId);
+  const project = useMemo(
+    () => (blocksDemoProject || isUploadedContext ? null : getProjectFromQuery(requestedProjectId)),
+    [blocksDemoProject, isUploadedContext, requestedProjectId],
+  );
   const projectId = project?.id ?? null;
   const evidenceSnapshot = useMemo(
-    () => (projectId ? getProjectEvidenceSnapshot(projectId, {
-      source: searchParams.get('source'),
+    () => (projectId || isUploadedContext ? getProjectEvidenceSnapshot(isUploadedContext ? null : projectId, {
+      source: routeContext.source,
       analysisSessionId: querySessionId,
-      uploadedRunId: searchParams.get('upload') ?? searchParams.get('uploadedRunId'),
-      driveFileId: searchParams.get('driveFileId') ?? searchParams.get('driveImportId'),
+      uploadedRunId: routeContext.uploadedRunId,
+      driveFileId: routeContext.driveFileId,
+      projectIdExplicit: Boolean(projectId) && !isUploadedContext,
     }) : null),
-    [projectId, querySessionId, searchParams],
+    [projectId, isUploadedContext, routeContext.source, routeContext.uploadedRunId, routeContext.driveFileId, querySessionId],
   );
   const focusedEvidence = useMemo(
-    () => (project ? getFocusedEvidenceSource(project, technique) : null),
-    [project, technique],
+    () => (project && !isUploadedContext ? getFocusedEvidenceSource(project, technique) : null),
+    [project, isUploadedContext, technique],
   );
   const techniqueState = getTechniqueProjectState(project, technique);
   const comparisonRow = getComparisonRow(project, technique);
@@ -566,14 +625,28 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     evidenceSnapshot?.activeDataset?.technique.toLowerCase() === technique
       ? evidenceSnapshot.activeDataset
       : null;
-  const datasetLabel = isQuickMode
+  const datasetLabel = isUploadedContext
+    ? snapshotDataset?.fileName || evidenceSnapshot?.activeDataset?.fileName || quickAnalysisSession?.fileName || fileName || 'Uploaded dataset'
+    : isQuickMode
     ? quickAnalysisSession?.fileName || fileName || 'Uploaded dataset'
     : snapshotDataset?.fileName || getDatasetLabel(project, technique);
-  const datasetStatus = isQuickMode
+  const datasetStatus = isUploadedContext
+    ? quickAnalysisSession ? getStatusLabel(quickAnalysisSession.status) : evidenceSnapshot?.activeDataset ? 'Available' : 'Metadata only'
+    : isQuickMode
     ? quickAnalysisSession ? getStatusLabel(quickAnalysisSession.status) : 'Processing'
     : focusedEvidence?.status || (project ? 'Required' : 'Standalone');
-  const runtimeContext = isQuickMode
+  const runtimeContext = isUploadedContext
+    ? {
+        sourceMode: evidenceSnapshot?.sourceMode ?? 'user_uploaded',
+        runtimeMode: evidenceSnapshot?.runtimeMode ?? 'demo',
+        permissionMode: evidenceSnapshot?.permissionMode ?? 'read_only',
+        sourceLabel: evidenceSnapshot?.sourceLabel ?? 'User-uploaded evidence',
+        approvalStatus: evidenceSnapshot?.approvalStatus ?? 'not_required',
+      } as const
+    : isQuickMode
     ? getRuntimeContextForEvidenceSource('user_uploaded')
+    : effectiveWorkspaceMode === 'user' && !project
+      ? getRuntimeContextForEvidenceSource('user_uploaded')
     : {
         sourceMode: evidenceSnapshot?.sourceMode ?? 'demo_preloaded',
         runtimeMode: evidenceSnapshot?.runtimeMode ?? 'demo',
@@ -582,21 +655,28 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         approvalStatus: evidenceSnapshot?.approvalStatus ?? 'not_required',
       } as const;
   const quickGraphData = useMemo(() => buildQuickGraphData(quickAnalysisSession), [quickAnalysisSession]);
-  const graphData = quickGraphData ?? focusedEvidence?.graphData;
+  const uploadedGraphData = useMemo(() => buildSnapshotGraphData(snapshotDataset), [snapshotDataset]);
+  const graphData = quickGraphData ?? uploadedGraphData ?? focusedEvidence?.graphData;
   const hasProjectEvidence = Boolean(
+    isUploadedContext ||
     evidenceSnapshot?.availableTechniques.includes(technique.toUpperCase() as Technique) ||
     techniqueState?.available,
   );
-  const [quickSessionKey] = useState(() => isQuickMode ? (querySessionId ?? `quick-${Date.now()}`) : '');
+  const [quickSessionKey] = useState(() => (isQuickMode || isUploadedContext) ? (querySessionId ?? routeContext.uploadedRunId ?? `quick-${Date.now()}`) : '');
+  const uploadedContextKey = routeContext.uploadedRunId ?? querySessionId ?? 'uploaded';
   const sessionStorageKey = useMemo(() => isQuickMode
     ? `difaryx-technique-session:${technique}:quick:${quickSessionKey}`
+    : isUploadedContext
+      ? `difaryx-technique-session:${technique}:uploaded:${uploadedContextKey}`
     : `difaryx-technique-session:${technique}:${projectId ?? 'standalone'}:${getTraceId(project, technique)}`,
-    [isQuickMode, technique, quickSessionKey, projectId, project],
+    [isQuickMode, isUploadedContext, uploadedContextKey, technique, quickSessionKey, projectId, project],
   );
   const paneLayoutStorageKey = useMemo(() => isQuickMode
     ? `difaryx-technique-pane-layout:${technique}:quick:${quickSessionKey}`
+    : isUploadedContext
+      ? `difaryx-technique-pane-layout:${technique}:uploaded:${uploadedContextKey}`
     : `difaryx-technique-pane-layout:${technique}:${projectId ?? 'standalone'}:${getTraceId(project, technique)}`,
-    [isQuickMode, technique, quickSessionKey, projectId, project],
+    [isQuickMode, isUploadedContext, uploadedContextKey, technique, quickSessionKey, projectId, project],
   );
   const [activeCenterTab, setActiveCenterTab] = useState(config.centerTabs[0].id);
   const [activeRightTab, setActiveRightTab] = useState<RightTab>('Evidence');
@@ -607,7 +687,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   );
   const [paneLayout, setPaneLayout] = useState(() => buildDefaultPaneLayout(paneLayoutStorageKey));
   const sharedOverrideCount = projectId
-    ? Object.keys(readTechniqueParameterOverrides(projectId, technique)).length
+    ? Object.keys(readParameterState(projectId, technique).overrides).length
     : 0;
 
   useEffect(() => {
@@ -619,36 +699,36 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
 
   useEffect(() => {
     const loaded = loadSessionState(sessionStorageKey, config, hasProjectEvidence, Boolean(project), quickAnalysisSession);
-    const sharedOverrides = projectId ? readTechniqueParameterOverrides(projectId, technique) : {};
-    const sharedParameters = mapSharedOverridesToSessionParameters(config, sharedOverrides);
-    setSessionState({
-      ...loaded,
-      parameters: {
-        ...loaded.parameters,
-        ...sharedParameters,
-      },
-    });
+    if (projectId) {
+      const paramState = readParameterState(projectId, technique);
+      setSessionState({
+        ...loaded,
+        parameters: {
+          ...loaded.parameters,
+          ...paramState.effectiveValues,
+        },
+      });
+    } else {
+      setSessionState(loaded);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStorageKey, quickAnalysisSession?.analysisId, projectId, technique]);
 
   useEffect(() => {
     if (!projectId || typeof window === 'undefined') return;
-    const overrideStorageKey = getParameterOverrideStorageKey(projectId, technique);
-    if (!overrideStorageKey) return;
+    const paramStateKey = getParameterStateStorageKey(projectId, technique);
 
     const handleStorage = (event: StorageEvent) => {
-      if (event.key !== overrideStorageKey) return;
-      const sharedOverrides = readTechniqueParameterOverrides(projectId, technique);
-      const sharedParameters = mapSharedOverridesToSessionParameters(config, sharedOverrides);
+      if (event.key !== paramStateKey) return;
+      const paramState = readParameterState(projectId, technique);
       setSessionState((prev) => {
         if (prev.storageKey !== sessionStorageKey) return prev;
-        const nextParameters = { ...prev.parameters };
-        config.parameters.forEach((control) => {
-          nextParameters[control.id] = sharedParameters[control.id] ?? control.defaultValue;
-        });
         return {
           ...prev,
-          parameters: nextParameters,
+          parameters: {
+            ...prev.parameters,
+            ...paramState.effectiveValues,
+          },
         };
       });
     };
@@ -674,10 +754,36 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   }, [paneLayout, paneLayoutStorageKey]);
 
   const projectFeatureRows = getFeatureRows(project, focusedEvidence, technique);
-  const featureRows = isQuickMode ? getQuickFeatureRows(quickAnalysisSession, projectFeatureRows) : projectFeatureRows;
-  const notebookPath = project ? `/notebook?project=${project.id}` : '/notebook';
-  const agentPath = project ? `/demo/agent?project=${project.id}` : '/demo/agent';
-  const workspacePath = project ? `/workspace?project=${project.id}` : '/workspace';
+  const snapshotFeatureRows = snapshotDataset
+    ? snapshotDataset.detectedFeatures.map((feature) => ({
+        label: feature.label,
+        value: `${feature.position}`,
+        detail: `Intensity ${feature.intensity}`,
+      }))
+    : projectFeatureRows;
+  const featureRows = isUploadedContext
+    ? getQuickFeatureRows(quickAnalysisSession, snapshotFeatureRows)
+    : isQuickMode ? getQuickFeatureRows(quickAnalysisSession, projectFeatureRows) : projectFeatureRows;
+  const demoLinkSuffix = project && effectiveWorkspaceMode !== 'user' ? '&mode=demo' : '';
+  const evidenceRouteSearch = isUploadedContext
+    ? buildEvidenceRouteSearch(routeContext)
+    : '';
+  const evidenceRouteSuffix = evidenceRouteSearch ? `?${evidenceRouteSearch}` : '';
+  const notebookPath = isUploadedContext && evidenceRouteSuffix
+    ? `/notebook${evidenceRouteSuffix}`
+    : project ? `/notebook?project=${project.id}${demoLinkSuffix}` : '/notebook';
+  const agentPath = isUploadedContext && evidenceRouteSuffix
+    ? `/demo/agent${evidenceRouteSuffix}`
+    : project ? `/demo/agent?project=${project.id}${demoLinkSuffix}` : '/demo/agent';
+  const reportPath = isUploadedContext && evidenceRouteSuffix
+    ? `/reports${evidenceRouteSuffix}`
+    : project ? `/reports?project=${project.id}${demoLinkSuffix}` : '/reports';
+  const analysisReturnPath = isUploadedContext
+    ? '/analysis?source=user_uploaded'
+    : '/analysis';
+  const workspacePath = isUploadedContext && evidenceRouteSuffix
+    ? `/workspace${evidenceRouteSuffix}`
+    : project ? `/workspace?project=${project.id}${demoLinkSuffix}` : '/workspace';
   const quickStatusLabel = isQuickMode ? (sessionState.dirty ? 'Draft · Unsaved' : 'Draft') : '';
   const processingStateLabel = sessionState.pendingRecalculation
     ? 'Pending recalculation'
@@ -699,14 +805,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   const updateParameter = (control: TechniqueParameterControl, value: TechniqueParameterValue) => {
     setSessionState((prev) => {
       if (projectId) {
-        const overrides = readTechniqueParameterOverrides(projectId, technique);
-        const nextOverrides = { ...overrides };
-        if (value === control.defaultValue) {
-          delete nextOverrides[control.label];
-        } else {
-          nextOverrides[control.label] = value;
-        }
-        writeTechniqueParameterOverrides(projectId, technique, nextOverrides);
+        setParameterOverride(projectId, technique, control.id, value, 'workspace');
       }
 
       const next = addLog(
@@ -790,7 +889,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
 
   const resetParameters = () => {
     if (projectId) {
-      clearTechniqueParameterOverrides(projectId, technique);
+      resetParameterState(projectId, technique);
     }
 
     setSessionState((prev) =>
@@ -955,14 +1054,18 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4">
          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
           <Link
-            to={isQuickMode ? '/analysis' : workspacePath}
+            to={isQuickMode ? analysisReturnPath : workspacePath}
             className="shrink-0 text-sm font-bold tracking-tight text-text-main hover:text-primary"
             title={config.title}
           >
             {config.title}
           </Link>
           <span className="shrink-0 text-xs text-text-muted">&middot;</span>
-          {isQuickMode ? (
+          {isUploadedContext ? (
+            <span className="min-w-0 truncate text-xs font-semibold text-blue-700">
+              User Workspace
+            </span>
+          ) : isQuickMode ? (
             <span className="min-w-0 truncate text-xs font-semibold text-amber-700">
               Quick Analysis
             </span>
@@ -990,7 +1093,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
           <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${getRuntimeBadgeClass(runtimeContext)}`}>
             {getRuntimeBadgeLabel(runtimeContext, 'source')}
           </span>
-          {isQuickMode && (
+          {(isQuickMode || isUploadedContext) && (
             <>
               <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-700">
                 Session ID: {quickAnalysisSession?.analysisId ?? querySessionId ?? quickSessionKey}
@@ -1030,6 +1133,49 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
           </button>
         </div>
       </header>
+
+      {blocksDemoProject && (
+        <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span className="font-bold">Demo project requires Demo Mode.</span>
+              <span className="ml-1">User Workspace will not auto-load the preloaded project after Google sign-in.</span>
+            </div>
+            <Link
+              to={`/workspace/${technique}?project=${requestedProjectId}&mode=demo`}
+              onClick={() => setWorkspaceMode('demo')}
+              className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-bold text-amber-800 hover:bg-amber-100"
+            >
+              Open in Demo Mode
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {isUploadedContext && (
+        <div className="shrink-0 border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-950">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="font-bold">User-uploaded evidence loaded.</span>
+              <span className="ml-1">
+                {datasetLabel} / source=user_uploaded / {quickAnalysisSession?.processingState ?? datasetStatus}
+              </span>
+              {nextIntent && <span className="ml-1 font-semibold">Next: {nextIntent}</span>}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <Link to={agentPath} className="inline-flex h-7 items-center rounded-md border border-emerald-300 bg-white px-2 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100">
+                Send to Agent
+              </Link>
+              <Link to={notebookPath} className="inline-flex h-7 items-center rounded-md border border-emerald-300 bg-white px-2 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100">
+                Send to Notebook
+              </Link>
+              <Link to={reportPath} className="inline-flex h-7 items-center rounded-md border border-emerald-300 bg-white px-2 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100">
+                Create Report
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-border bg-surface">
@@ -1152,7 +1298,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
               Run Agent <Sparkles size={13} />
             </Link>
             <Link
-              to={`/analysis`}
+              to={analysisReturnPath}
               className="flex h-8 w-full items-center justify-between rounded border border-border px-2.5 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
             >
               Export <Download size={13} />
@@ -1594,121 +1740,6 @@ function ParametersPanel({
         </div>
       </Panel>
     </div>
-  );
-}
-
-function ParameterControlField({
-  control,
-  value,
-  onChange,
-  onToggleCheckbox,
-}: {
-  control: TechniqueParameterControl;
-  value: TechniqueParameterValue;
-  onChange: (control: TechniqueParameterControl, value: TechniqueParameterValue) => void;
-  onToggleCheckbox: (control: TechniqueParameterControl, option: string) => void;
-}) {
-  const baseInputClass = 'mt-1 h-8 w-full rounded border border-border bg-white px-2 text-xs font-semibold text-text-main focus:border-primary focus:outline-none';
-
-  return (
-    <label className="block rounded border border-border bg-background px-2 py-1.5">
-      <span className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide text-text-muted">
-        {control.label}
-        {control.unit && <span className="normal-case tracking-normal">{control.unit}</span>}
-      </span>
-
-      {control.type === 'select' && (
-        <select
-          value={String(value)}
-          onChange={(event) => onChange(control, event.target.value)}
-          className={baseInputClass}
-        >
-          {(control.options ?? []).map((option) => (
-            <option key={option} value={option}>{option}</option>
-          ))}
-        </select>
-      )}
-
-      {control.type === 'number' && (
-        <input
-          type="number"
-          value={Number(value)}
-          min={control.min}
-          max={control.max}
-          step={control.step}
-          onChange={(event) => onChange(control, Number(event.target.value))}
-          className={baseInputClass}
-        />
-      )}
-
-      {control.type === 'range' && (
-        <div className="mt-1 flex items-center gap-2">
-          <input
-            type="range"
-            value={Number(value)}
-            min={control.min}
-            max={control.max}
-            step={control.step}
-            onChange={(event) => onChange(control, Number(event.target.value))}
-            className="min-w-0 flex-1 accent-blue-600"
-          />
-          <input
-            type="number"
-            value={Number(value)}
-            min={control.min}
-            max={control.max}
-            step={control.step}
-            onChange={(event) => onChange(control, Number(event.target.value))}
-            className="h-8 w-20 rounded border border-border bg-white px-2 text-xs font-semibold text-text-main focus:border-primary focus:outline-none"
-          />
-        </div>
-      )}
-
-      {control.type === 'text' && (
-        <input
-          type="text"
-          value={String(value)}
-          onChange={(event) => onChange(control, event.target.value)}
-          className={baseInputClass}
-        />
-      )}
-
-      {control.type === 'toggle' && (
-        <button
-          type="button"
-          role="switch"
-          aria-checked={Boolean(value)}
-          onClick={() => onChange(control, !Boolean(value))}
-          className={`mt-1 inline-flex h-7 w-full items-center justify-between rounded border px-2 text-xs font-bold ${
-            value ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'
-          }`}
-        >
-          <span>{value ? 'Enabled' : 'Disabled'}</span>
-          <span className={`h-4 w-8 rounded-full p-0.5 ${value ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-            <span className={`block h-3 w-3 rounded-full bg-white transition-transform ${value ? 'translate-x-4' : 'translate-x-0'}`} />
-          </span>
-        </button>
-      )}
-
-      {control.type === 'checkbox-group' && (
-        <div className="mt-1 space-y-1">
-          {(control.options ?? []).map((option) => {
-            const values = Array.isArray(value) ? value : [];
-            return (
-              <label key={option} className="flex items-center gap-2 text-[11px] font-semibold text-text-main">
-                <input
-                  type="checkbox"
-                  checked={values.includes(option)}
-                  onChange={() => onToggleCheckbox(control, option)}
-                  className="h-3.5 w-3.5 accent-blue-600"
-                />
-                {option}
-              </label>
-            );
-          })}
-        </div>
-      )}
-    </label>
   );
 }
 

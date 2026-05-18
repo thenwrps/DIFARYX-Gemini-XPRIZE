@@ -55,7 +55,7 @@ const GOOGLE_CAPABILITIES: ConnectedCapabilityState[] = [
     capability: 'drive_import',
     label: CAPABILITY_LABELS.drive_import,
     status: 'connected_read_only',
-    description: 'Read-only import shell ready; mock preview only, no Drive picker or API call is active.',
+    description: 'Read-only import preview ready; mock preview only, no Drive picker or API call is active.',
   },
   {
     capability: 'drive_export_future',
@@ -93,7 +93,7 @@ export function getDefaultConnectedAccountState(): ConnectedAccountState {
 export function getGoogleConnectedShellState(): ConnectedAccountState {
   return {
     provider: 'google',
-    providerLabel: 'Google connected shell',
+    providerLabel: 'Google preview connection',
     status: 'approval_required',
     sourceMode: 'google_drive_connected',
     runtimeMode: 'connected',

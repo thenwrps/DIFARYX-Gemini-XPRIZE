@@ -68,6 +68,8 @@ export default function AuthCallback() {
           name: user.name || user.email.split("@")[0],
           email: user.email,
           organization: "DIFARYX Lab",
+          picture: user.picture,
+          provider: "google",
         });
 
         console.log("[AuthCallback] User signed in successfully");

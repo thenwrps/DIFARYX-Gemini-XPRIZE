@@ -26,6 +26,7 @@ export default function SignIn() {
       name: "Researcher",
       email: "user@difaryx.local",
       organization: "DIFARYX Lab",
+      provider: "guest" as const,
     }
   ) => {
     signIn(profile);
@@ -78,6 +79,7 @@ export default function SignIn() {
       name: email.split("@")[0] || "Researcher",
       email: email.trim(),
       organization: "DIFARYX Lab",
+      provider: "email",
     });
   };
 
@@ -93,6 +95,7 @@ export default function SignIn() {
       name: name.trim(),
       email: email.trim(),
       organization: organization.trim() || "DIFARYX Lab",
+      provider: "email",
     });
   };
 

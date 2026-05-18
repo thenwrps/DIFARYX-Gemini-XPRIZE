@@ -60,7 +60,7 @@ export default function AgentDemoSection() {
             </p>
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
               <Link
-                to="/demo/agent"
+                to="/demo/agent?project=cu-fe2o4-spinel&mode=demo"
                 className="inline-flex h-12 items-center justify-center rounded-xl bg-blue-600 px-8 text-[15px] font-bold text-white shadow-lg shadow-blue-600/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-600/25"
               >
                 <Play size={16} className="mr-2" />

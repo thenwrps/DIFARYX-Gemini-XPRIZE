@@ -1,9 +1,10 @@
 import React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Bot, ClipboardList, FolderOpen, History, Target } from 'lucide-react';
+import { ArrowRight, BookOpen, Bot, ClipboardList, FileText, FolderOpen, History, Target } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Card } from '../components/ui/Card';
 import { ApprovalLedgerPanel } from '../components/runtime/ApprovalLedgerPanel';
+import { useAuth } from '../contexts/AuthContext';
 import { formatChemicalFormula } from '../utils';
 import {
   claimStatusColorClass,
@@ -15,6 +16,13 @@ import {
   type ExperimentEventType,
   type TechniqueId,
 } from '../data/demoProjectRegistry';
+import {
+  getEffectiveWorkspaceMode,
+  getStoredWorkspaceMode,
+  setWorkspaceMode,
+} from '../utils/workspaceMode';
+import { getApprovalLedgerEntries, type ApprovalLedgerEntry } from '../runtime/approvalLedger';
+import { getAnalysisSessions, getStatusLabel, type AnalysisSession } from '../data/analysisSessions';
 
 const EVENT_TYPES: ExperimentEventType[] = [
   'dataset_loaded',
@@ -28,6 +36,7 @@ const EVENT_TYPES: ExperimentEventType[] = [
 ];
 
 const TECHNIQUES: TechniqueId[] = ['xrd', 'xps', 'ftir', 'raman', 'multi'];
+const USER_HISTORY_SOURCE_MODES: ApprovalLedgerEntry['sourceMode'][] = ['user_uploaded', 'google_drive_connected', 'mixed'];
 
 function techniqueLabel(id: TechniqueId) {
   if (id === 'xrd') return 'XRD';
@@ -41,19 +50,51 @@ function eventLabel(type: string) {
   return type.replace(/_/g, ' ');
 }
 
+function uploadedSessionQuery(session: AnalysisSession) {
+  const params = new URLSearchParams();
+  params.set('source', 'user_uploaded');
+  params.set('sessionId', session.analysisId);
+  if (session.uploadedRunId) params.set('upload', session.uploadedRunId);
+  return params.toString();
+}
+
+function uploadedTechniqueWorkspacePath(session: AnalysisSession) {
+  const query = uploadedSessionQuery(session);
+  return `/workspace/${session.technique}?mode=quick&${query}`;
+}
+
 export default function HistoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuth();
+  const effectiveWorkspaceMode = getEffectiveWorkspaceMode({
+    authUser: user,
+    searchParams,
+    storedMode: getStoredWorkspaceMode(),
+  });
+  const showUserHistory = effectiveWorkspaceMode === 'user';
   const projectFilter = normalizeRegistryProjectId(searchParams.get('project')) || '';
   const techniqueFilter = (searchParams.get('technique') || '') as TechniqueId | '';
   const eventTypeFilter = (searchParams.get('eventType') || '') as ExperimentEventType | '';
 
   const events = React.useMemo<DemoExperimentHistoryEvent[]>(() => {
+    if (showUserHistory) return [];
     let next = getAllExperimentHistoryEvents();
     if (projectFilter) next = next.filter((event) => event.projectId === projectFilter);
     if (techniqueFilter) next = next.filter((event) => event.techniqueId === techniqueFilter);
     if (eventTypeFilter) next = next.filter((event) => event.eventType === eventTypeFilter);
     return next;
-  }, [projectFilter, techniqueFilter, eventTypeFilter]);
+  }, [projectFilter, techniqueFilter, eventTypeFilter, showUserHistory]);
+
+  const userLedgerEntryCount = React.useMemo(
+    () => getApprovalLedgerEntries().filter((entry) => USER_HISTORY_SOURCE_MODES.includes(entry.sourceMode)).length,
+    [],
+  );
+  const userUploadedSessions = React.useMemo(
+    () => getAnalysisSessions()
+      .filter((session) => session.source === 'user_uploaded')
+      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
+    [],
+  );
 
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -63,8 +104,16 @@ export default function HistoryPage() {
   };
 
   const selectedProject = projectFilter
+    && !showUserHistory
     ? demoProjectRegistry.find((project) => project.id === projectFilter)
     : null;
+
+  const switchToDemoHistory = () => {
+    setWorkspaceMode('demo');
+    const next = new URLSearchParams(searchParams);
+    next.set('mode', 'demo');
+    setSearchParams(next, { replace: false });
+  };
 
   return (
     <DashboardLayout>
@@ -74,19 +123,34 @@ export default function HistoryPage() {
             <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">DIFARYX records</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight">Experiment History</h1>
             <p className="mt-1 text-sm text-text-muted">
-              Registry-backed event history for datasets, parameters, evidence processing, validation gaps, notebook memory, and report drafts.
+              {showUserHistory
+                ? 'User Workspace history shows uploaded and connected evidence activity only.'
+                : 'Registry-backed event history for datasets, parameters, evidence processing, validation gaps, notebook memory, and report drafts.'}
             </p>
+            {user?.provider === 'google' && user.email && (
+              <p className="mt-1 text-xs text-text-muted">Signed in as <span className="font-semibold text-text-main">{user.email}</span></p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              {events.length} visible events
+              {showUserHistory ? userUploadedSessions.length + userLedgerEntryCount : events.length} visible events
             </span>
             <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-semibold text-text-muted">
-              {demoProjectRegistry.length} projects
+              {showUserHistory ? 'User Workspace' : `${demoProjectRegistry.length} projects`}
             </span>
+            {showUserHistory && (
+              <button
+                type="button"
+                onClick={switchToDemoHistory}
+                className="rounded-full border border-primary bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primary/90"
+              >
+                Show demo history
+              </button>
+            )}
           </div>
         </div>
 
+        {!showUserHistory && (
         <Card className="mb-5 p-4">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">Filters</span>
@@ -134,6 +198,7 @@ export default function HistoryPage() {
             )}
           </div>
         </Card>
+        )}
 
         {selectedProject && (
           <Card className="mb-5 p-4">
@@ -153,10 +218,93 @@ export default function HistoryPage() {
           </Card>
         )}
 
+        {showUserHistory && userLedgerEntryCount === 0 && userUploadedSessions.length === 0 && (
+          <Card className="mb-5 rounded-lg border-dashed bg-white p-8 text-center">
+            <History size={38} className="mx-auto text-text-dim" />
+            <h2 className="mt-4 text-lg font-bold text-text-main">No user history yet</h2>
+            <p className="mt-2 text-sm text-text-muted">
+              Upload evidence or connect a read-only evidence preview to create user_uploaded or google_connected activity.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Link
+                to="/analysis?source=user_uploaded"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
+              >
+                Upload evidence
+              </Link>
+              <button
+                type="button"
+                onClick={switchToDemoHistory}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20"
+              >
+                Switch to Demo Mode
+              </button>
+            </div>
+          </Card>
+        )}
+
+        {showUserHistory && userUploadedSessions.length > 0 && (
+          <Card className="mb-5 overflow-hidden rounded-lg bg-white">
+            <div className="grid grid-cols-[1fr_120px_120px_1.2fr] gap-3 border-b border-border bg-slate-50 px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+              <span>Uploaded evidence</span>
+              <span>Technique</span>
+              <span>Status</span>
+              <span>Actions</span>
+            </div>
+            {userUploadedSessions.map((session) => {
+              const query = uploadedSessionQuery(session);
+              return (
+                <div key={session.analysisId} className="grid grid-cols-[1fr_120px_120px_1.2fr] items-center gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0">
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-text-main">{session.fileName}</p>
+                    <p className="mt-1 truncate text-xs text-text-muted">{session.analysisId} / source=user_uploaded</p>
+                  </div>
+                  <span className="w-fit rounded bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">
+                    {session.technique.toUpperCase()}
+                  </span>
+                  <span className="text-xs font-semibold text-text-muted">{getStatusLabel(session.status)}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Link
+                      to={uploadedTechniqueWorkspacePath(session)}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[10px] font-semibold text-text-main hover:bg-surface-hover"
+                    >
+                      <FolderOpen size={12} /> Workspace
+                    </Link>
+                    <Link
+                      to={`/demo/agent?${query}`}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20"
+                    >
+                      <Bot size={12} /> Agent
+                    </Link>
+                    <Link
+                      to={`/notebook?${query}`}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[10px] font-semibold text-text-main hover:bg-surface-hover"
+                    >
+                      <BookOpen size={12} /> Notebook
+                    </Link>
+                    <Link
+                      to={`/reports?${query}`}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[10px] font-semibold text-text-main hover:bg-surface-hover"
+                    >
+                      <FileText size={12} /> Report
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </Card>
+        )}
+
         <div className="mb-5">
-          <ApprovalLedgerPanel projectId={projectFilter || undefined} limit={6} />
+          <ApprovalLedgerPanel
+            projectId={!showUserHistory ? projectFilter || undefined : undefined}
+            sourceModes={showUserHistory ? USER_HISTORY_SOURCE_MODES : undefined}
+            description={showUserHistory ? 'User Workspace preview trail for uploaded or read-only connected evidence. Demo-preloaded entries are hidden by default.' : undefined}
+            limit={6}
+          />
         </div>
 
+        {!showUserHistory && (
         <Card className="overflow-hidden">
           <div className="grid grid-cols-[1.3fr_1fr_0.7fr_0.8fr_0.8fr_1fr_0.9fr] gap-3 border-b border-border bg-surface-hover/40 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
             <div>Event</div>
@@ -194,13 +342,13 @@ export default function HistoryPage() {
               <div className="text-xs leading-relaxed text-text-muted">{event.boundaryImpact}</div>
               <div className="flex flex-wrap gap-1">
                 <Link
-                  to={`/workspace/analysis?project=${event.projectId}`}
+                  to={`/workspace/analysis?project=${event.projectId}&mode=demo`}
                   className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[10px] font-semibold text-text-main hover:bg-surface-hover"
                 >
                   <FolderOpen size={12} /> Workspace
                 </Link>
                 <Link
-                  to={`/demo/agent?project=${event.projectId}&mode=deterministic`}
+                  to={`/demo/agent?project=${event.projectId}&mode=demo`}
                   className="inline-flex h-7 items-center gap-1 rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20"
                 >
                   <Bot size={12} /> Agent
@@ -214,10 +362,12 @@ export default function HistoryPage() {
             </div>
           )}
         </Card>
+        )}
 
+        {!showUserHistory && (
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           {demoProjectRegistry.map((project) => (
-            <Link key={project.id} to={`/history?project=${project.id}`}>
+            <Link key={project.id} to={`/history?project=${project.id}&mode=demo`}>
               <Card className="p-3 transition-colors hover:border-primary/40">
                 <div className="flex items-center gap-2">
                   <Target size={14} className="text-primary" />
@@ -231,6 +381,7 @@ export default function HistoryPage() {
             </Link>
           ))}
         </div>
+        )}
       </div>
     </DashboardLayout>
   );

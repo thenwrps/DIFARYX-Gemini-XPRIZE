@@ -6,6 +6,8 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { AIInsightPanel } from '../components/ui/AIInsightPanel';
 import { ExperimentModal } from '../components/workspace/ExperimentModal';
+import { useAuth } from '../contexts/AuthContext';
+import { formatChemicalFormula } from '../utils';
 import {
   ProcessingRun,
   demoProjects,
@@ -94,6 +96,27 @@ import {
   getEvidenceBundleBadgeLabel,
   getTechniqueCoverageFromBundle,
 } from '../runtime/evidenceBundle';
+import {
+  readProjectWorkspaceParameters,
+} from '../utils/workspaceParameterOverrides';
+import {
+  getParameterProvenanceSummary,
+  formatParameterValueForDisplay,
+  formatProvenanceSource,
+  formatProvenanceTimestamp,
+  generateParameterProvenanceMarkdown,
+} from '../utils/parameterProvenanceSummary';
+import type { TechniqueWorkspaceId } from '../data/techniqueWorkspaceContent';
+import { getProjectTechniques } from '../utils/projectEvidence';
+import {
+  getStoredWorkspaceMode,
+  setWorkspaceMode,
+} from '../utils/workspaceMode';
+import {
+  buildEvidenceRouteSearch,
+  getEvidenceRouteContext,
+  type EvidenceRouteContext,
+} from '../utils/evidenceRouteContext';
 
 const NOTEBOOK_TEMPLATE_MODES: NotebookTemplateMode[] = ['research', 'rd', 'analytical'];
 const NOTEBOOK_TABS = ['Objective / Context', 'Evidence', 'Interpretation', 'Validation Gap', 'Decision'] as const;
@@ -489,15 +512,15 @@ function buildNotebookSummaryRows(
 }
 
 function getSnapshotStatusLabel(snapshot: ProjectEvidenceSnapshot, fallbackStatus: string) {
-  if (snapshot.evidenceEntries.length === 0) return 'Requires dataset';
-  if (snapshot.pendingTechniques.length > 0 || snapshot.validationGaps.length > 0) {
+  if ((snapshot.evidenceEntries ?? []).length === 0) return 'Requires dataset';
+  if ((snapshot.pendingTechniques ?? []).length > 0 || (snapshot.validationGaps ?? []).length > 0) {
     return 'Validation-limited';
   }
   return fallbackStatus;
 }
 
 function getSnapshotEvidenceLine(snapshot: ProjectEvidenceSnapshot) {
-  return snapshot.evidenceEntries[0]?.support ?? `Evidence review pending for ${snapshot.projectName}.`;
+  return snapshot.evidenceEntries?.[0]?.support ?? `Evidence review pending for ${snapshot.projectName}.`;
 }
 
 function getSnapshotClaimBoundaryLines(snapshot: ProjectEvidenceSnapshot) {
@@ -510,7 +533,204 @@ function getSnapshotClaimBoundaryLines(snapshot: ProjectEvidenceSnapshot) {
   ];
 }
 
+function NotebookEmptyState({ email }: { email?: string }) {
+  return (
+    <DashboardLayout>
+      <div className="h-full overflow-y-auto bg-slate-50 p-6">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Notebook Lab</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-text-main">User Notebook</h1>
+            {email && <p className="mt-1 text-sm text-text-muted">Signed in as {email}</p>}
+          </div>
+          <Card className="rounded-lg border-dashed bg-white p-10 text-center">
+            <FileText size={42} className="mx-auto text-text-dim" />
+            <h2 className="mt-4 text-lg font-bold text-text-main">No user notebook entries yet</h2>
+            <p className="mt-2 text-sm text-text-muted">Upload evidence or create a notebook entry</p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <Link
+                to="/analysis?source=user_uploaded&next=notebook"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
+              >
+                Upload evidence
+              </Link>
+              <Link
+                to="/dashboard"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50"
+              >
+                Create notebook entry
+              </Link>
+              <Link
+                to="/notebook?project=cu-fe2o4-spinel&mode=demo"
+                onClick={() => setWorkspaceMode('demo')}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20"
+              >
+                Use demo notebook
+              </Link>
+            </div>
+            <p className="mt-5 text-xs font-semibold text-amber-700">External writes disabled</p>
+          </Card>
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
+
+function NotebookDemoProjectPrompt({ projectId }: { projectId: string }) {
+  return (
+    <DashboardLayout>
+      <div className="h-full overflow-y-auto bg-slate-50 p-6">
+        <Card className="mx-auto max-w-4xl rounded-lg bg-white p-6">
+          <h1 className="text-xl font-bold text-text-main">This is a demo project. Open in Demo Mode?</h1>
+          <p className="mt-2 text-sm text-text-muted">
+            User Workspace does not auto-load demo notebook context after Google sign-in.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link
+              to={`/notebook?project=${projectId}&mode=demo`}
+              onClick={() => setWorkspaceMode('demo')}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
+            >
+              Open in Demo Mode
+            </Link>
+            <Link
+              to="/notebook"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50"
+            >
+              Return to User Notebook
+            </Link>
+          </div>
+        </Card>
+      </div>
+    </DashboardLayout>
+  );
+}
+
+function UploadedNotebookContext({ routeContext }: { routeContext: EvidenceRouteContext }) {
+  const snapshot = getProjectEvidenceSnapshot(null, {
+    source: routeContext.source,
+    analysisSessionId: routeContext.sessionId,
+    uploadedRunId: routeContext.uploadedRunId,
+    driveFileId: routeContext.driveFileId,
+    projectIdExplicit: false,
+  });
+  const dataset = snapshot.activeDataset;
+  const evidenceQuery = buildEvidenceRouteSearch(routeContext);
+  const suffix = evidenceQuery ? `?${evidenceQuery}` : '';
+  const technique = snapshot.primaryTechnique.toLowerCase();
+  const workspacePath = `/workspace/${technique}?mode=quick${evidenceQuery ? `&${evidenceQuery}` : ''}`;
+
+  return (
+    <DashboardLayout>
+      <div className="h-full overflow-y-auto bg-slate-50 p-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-blue-700">Notebook / User Workspace</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-text-main">{dataset?.fileName ?? snapshot.sampleIdentity}</h1>
+              <p className="mt-1 text-sm text-text-muted">Uploaded evidence summary and provenance. Demo project list is hidden for this context.</p>
+            </div>
+            <span className={`rounded-full border px-3 py-1 text-xs font-bold ${getRuntimeBadgeClass({
+              sourceMode: snapshot.sourceMode ?? 'user_uploaded',
+              runtimeMode: snapshot.runtimeMode ?? 'demo',
+              permissionMode: snapshot.permissionMode ?? 'read_only',
+              sourceLabel: snapshot.sourceLabel ?? 'User-uploaded evidence',
+              approvalStatus: snapshot.approvalStatus ?? 'not_required',
+            })}`}>
+              {snapshot.sourceLabel ?? 'User-uploaded evidence'}
+            </span>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <Card className="rounded-lg bg-white p-5">
+              <h2 className="text-lg font-bold text-text-main">Uploaded evidence summary</h2>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-md border border-border bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Active dataset</p>
+                  <p className="mt-1 truncate text-sm font-bold text-text-main">{dataset?.fileName ?? 'Uploaded evidence'}</p>
+                </div>
+                <div className="rounded-md border border-border bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Technique</p>
+                  <p className="mt-1 text-sm font-bold text-text-main">{snapshot.availableTechniques.join(', ') || 'Metadata only'}</p>
+                </div>
+                <div className="rounded-md border border-border bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Source</p>
+                  <p className="mt-1 text-sm font-bold text-text-main">source=user_uploaded</p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <section className="rounded-md border border-border bg-white p-3">
+                  <h3 className="text-sm font-bold text-text-main">Evidence basis</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-text-muted">
+                    {snapshot.evidenceEntries[0]?.support ?? 'Uploaded evidence is available as metadata-only context until more signal features are detected.'}
+                  </p>
+                </section>
+                <section className="rounded-md border border-border bg-white p-3">
+                  <h3 className="text-sm font-bold text-text-main">Provenance</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-text-muted">
+                    File: {dataset?.fileName ?? routeContext.uploadedRunId ?? 'local upload'} / Session: {routeContext.sessionId ?? 'local'} / External writes disabled.
+                  </p>
+                </section>
+                <section className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                  <h3 className="text-sm font-bold text-amber-900">Validation boundary</h3>
+                  <ul className="mt-2 space-y-1 text-sm text-amber-950">
+                    {snapshot.claimBoundary.requiresValidation.slice(0, 4).map((item) => (
+                      <li key={item}>- {item}</li>
+                    ))}
+                  </ul>
+                </section>
+              </div>
+            </Card>
+
+            <Card className="rounded-lg bg-white p-4">
+              <h2 className="text-sm font-bold text-text-main">Next actions</h2>
+              <div className="mt-3 grid gap-2">
+                <Link to={workspacePath} className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90">
+                  Open Workspace
+                </Link>
+                <Link to={`/demo/agent${suffix}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
+                  Send to Agent
+                </Link>
+                <Link to={`/reports${suffix}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
+                  Create Report
+                </Link>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
+
 export default function NotebookLab() {
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  const requestedProjectId = searchParams.get('project');
+  const routeContext = getEvidenceRouteContext({
+    authUser: user,
+    searchParams,
+    storedMode: getStoredWorkspaceMode(),
+  });
+  const effectiveWorkspaceMode = routeContext.effectiveWorkspaceMode;
+
+  if (routeContext.isUploadedContext) {
+    return <UploadedNotebookContext routeContext={routeContext} />;
+  }
+
+  if (effectiveWorkspaceMode === 'user' && requestedProjectId && isKnownProjectId(requestedProjectId)) {
+    return <NotebookDemoProjectPrompt projectId={requestedProjectId} />;
+  }
+
+  if (effectiveWorkspaceMode === 'user') {
+    return <NotebookEmptyState email={user?.email} />;
+  }
+
+  return <NotebookLabContent />;
+}
+
+function NotebookLabContent() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const project = (getProject(searchParams.get('project')) ?? getProject(null))!;
@@ -530,14 +750,34 @@ export default function NotebookLab() {
     uploadedRunId: searchParams.get('upload') ?? searchParams.get('uploadedRunId'),
     driveFileId: searchParams.get('driveFileId') ?? searchParams.get('driveImportId'),
   }), [project.id, feedback, searchParams]);
-  const evidenceBundle = useMemo(
-    () => createEvidenceBundleFromSnapshot(evidenceSnapshot, {
+
+  // Bundle gating: only create bundle when appropriate
+  const evidenceBundle = useMemo(() => {
+    const techniqueCount = evidenceSnapshot.availableTechniques.length;
+    const context: import('../runtime/evidenceBundle').BundleCreationContext = {
+      route: '/notebook',
+      techniqueCount,
+      hasMultiTechIntent: techniqueCount >= 2 || searchParams.get('bundle') === 'mixed',
+      isDemoProject: evidenceSnapshot.sourceMode === 'demo_preloaded',
+      hasDemoPreloadedBundle: project.id === 'cu-fe2o4-spinel' && techniqueCount >= 2,
+      userAction: 'send_to_notebook',
+    };
+
+    // Only create bundle if gating logic approves
+    const shouldCreate = techniqueCount >= 2 || context.hasDemoPreloadedBundle;
+    if (!shouldCreate) {
+      return null;
+    }
+
+    return createEvidenceBundleFromSnapshot(evidenceSnapshot, {
       includeDemoContext: searchParams.get('bundle') === 'mixed' || searchParams.get('source') === 'mixed',
-    }),
-    [evidenceSnapshot, searchParams],
-  );
+      lifecycleState: 'sent_to_notebook',
+      creationReason: 'notebook_report_handoff',
+    });
+  }, [evidenceSnapshot, searchParams, project.id]);
+
   const bundleTechniqueCoverage = useMemo(
-    () => getTechniqueCoverageFromBundle(evidenceBundle),
+    () => evidenceBundle ? getTechniqueCoverageFromBundle(evidenceBundle) : [],
     [evidenceBundle],
   );
   const [experimentModalOpen, setExperimentModalOpen] = useState(false);
@@ -568,9 +808,17 @@ export default function NotebookLab() {
   const [attachedRun, setAttachedRun] = useState<string | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [contextDetailsOpen, setContextDetailsOpen] = useState(false);
+  const [auditTrailOpen, setAuditTrailOpen] = useState(false);
   const [observationOpen, setObservationOpen] = useState(false);
   const [observationDraft, setObservationDraft] = useState('');
   const [attachRunOpen, setAttachRunOpen] = useState(false);
+
+  // Read workspace parameters for the current project
+  const workspaceParameters = useMemo(
+    () => readProjectWorkspaceParameters(project.id, getProjectTechniques(project)),
+    [project.id],
+  );
 
   useEffect(() => {
     const selectableTechniques = evidenceSnapshot.availableTechniques.length
@@ -622,8 +870,8 @@ export default function NotebookLab() {
   const projectNotebookContent = getProjectNotebookContent(project.id);
   const notebookTemplate = NOTEBOOK_TEMPLATES[templateMode];
   const workflowProcessingResult = useMemo(
-    () => evidenceSnapshot.reportContext ?? getLatestProcessingResult(project.id) ?? createProcessingResultFromXrdDemo(project.id),
-    [project.id, feedback, evidenceSnapshot.reportContext],
+    () => evidenceSnapshot.reportContext ?? getLatestProcessingResult(project.id) ?? createProcessingResultFromXrdDemo(project.id, workspaceParameters),
+    [project.id, feedback, evidenceSnapshot.reportContext, workspaceParameters],
   );
   const workflowRefinement = useMemo(
     () =>
@@ -646,7 +894,7 @@ export default function NotebookLab() {
   );
   const notebookTemplateDetails = NOTEBOOK_TEMPLATE_DETAILS[templateMode];
   const displayNotebookStatus = hasMatchedNotebookData
-    ? evidenceBundle.missingRequiredTechniques.length > 0 || evidenceBundle.validationGaps.length > 0
+    ? (evidenceBundle?.missingRequiredTechniques ?? []).length > 0 || (evidenceBundle?.validationGaps ?? []).length > 0
       ? 'Validation-limited'
       : getSnapshotStatusLabel(evidenceSnapshot, claimStatusLabel(registryProject.claimStatus))
     : 'Requires dataset';
@@ -737,14 +985,14 @@ export default function NotebookLab() {
   const openProjectNotebook = (projectId: string) => {
     setSelectedProjectId(projectId);
     setSelectedExperimentId(null);
-    navigate(`/notebook?project=${projectId}`);
+    navigate(`/notebook?project=${projectId}&mode=demo`);
   };
 
   const openExperimentNotebook = (nextExperimentId: string, nextProjectId: string) => {
     setSelectedProjectId(nextProjectId);
     setSelectedExperimentId(nextExperimentId);
     setExpandedProjectIds((current) => current.includes(nextProjectId) ? current : [...current, nextProjectId]);
-    navigate(`/notebook?project=${nextProjectId}&experiment=${nextExperimentId}`);
+    navigate(`/notebook?project=${nextProjectId}&mode=demo&experiment=${nextExperimentId}`);
   };
 
   const confidenceLabel = claimStatusLabel(registryProject.claimStatus);
@@ -754,6 +1002,7 @@ export default function NotebookLab() {
     if (value) uploadedRouteParams.set(key, value);
   });
   const uploadedRouteSuffix = uploadedRouteParams.toString() ? `&${uploadedRouteParams.toString()}` : '';
+  const withDemoMode = (path: string) => path.includes('?') ? `${path}&mode=demo` : `${path}?mode=demo`;
   const snapshotDiscussionLine = hasUploadedEvidenceSnapshot
     ? `${getSnapshotEvidenceLine(evidenceSnapshot)} ${getSnapshotClaimBoundaryLines(evidenceSnapshot)[0] ?? 'Uploaded evidence remains validation-limited.'}`
     : projectNotebookContent.discussion;
@@ -834,7 +1083,7 @@ export default function NotebookLab() {
   };
 
   const copyShareLink = async () => {
-    const url = `${window.location.origin}/notebook?project=${project.id}&template=${templateMode}&entry=${workflowNotebookEntry.id}${workspaceRun ? `&run=${workspaceRun.id}` : ''}${uploadedRouteSuffix}`;
+    const url = `${window.location.origin}/notebook?project=${project.id}&mode=demo&template=${templateMode}&entry=${workflowNotebookEntry.id}${workspaceRun ? `&run=${workspaceRun.id}` : ''}${uploadedRouteSuffix}`;
     try {
       await navigator.clipboard.writeText(url);
       showFeedback('Share link copied');
@@ -847,12 +1096,16 @@ export default function NotebookLab() {
     const lockedContext = getLockedContext(project.id);
     const evidenceMarkdown = keyEvidenceItems.map((item) => `- ${item}`).join('\n');
     const validationMarkdown = [
-      ...evidenceSnapshot.validationGaps.map((gap) => `${gap.description} Resolution: ${gap.suggestedResolution}`),
-      ...evidenceSnapshot.pendingTechniques.map((technique) => `${technique} validation evidence is pending.`),
+      ...(evidenceSnapshot.validationGaps ?? []).map((gap) => `${gap.description} Resolution: ${gap.suggestedResolution}`),
+      ...(evidenceSnapshot.pendingTechniques ?? []).map((technique) => `${technique} validation evidence is pending.`),
     ].map((item) => `- ${item}`).join('\n');
     const traceMarkdown = technicalTrace.map((step, index) => `${index + 1}. ${sanitizeTraceStep(step)}`).join('\n');
     const sourceRunLines = projectNotebookContent.runLog.map(([label, value]) => `${label}: ${value}`).join('\n');
-    const ledgerSummary = summarizeApprovalLedger({ projectId: project.id, bundleId: evidenceBundle.bundleId, limit: 4 });
+    const ledgerSummary = summarizeApprovalLedger({
+      projectId: project.id,
+      bundleId: evidenceBundle?.bundleId ?? `single-${project.id}`,
+      limit: 4
+    });
     const approvalLedgerMarkdown = ledgerSummary.recentLines.length
       ? ledgerSummary.recentLines.map((line) => `- ${line}`).join('\n')
       : '- No approval preview history recorded for this project/bundle in this browser.';
@@ -879,6 +1132,21 @@ Claim Boundary: ${lockedContext.claimBoundary}
 
 `
       : '';
+
+    const bundleMarkdown = evidenceBundle
+      ? `## Evidence Bundle
+Bundle ID: ${evidenceBundle.bundleId}
+Source: ${getEvidenceBundleBadgeLabel(evidenceBundle)}
+Files: ${(evidenceBundle.files ?? []).map((file) => `${file.technique}: ${file.fileName} (${file.sourceLabel})`).join('; ') || 'No evidence files linked'}
+Technique Coverage: ${bundleTechniqueCoverage.map((item) => `${item.technique}: ${item.status}`).join(', ')}
+Completeness: ${evidenceBundle.evidenceCompletenessScore}%
+
+`
+      : '';
+
+    const availableTechniques = (registryProject?.techniques.filter(t => t.available).map(t => t.id as TechniqueWorkspaceId) ?? []);
+    const parameterProvenanceMarkdown = generateParameterProvenanceMarkdown(project.id, availableTechniques);
+
     const markdown = `# DIFARYX Notebook Memory
 
 ## Experiment
@@ -905,14 +1173,7 @@ ${snapshotDiscussionLine}
 ## Key Evidence
 ${evidenceMarkdown}
 
-## Evidence Bundle
-Bundle ID: ${evidenceBundle.bundleId}
-Source: ${getEvidenceBundleBadgeLabel(evidenceBundle)}
-Files: ${evidenceBundle.files.map((file) => `${file.technique}: ${file.fileName} (${file.sourceLabel})`).join('; ') || 'No evidence files linked'}
-Technique Coverage: ${bundleTechniqueCoverage.map((item) => `${item.technique}: ${item.status}`).join(', ')}
-Completeness: ${evidenceBundle.evidenceCompletenessScore}%
-
-## Claim Boundary
+${bundleMarkdown}## Claim Boundary
 ${claimBoundaryMarkdown}
 
 ## Experiment Conditions
@@ -924,6 +1185,7 @@ ${validationMarkdown}
 ## Technical Trace
 ${traceMarkdown}
 
+${parameterProvenanceMarkdown}
 ## Provenance
 ${sourceRunLines}
 
@@ -1186,7 +1448,7 @@ ${approvalLedgerMarkdown}
               return (
                 <Link
                   key={nb.id}
-                  to={`/notebook?project=${nb.id}`}
+                  to={`/notebook?project=${nb.id}&mode=demo`}
                   className={`block w-full text-left px-3 py-2 rounded-md text-xs font-medium leading-snug transition-colors border ${
                     isActive
                       ? 'bg-primary/5 text-primary border-primary/20'
@@ -1402,71 +1664,100 @@ ${approvalLedgerMarkdown}
             <>
               {/* Compact notebook header */}
               <div className="sticky top-0 z-10 border-b border-border bg-surface/95 px-4 py-2 backdrop-blur">
-                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-text-muted">
-                      <span className="text-sm font-bold text-text-main">Notebook Lab / {evidenceSnapshot.projectName}</span>
-                      <span>{jobTypeLabel(registryProject.jobType)} / {notebookTemplate.label}</span>
-                      <span className={hasMatchedNotebookData ? claimStatusColorClass(registryProject.claimStatus) : 'font-semibold text-amber-600'}>{displayNotebookStatus}</span>
-                    </div>
-                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-muted">
-                      <span>Mode: <span className="font-semibold text-text-main">{notebookTemplate.label}</span></span>
-                      <span>Claim status: <span className="font-semibold text-text-main">{displayNotebookStatus}</span></span>
-                      <span>Readiness: <span className="font-semibold text-text-main">{registryProject.reportReadiness}%</span></span>
-                      <span>Sample: <span className="font-semibold text-text-main">{formatChemicalFormula(evidenceSnapshot.sampleIdentity)}</span></span>
-                      <span>Evidence: <span className="font-semibold text-text-main">{evidenceSnapshot.availableTechniques.join(', ') || 'Pending'}</span></span>
-                      <span>Bundle: <span className="font-semibold text-text-main">{getEvidenceBundleBadgeLabel(evidenceBundle)}</span></span>
-                      <span>Pending: <span className="font-semibold text-text-main">{evidenceSnapshot.pendingTechniques.join(', ') || 'None'}</span></span>
-                      <span>Validation gaps: <span className="font-semibold text-text-main">{evidenceSnapshot.validationGaps.length}</span></span>
-                      <span>Export: <span className="font-semibold text-text-main">{registryProject.reportReadiness >= 80 ? 'Ready' : 'Blocked'}</span></span>
-                      {getLockedContext(project.id) ? (
-                        <span className="rounded border border-amber-500/30 bg-amber-500/5 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Locked context preserved</span>
-                      ) : null}
-                    </div>
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="text-sm font-bold text-text-main">Notebook Lab / {evidenceSnapshot.projectName}</span>
+                    <span className={`h-6 px-2 flex items-center rounded text-[10px] font-semibold ${hasMatchedNotebookData ? claimStatusColorClass(registryProject.claimStatus) : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>{displayNotebookStatus}</span>
+                    <span className="h-6 px-2 flex items-center rounded bg-blue-50 border border-blue-200 text-[10px] font-semibold text-blue-700">{registryProject.reportReadiness}% ready</span>
+                    <span className="h-6 px-2 flex items-center rounded bg-cyan-50 border border-cyan-200 text-[10px] font-semibold text-cyan-700">{evidenceSnapshot.availableTechniques.join(', ') || 'Pending'}</span>
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1.5">
                     {feedback && (
                       <span className="hidden items-center rounded border border-primary/20 bg-primary/10 px-2 text-[11px] font-semibold text-primary sm:inline-flex">{feedback}</span>
                     )}
-                    <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={() => setIsEvidenceDrawerOpen(true)}><FlaskConical size={12} /> Evidence Trace</Button>
                     <Button variant="primary" size="sm" disabled={!hasMatchedNotebookData} title={!hasMatchedNotebookData ? 'Requires matched processing result before saving.' : undefined} className="h-7 gap-1.5 px-2 text-xs" onClick={saveWorkflowNotebookEntry}><Save size={12} /> Save Entry</Button>
                     <Link
-                      to={`/reports?project=${project.id}&template=${templateMode}&entry=${workflowNotebookEntry.id}${uploadedRouteSuffix}`}
+                      to={`/reports?project=${project.id}&mode=demo&template=${templateMode}&entry=${workflowNotebookEntry.id}${uploadedRouteSuffix}`}
                       onClick={handleReportHandoffClick}
                       className="inline-flex h-7 items-center rounded-md border border-primary/30 bg-primary/5 px-2 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors"
                     >
                       Send to Report <ArrowRight size={12} className="ml-1" />
                     </Link>
                     <div className="relative">
-                    <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={() => setExportMenuOpen((open) => !open)}><Download size={12} /> Export CSV</Button>
-                      {exportMenuOpen && (
-                        <div className="absolute right-0 top-9 z-20 w-60 rounded-lg border border-border bg-white p-2 shadow-xl">
-                          <button type="button" disabled={!selectedEvidenceDataset} onClick={() => { exportNotebookCsv('raw'); setExportMenuOpen(false); }} className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400">Export raw signal CSV<Download size={13} /></button>
-                          <button type="button" disabled={!selectedEvidenceDataset} onClick={() => { exportNotebookCsv('features'); setExportMenuOpen(false); }} className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400">Export extracted features CSV<Download size={13} /></button>
-                          <button type="button" onClick={() => { exportNotebookCsv('summary'); setExportMenuOpen(false); }} className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover">Export evidence summary CSV<Download size={13} /></button>
-                        </div>
-                      )}
-                    </div>
-                    <div className="relative">
                       <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={() => setMoreMenuOpen((open) => !open)}><MoreHorizontal size={12} /> More</Button>
                       {moreMenuOpen && (
-                        <div className="absolute right-0 top-9 z-20 w-44 rounded-lg border border-border bg-white p-2 shadow-xl">
-                          <button type="button" onClick={() => { copyShareLink(); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><Share2 size={12} /> Share</button>
+                        <div className="absolute right-0 top-9 z-20 w-56 rounded-lg border border-border bg-white p-2 shadow-xl">
+                          <button type="button" onClick={() => { setIsEvidenceDrawerOpen(true); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><FlaskConical size={12} /> Evidence Trace</button>
+                          <button type="button" disabled={!selectedEvidenceDataset} onClick={() => { exportNotebookCsv('raw'); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400"><Download size={12} /> Export raw signal CSV</button>
+                          <button type="button" disabled={!selectedEvidenceDataset} onClick={() => { exportNotebookCsv('features'); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400"><Download size={12} /> Export features CSV</button>
+                          <button type="button" onClick={() => { exportNotebookCsv('summary'); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><Download size={12} /> Export summary CSV</button>
+                          <button type="button" onClick={() => { copyShareLink(); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover border-t border-border"><Share2 size={12} /> Share</button>
                           <button type="button" onClick={() => { printReport(); setMoreMenuOpen(false); }} disabled={!hasMatchedNotebookData} title={!hasMatchedNotebookData ? 'Requires matched processing result before printing.' : undefined} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400"><Printer size={12} /> Print</button>
                           <button type="button" onClick={() => { setObservationOpen(true); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><Plus size={12} /> Observe</button>
                           <button type="button" onClick={() => { setAttachRunOpen(true); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><FileText size={12} /> Attach</button>
+                          <button type="button" onClick={() => { setContextDetailsOpen((open) => !open); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover border-t border-border"><Target size={12} /> Context Details</button>
+                          <button type="button" onClick={() => { setAuditTrailOpen((open) => !open); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><BarChart3 size={12} /> Audit Trail</button>
                         </div>
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-2">
-                  <ApprovalLedgerPanel projectId={project.id} bundleId={evidenceBundle.bundleId} limit={3} compact />
-                </div>
+                {/* Context Details Drawer */}
+                {contextDetailsOpen && (
+                  <div className="border-t border-border bg-slate-50 px-4 py-3 mt-2">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                      <div>
+                        <span className="font-semibold text-slate-600">Mode:</span>
+                        <span className="ml-2 text-slate-700">{notebookTemplate.label}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-600">Job type:</span>
+                        <span className="ml-2 text-slate-700">{jobTypeLabel(registryProject.jobType)}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-600">Sample:</span>
+                        <span className="ml-2 text-slate-700">{formatChemicalFormula(evidenceSnapshot.sampleIdentity)}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-600">Bundle:</span>
+                        <span className="ml-2 text-slate-700">{evidenceBundle ? getEvidenceBundleBadgeLabel(evidenceBundle) : 'No bundle yet'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-600">Pending:</span>
+                        <span className="ml-2 text-slate-700">{evidenceSnapshot.pendingTechniques.join(', ') || 'None'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-600">Validation gaps:</span>
+                        <span className="ml-2 text-slate-700">{evidenceSnapshot.validationGaps.length}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-600">Export status:</span>
+                        <span className="ml-2 text-slate-700">{registryProject.reportReadiness >= 80 ? 'Ready' : 'Blocked'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-600">Runtime source:</span>
+                        <span className="ml-2 text-slate-700">{getRuntimeBadgeLabel(runtimeContext)}</span>
+                      </div>
+                      {getLockedContext(project.id) && (
+                        <div className="col-span-2">
+                          <span className="font-semibold text-slate-600">Context:</span>
+                          <span className="ml-2 text-amber-700">Locked context preserved</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-                <div className="mt-1.5 flex items-center gap-0.5 -mb-px overflow-x-auto">
+                {/* Audit Trail Drawer */}
+                {auditTrailOpen && evidenceBundle && (
+                  <div className="border-t border-border bg-slate-50 px-4 py-3 mt-2">
+                    <ApprovalLedgerPanel projectId={project.id} bundleId={evidenceBundle.bundleId} limit={10} compact={false} />
+                  </div>
+                )}
+
+                <div className="mt-2 flex items-center gap-0.5 -mb-px overflow-x-auto">
                   {NOTEBOOK_TABS.map((tab) => (
                     <button
                       key={tab}
@@ -1566,25 +1857,7 @@ ${approvalLedgerMarkdown}
                 : hasMatchedNotebookData
                   ? `Is the current evidence sufficient to advance the ${evidenceSnapshot.projectName} interpretation beyond validation-limited status?`
                   : `What dataset is required to begin ${evidenceSnapshot.projectName} characterization?`;
-              const objectiveRows: Array<[string, React.ReactNode, boolean?]> = [
-                ['Research Objective', project.objective],
-                ['Sample identity', lockedContext?.sampleIdentity ?? evidenceSnapshot.sampleIdentity],
-                ['Active dataset', evidenceSnapshot.activeDataset?.fileName ?? evidenceSnapshot.evidenceEntries[0]?.datasetLabel ?? 'Pending evidence source'],
-                ['Runtime source', getRuntimeBadgeLabel(runtimeContext)],
-                ['Evidence bundle', `${evidenceBundle.bundleId} / ${getEvidenceBundleBadgeLabel(evidenceBundle)}`],
-                ['Files included', evidenceBundle.files.map((file) => `${file.technique}: ${file.fileName}`).join('; ') || 'No evidence files linked'],
-                ['Technique coverage', bundleTechniqueCoverage.map((item) => `${item.technique}: ${item.status}`).join(', ')],
-                ['Bundle completeness', `${evidenceBundle.evidenceCompletenessScore}%`],
-                ['Claim status', claimStatusLabel(registryProject.claimStatus)],
-                ['Job type / notebook mode', `${jobTypeLabel(registryProject.jobType)} / ${notebookTemplate.label}`],
-                ['Available techniques', evidenceSnapshot.availableTechniques.join(', ') || 'None linked'],
-                ['Pending validation', evidenceSnapshot.pendingTechniques.join(', ') || 'None'],
-                ['Condition lock', experimentConditionStatus],
-                ['Workflow path', registryProject.workflowPath.join(' -> ')],
-                ...(lockedContext?.sourceDataset ? [['Source dataset', lockedContext.sourceDataset] as [string, React.ReactNode]] : []),
-                ['Characterization Goal', characterizationGoal],
-                ['Decision Question', decisionQuestion, true],
-              ];
+
               return (
               <div className="space-y-2">
                 {!hasMatchedNotebookData && (
@@ -1593,27 +1866,142 @@ ${approvalLedgerMarkdown}
                     <span className="text-xs text-text-muted">No matched processing result. Load a compatible dataset to generate evidence and notebook interpretation.</span>
                   </div>
                 )}
-                <div className="rounded-md border border-border bg-surface divide-y divide-border">
-                  <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${getRuntimeBadgeClass(runtimeContext)}`}>
-                      {getRuntimeBadgeLabel(runtimeContext, 'source')}
-                    </span>
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${getRuntimeBadgeClass(runtimeContext)}`}>
-                      {getRuntimeBadgeLabel(runtimeContext, 'permission')}
-                    </span>
-                    <ConnectedAccountStatus
-                      state={connectedAccountState}
-                      capabilities={runtimeContext.sourceMode === 'google_drive_connected' ? ['drive_import', 'drive_export_future', 'gmail_draft_future'] : ['storage_future']}
-                      compact
-                    />
+
+                {/* Compact Primary Summary */}
+                <div className="rounded-md border border-border bg-surface px-3 py-2.5 space-y-2">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-text-dim">Research Objective</div>
+                    <div className="mt-1 text-sm leading-snug text-text-main">{project.objective}</div>
                   </div>
-                  {objectiveRows.map(([label, value, highlight]) => (
-                    <div key={label} className={`flex flex-col gap-0.5 px-3 py-2 sm:flex-row sm:items-baseline sm:gap-3 ${highlight ? 'bg-primary/5' : ''}`}>
-                      <div className={`shrink-0 text-[10px] font-semibold uppercase tracking-wider sm:w-40 ${highlight ? 'text-primary' : 'text-text-dim'}`}>{label}</div>
-                      <div className="text-sm leading-snug text-text-main">{value}</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-text-dim">Sample Identity</div>
+                      <div className="mt-1 text-sm text-text-main">{lockedContext?.sampleIdentity ?? evidenceSnapshot.sampleIdentity}</div>
                     </div>
-                  ))}
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-text-dim">Active Dataset</div>
+                      <div className="mt-1 text-sm text-text-main">{evidenceSnapshot.activeDataset?.fileName ?? evidenceSnapshot.evidenceEntries?.[0]?.datasetLabel ?? 'Pending evidence source'}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-text-dim">Validation Status</div>
+                    <div className="mt-1 text-sm text-text-main">{claimStatusLabel(registryProject.claimStatus)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-text-dim">Claim Boundary</div>
+                    <div className="mt-1 text-sm text-text-main">
+                      {evidenceSnapshot.validationGaps.length > 0
+                        ? `${evidenceSnapshot.validationGaps.length} validation gap${evidenceSnapshot.validationGaps.length > 1 ? 's' : ''} identified`
+                        : 'Evidence-supported assignment within validation boundaries'}
+                    </div>
+                  </div>
                 </div>
+
+                {/* Collapsible Context Details */}
+                <div className="rounded-md border border-border bg-surface">
+                  <button
+                    type="button"
+                    onClick={() => setContextDetailsOpen((open) => !open)}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-surface-hover"
+                  >
+                    <span className="text-xs font-semibold text-text-main">Context Details</span>
+                    <ChevronDown size={14} className={`text-text-muted transition-transform ${contextDetailsOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {contextDetailsOpen && (
+                    <div className="border-t border-border px-3 py-2 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${getRuntimeBadgeClass(runtimeContext)}`}>
+                          {getRuntimeBadgeLabel(runtimeContext, 'source')}
+                        </span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${getRuntimeBadgeClass(runtimeContext)}`}>
+                          {getRuntimeBadgeLabel(runtimeContext, 'permission')}
+                        </span>
+                        <ConnectedAccountStatus
+                          state={connectedAccountState}
+                          capabilities={runtimeContext.sourceMode === 'google_drive_connected' ? ['drive_import', 'drive_export_future', 'gmail_draft_future'] : ['storage_future']}
+                          compact
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                        <div>
+                          <span className="font-semibold text-slate-600">Runtime source:</span>
+                          <span className="ml-2 text-slate-700">{getRuntimeBadgeLabel(runtimeContext)}</span>
+                        </div>
+                        {evidenceBundle && (
+                          <>
+                            <div>
+                              <span className="font-semibold text-slate-600">Evidence bundle:</span>
+                              <span className="ml-2 text-slate-700">{evidenceBundle.bundleId} / {getEvidenceBundleBadgeLabel(evidenceBundle)}</span>
+                            </div>
+                            <div className="col-span-2">
+                              <span className="font-semibold text-slate-600">Files included:</span>
+                              <span className="ml-2 text-slate-700">{(evidenceBundle.files ?? []).map((file) => `${file.technique}: ${file.fileName}`).join('; ') || 'No evidence files linked'}</span>
+                            </div>
+                            <div>
+                              <span className="font-semibold text-slate-600">Technique coverage:</span>
+                              <span className="ml-2 text-slate-700">{bundleTechniqueCoverage.map((item) => `${item.technique}: ${item.status}`).join(', ')}</span>
+                            </div>
+                            <div>
+                              <span className="font-semibold text-slate-600">Bundle completeness:</span>
+                              <span className="ml-2 text-slate-700">{evidenceBundle.evidenceCompletenessScore}%</span>
+                            </div>
+                          </>
+                        )}
+                        <div />
+                        {evidenceBundle && (
+                          <div>
+                            <span className="font-semibold text-slate-600">Bundle completeness:</span>
+                            <span className="ml-2 text-slate-700">{evidenceBundle.evidenceCompletenessScore}%</span>
+                          </div>
+                        )}
+                        <div>
+                          <span className="font-semibold text-slate-600">Claim status:</span>
+                          <span className="ml-2 text-slate-700">{claimStatusLabel(registryProject.claimStatus)}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-slate-600">Job type / mode:</span>
+                          <span className="ml-2 text-slate-700">{jobTypeLabel(registryProject.jobType)} / {notebookTemplate.label}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-slate-600">Available techniques:</span>
+                          <span className="ml-2 text-slate-700">{(evidenceSnapshot.availableTechniques ?? []).join(', ') || 'None linked'}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-slate-600">Pending validation:</span>
+                          <span className="ml-2 text-slate-700">{(evidenceSnapshot.pendingTechniques ?? []).join(', ') || 'None'}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-slate-600">Validation gaps:</span>
+                          <span className="ml-2 text-slate-700">{evidenceSnapshot.validationGaps.length}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-slate-600">Condition lock:</span>
+                          <span className="ml-2 text-slate-700">{experimentConditionStatus}</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="font-semibold text-slate-600">Workflow path:</span>
+                          <span className="ml-2 text-slate-700">{registryProject.workflowPath.join(' -> ')}</span>
+                        </div>
+                        {lockedContext?.sourceDataset && (
+                          <div className="col-span-2">
+                            <span className="font-semibold text-slate-600">Source dataset:</span>
+                            <span className="ml-2 text-slate-700">{lockedContext.sourceDataset}</span>
+                          </div>
+                        )}
+                        <div className="col-span-2 pt-2 border-t border-border">
+                          <span className="font-semibold text-slate-600">Characterization Goal:</span>
+                          <div className="mt-1 text-slate-700">{characterizationGoal}</div>
+                        </div>
+                        <div className="col-span-2 pt-2 border-t border-border">
+                          <span className="font-semibold text-primary">Decision Question:</span>
+                          <div className="mt-1 text-slate-700">{decisionQuestion}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Notebook Mode Selection */}
                 <div className="rounded-md border border-border bg-surface px-3 py-2">
                   <div className="text-[10px] font-semibold uppercase tracking-wider text-text-dim mb-1.5">Notebook Mode</div>
                   <div className="grid grid-cols-1 gap-1.5 md:grid-cols-3">
@@ -1674,7 +2062,7 @@ ${approvalLedgerMarkdown}
                         <Download size={12} /> Export Evidence Summary CSV
                       </Button>
                       <Link
-                        to={`/reports?project=${project.id}&template=${templateMode}&entry=${workflowNotebookEntry.id}${uploadedRouteSuffix}`}
+                        to={`/reports?project=${project.id}&mode=demo&template=${templateMode}&entry=${workflowNotebookEntry.id}${uploadedRouteSuffix}`}
                         onClick={handleReportHandoffClick}
                         className="inline-flex h-7 items-center rounded-md border border-primary/30 bg-primary/5 px-2 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors"
                       >
@@ -2419,6 +2807,61 @@ ${approvalLedgerMarkdown}
               </div>
             </section>
 
+            <details className="space-y-3">
+              <summary className="cursor-pointer list-none text-sm font-semibold uppercase tracking-wider text-text-muted border-b border-border pb-2 hover:text-text-main transition-colors">
+                Parameter Provenance
+              </summary>
+              <div className="pt-3 space-y-3">
+                {(() => {
+                  const availableTechniques = (registryProject?.techniques.filter(t => t.available).map(t => t.id as TechniqueWorkspaceId) ?? []);
+                  const parameterSummaries = availableTechniques.map(technique =>
+                    getParameterProvenanceSummary(project.id, technique)
+                  ).filter(s => s.hasOverrides);
+
+                  if (parameterSummaries.length === 0) {
+                    return (
+                      <div className="rounded-lg border border-border bg-surface p-4">
+                        <p className="text-sm text-text-muted">Default processing parameters used for all techniques.</p>
+                      </div>
+                    );
+                  }
+
+                  return parameterSummaries.map(summary => (
+                    <div key={summary.technique} className="rounded-lg border border-border bg-surface p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-text-main">{summary.techniqueLabel}</h4>
+                        <span className="text-xs font-semibold text-primary">
+                          {summary.overrideCount} parameter{summary.overrideCount !== 1 ? 's' : ''} modified
+                        </span>
+                      </div>
+                      <div className="text-xs text-text-muted">
+                        Last updated: {formatProvenanceTimestamp(summary.lastUpdatedAt)} by {formatProvenanceSource(summary.lastUpdatedBy)}
+                      </div>
+                      <div className="space-y-2">
+                        {summary.changedParameters.map(param => (
+                          <div key={param.id} className="rounded-md border border-border bg-background p-2.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="text-xs font-semibold text-text-main">{param.label}</div>
+                                <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
+                                  <span>Default: {formatParameterValueForDisplay(param.defaultValue)}{param.unit ? ` ${param.unit}` : ''}</span>
+                                  <span className="text-primary">→</span>
+                                  <span className="font-semibold text-text-main">Effective: {formatParameterValueForDisplay(param.effectiveValue)}{param.unit ? ` ${param.unit}` : ''}</span>
+                                </div>
+                              </div>
+                              <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                {formatProvenanceSource(param.provenance.updatedBy)}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </details>
+
             <section className="space-y-3">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted border-b border-border pb-2">Notebook Run Log</h3>
               <div className="rounded-lg border border-border bg-surface p-4">
@@ -2656,11 +3099,11 @@ ${approvalLedgerMarkdown}
             </section>
 
             <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Link to={workspaceRun ? getWorkspaceRoute(project, workspaceRun.technique, workspaceRun.datasetId) : getWorkspaceRoute(project)} className="rounded-md border border-border bg-surface p-3 text-sm font-semibold text-text-main hover:border-primary/40 transition-colors">
+              <Link to={withDemoMode(workspaceRun ? getWorkspaceRoute(project, workspaceRun.technique, workspaceRun.datasetId) : getWorkspaceRoute(project))} className="rounded-md border border-border bg-surface p-3 text-sm font-semibold text-text-main hover:border-primary/40 transition-colors">
                 {workspaceRun ? `Open ${workspaceRun.technique} Analysis` : 'Open Workspace'} <ArrowRight size={14} className="inline ml-1" />
               </Link>
               <Link
-                to={hasMatchedNotebookData ? getAgentPath(project) : getWorkspaceRoute(project)}
+                to={withDemoMode(hasMatchedNotebookData ? getAgentPath(project) : getWorkspaceRoute(project))}
                 className="rounded-md border border-cyan/40 bg-surface p-3 text-sm font-semibold text-cyan hover:bg-cyan/10 transition-colors"
               >
                 {hasMatchedNotebookData ? 'Open Refinement' : 'Open Workspace'} <ArrowRight size={14} className="inline ml-1" />

@@ -3,7 +3,7 @@ import React from 'react';
 const productLinks = [
   ['Overview', '/'],
   ['Techniques', '#techniques'],
-  ['Notebook Lab', '/notebook?project=cu-fe2o4-spinel'],
+  ['Notebook Lab', '/notebook?project=cu-fe2o4-spinel&mode=demo'],
   ['Use Cases', '#product'],
 ];
 

@@ -39,23 +39,8 @@ function App() {
           <Route path="/signin" element={<SignIn />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
 
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/projects"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/projects" element={<Dashboard />} />
 
           <Route
             path="/project/:projectId"
@@ -232,6 +217,15 @@ function App() {
 
           <Route
             path="/reports"
+            element={
+              <ProtectedRoute>
+                <ReportBuilder />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/report"
             element={
               <ProtectedRoute>
                 <ReportBuilder />

@@ -79,7 +79,8 @@ export interface AnalysisSession {
   fileName: string;
   fileType: string;
   fileSizeLabel?: string;
-  source?: 'quick_analysis' | 'project_lab' | 'imported' | 'attached';
+  source?: 'quick_analysis' | 'user_uploaded' | 'project_lab' | 'imported' | 'attached';
+  uploadedRunId?: string;
   owner: string;
   createdAt: string;
   updatedAt: string;

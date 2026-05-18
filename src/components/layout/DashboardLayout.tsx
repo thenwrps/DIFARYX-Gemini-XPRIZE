@@ -17,6 +17,13 @@ import {
 } from 'lucide-react';
 import { cn } from '../ui/Button';
 import { DEFAULT_PROJECT_ID } from '../../data/demoProjects';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  clearWorkspaceMode,
+  getEffectiveWorkspaceMode,
+  getStoredWorkspaceMode,
+  type WorkspaceMode,
+} from '../../utils/workspaceMode';
 
 interface NavItem {
   label: string;
@@ -28,25 +35,11 @@ interface NavItem {
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { isAuthenticated, user, signOut } = useAuth();
+  const [storedMode, setStoredModeState] = React.useState<WorkspaceMode | null>(() => getStoredWorkspaceMode());
   const [isTopbarCompact, setIsTopbarCompact] = React.useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
-  const [isDemoAuthenticated, setIsDemoAuthenticated] = React.useState(() => {
-    try {
-      return localStorage.getItem('demoAuth') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [profile] = React.useState(() => {
-    try {
-      const savedProfile = localStorage.getItem('demoProfile');
-      if (savedProfile) return JSON.parse(savedProfile) as { name?: string; email?: string; organization?: string };
-    } catch {
-      // Ignore malformed demo profile data.
-    }
-    return { name: 'Demo Researcher', email: 'demo@difaryx.local', organization: 'DIFARYX Demo Lab' };
-  });
   const lastScrollY = React.useRef(0);
 
   React.useEffect(() => {
@@ -72,18 +65,41 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('scroll', handleScroll, { capture: true });
   }, []);
 
+  React.useEffect(() => {
+    const handleWorkspaceModeChange = () => {
+      setStoredModeState(getStoredWorkspaceMode());
+    };
+
+    window.addEventListener('workspace-mode-changed', handleWorkspaceModeChange);
+    window.addEventListener('storage', handleWorkspaceModeChange);
+    return () => {
+      window.removeEventListener('workspace-mode-changed', handleWorkspaceModeChange);
+      window.removeEventListener('storage', handleWorkspaceModeChange);
+    };
+  }, []);
+
+  const effectiveWorkspaceMode = getEffectiveWorkspaceMode({
+    authUser: user,
+    searchParams: new URLSearchParams(location.search),
+    storedMode,
+  });
+  const useUserWorkspaceNav = effectiveWorkspaceMode === 'user';
+  const demoModeSuffix = effectiveWorkspaceMode === 'demo_explicit' ? '&mode=demo' : '';
+  const demoModeOnlySuffix = effectiveWorkspaceMode === 'demo_explicit' ? '?mode=demo' : '';
+  const demoProjectQuery = `?project=${DEFAULT_PROJECT_ID}${demoModeSuffix}`;
+
   const mainNavItems: NavItem[] = [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', match: ['/', '/dashboard'] },
     {
       label: 'Workspace',
       icon: FlaskConical,
-      path: `/workspace?project=${DEFAULT_PROJECT_ID}`,
+      path: useUserWorkspaceNav ? '/workspace' : `/workspace${demoProjectQuery}`,
       match: ['/workspace', '/analysis'],
     },
-    { label: 'Agent Workspace', icon: Bot, path: `/demo/agent?project=${DEFAULT_PROJECT_ID}`, match: ['/demo/agent'] },
-    { label: 'Notebook Lab', icon: BookOpen, path: `/notebook?project=${DEFAULT_PROJECT_ID}`, match: ['/notebook'] },
-    { label: 'Reports', icon: FileText, path: `/reports?project=${DEFAULT_PROJECT_ID}`, match: ['/reports'] },
-    { label: 'History', icon: History, path: '/history', match: ['/history'] },
+    { label: 'Agent Workspace', icon: Bot, path: useUserWorkspaceNav ? '/demo/agent' : `/demo/agent${demoProjectQuery}`, match: ['/demo/agent'] },
+    { label: 'Notebook Lab', icon: BookOpen, path: useUserWorkspaceNav ? '/notebook' : `/notebook${demoProjectQuery}`, match: ['/notebook'] },
+    { label: 'Reports', icon: FileText, path: useUserWorkspaceNav ? '/reports' : `/reports${demoProjectQuery}`, match: ['/reports'] },
+    { label: 'History', icon: History, path: useUserWorkspaceNav ? '/history' : `/history${demoModeOnlySuffix}`, match: ['/history'] },
     { label: 'Settings', icon: Settings, path: '/settings', match: ['/settings'] },
   ];
 
@@ -123,11 +139,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   );
 
   const handleSignOut = () => {
-    localStorage.removeItem('demoAuth');
-    localStorage.removeItem('demoProfile');
-    setIsDemoAuthenticated(false);
+    signOut();
+    clearWorkspaceMode();
     setIsProfileOpen(false);
-    navigate('/signin');
+    navigate('/dashboard', { replace: true });
   };
 
   return (
@@ -206,21 +221,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="relative flex items-center gap-3 ml-3">
-            {!isDemoAuthenticated ? (
-              <div className="flex items-center gap-2">
-                <Link
-                  to="/login"
-                  className="inline-flex h-8 items-center justify-center rounded-md border border-border bg-background px-3 text-xs font-bold text-text-main transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                >
-                  Sign In
-                </Link>
-                <Link
-                  to="/login"
-                  className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white shadow-sm shadow-primary/20 transition-colors hover:bg-primary/90"
-                >
-                  Continue Demo
-                </Link>
-              </div>
+            {!isAuthenticated ? (
+              <Link
+                to="/signin"
+                state={{ from: location }}
+                className="inline-flex h-8 items-center justify-center rounded-md border border-border bg-background px-3 text-xs font-bold text-text-main transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+              >
+                Sign in with Google
+              </Link>
             ) : (
               <>
                 <button
@@ -230,17 +238,23 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   aria-label="Open profile menu"
                   aria-expanded={isProfileOpen}
                 >
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20">
-                    <User size={14} />
-                  </span>
+                  {user?.picture ? (
+                    <img src={user.picture} alt={user.name ?? user.email ?? 'Account'} className="h-6 w-6 rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20">
+                      <User size={14} />
+                    </span>
+                  )}
                   <ChevronDown size={13} />
                 </button>
                 {isProfileOpen && (
                   <div className="absolute right-0 top-10 z-50 w-64 rounded-lg border border-border bg-white p-2 shadow-xl shadow-slate-900/10">
                     <div className="rounded-md border border-border bg-background px-3 py-2">
-                      <p className="text-sm font-bold text-text-main">{profile.name ?? 'Demo Researcher'}</p>
-                      <p className="mt-0.5 truncate text-xs text-text-muted">{profile.email ?? 'demo@difaryx.local'}</p>
-                      <p className="mt-1 text-[11px] font-semibold text-primary">{profile.organization ?? 'DIFARYX Demo Lab'}</p>
+                      <p className="text-sm font-bold text-text-main">{user?.name ?? 'Researcher'}</p>
+                      <p className="mt-0.5 truncate text-xs text-text-muted">{user?.email ?? ''}</p>
+                      {user?.organization && (
+                        <p className="mt-1 text-[11px] font-semibold text-primary">{user.organization}</p>
+                      )}
                     </div>
                     <div className="mt-2 space-y-1">
                       <Link
@@ -251,7 +265,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                         <Settings size={15} /> Profile settings
                       </Link>
                       <Link
-                        to="/login"
+                        to="/signin"
                         onClick={() => setIsProfileOpen(false)}
                         className="flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium text-text-main hover:bg-surface-hover"
                       >

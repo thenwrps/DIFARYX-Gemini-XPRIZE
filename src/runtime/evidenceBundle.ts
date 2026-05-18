@@ -8,6 +8,30 @@ export type EvidenceBundleFileStatus = 'available' | 'pending' | 'missing_requir
 
 export type EvidenceBundleFileRole = 'primary' | 'supporting' | 'validation' | 'context' | 'generated';
 
+export type BundleLifecycleState =
+  | 'not_created'           // Bundle has not been created yet
+  | 'preview'               // Bundle preview (read-only, no persistence)
+  | 'draft'                 // Bundle draft (editable, not finalized)
+  | 'created'               // Bundle created and finalized
+  | 'attached_to_project'   // Bundle attached to project context
+  | 'sent_to_agent'         // Bundle sent to agent for reasoning
+  | 'sent_to_notebook'      // Bundle sent to notebook for provenance
+  | 'sent_to_report'        // Bundle sent to report for export
+  | 'archived';             // Bundle archived (historical)
+
+export type BundleCreationReason =
+  | 'demo_preloaded'                  // Demo project has preloaded comparison package
+  | 'multi_tech_comparison'           // User opened Cross-Techniques Comparison page
+  | 'user_selected_multiple_files'    // User explicitly selected 2+ techniques/files
+  | 'uploaded_multi_file'             // User uploaded multiple files
+  | 'drive_import_preview'            // Drive import preview with multiple techniques
+  | 'mixed_source_comparison'         // Mixed source comparison package
+  | 'agent_requested_evidence_package'// Agent requested multi-technique evidence package
+  | 'notebook_report_handoff'         // Notebook/report handoff with multi-technique context
+  | 'project_attachment'              // User attached multiple evidence sources to project
+  | 'validation_gap_closure'          // User adding evidence to close validation gap
+  | 'manual_bundle_creation';         // User explicitly clicked "Create Bundle"
+
 export interface EvidenceBundleFile {
   fileId: string;
   fileName: string;
@@ -41,11 +65,16 @@ export interface EvidenceBundle {
   evidenceCompletenessScore: number;
   runtimeMode: RuntimeMode;
   permissionMode: PermissionMode;
+  lifecycleState: BundleLifecycleState;
+  creationReason: BundleCreationReason;
+  createdAt: string;
 }
 
 interface CreateEvidenceBundleOptions {
   includeDemoContext?: boolean;
   generatedArtifacts?: EvidenceBundleFile[];
+  lifecycleState?: BundleLifecycleState;
+  creationReason?: BundleCreationReason;
 }
 
 const TECHNIQUES: Technique[] = ['XRD', 'XPS', 'FTIR', 'Raman'];
@@ -254,6 +283,9 @@ export function createEvidenceBundleFromSnapshot(
     sampleIdentity: snapshot.sampleIdentity,
     files: [],
     supportedAssignment: snapshot.supportedAssignment,
+    lifecycleState: options.lifecycleState ?? 'created' as BundleLifecycleState,
+    creationReason: options.creationReason ?? 'demo_preloaded' as BundleCreationReason,
+    createdAt: new Date().toISOString(),
   };
 
   return recomputeBundle(base, files, snapshot.validationGaps, snapshot.claimBoundary);
@@ -317,8 +349,106 @@ export function evidenceBundleToSnapshotInput(bundle: EvidenceBundle) {
 }
 
 export function getEvidenceBundleBadgeLabel(bundle: EvidenceBundle): string {
-  if (bundle.sourceMode === 'mixed') return 'Mixed evidence bundle';
+  if (bundle.lifecycleState === 'preview') {
+    if (bundle.creationReason === 'demo_preloaded') return 'Demo comparison package';
+    if (bundle.creationReason === 'drive_import_preview' || bundle.sourceMode === 'google_drive_connected') {
+      return 'Drive evidence package preview';
+    }
+    return 'Evidence package preview';
+  }
+  if (bundle.creationReason === 'demo_preloaded') return 'Demo comparison package';
+  if (bundle.creationReason === 'mixed_source_comparison' || bundle.sourceMode === 'mixed') return 'Mixed-source comparison';
   if (bundle.sourceMode === 'google_drive_connected') return 'Drive evidence bundle';
   if (bundle.sourceMode === 'user_uploaded') return 'Uploaded evidence bundle';
-  return 'Demo evidence bundle';
+  return 'Evidence bundle';
+}
+
+// ── Bundle Gating Logic ────────────────────────────────────────────
+
+export interface BundleCreationContext {
+  route?: string;
+  userAction?: string;
+  techniqueCount: number;
+  hasMultiTechIntent: boolean;
+  isDemoProject: boolean;
+  hasDemoPreloadedBundle?: boolean;
+}
+
+/**
+ * Determines whether an Evidence Bundle should be created based on context.
+ *
+ * Bundle SHOULD be created when:
+ * - User opens /workspace/multi intentionally
+ * - User selects 2+ techniques/files
+ * - User attaches multiple evidence sources to project
+ * - User sends evidence package to Agent/Notebook/Report
+ * - Demo project explicitly has preloaded comparison package
+ *
+ * Bundle SHOULD NOT be created for:
+ * - Single-technique workspace
+ * - Quick analysis with single file
+ * - Normal workspace open without multi-tech intent
+ * - Simple agent run without multi-evidence context
+ */
+export function shouldCreateBundle(
+  snapshot: ProjectEvidenceSnapshot,
+  context: BundleCreationContext,
+): boolean {
+  if (context.userAction === 'send_to_agent') return true;
+  if (context.userAction === 'send_to_notebook') return true;
+  if (context.userAction === 'send_to_report') return true;
+  if (context.userAction === 'attach_to_project') return true;
+  if (context.hasMultiTechIntent && context.techniqueCount >= 2) return true;
+  return false;
+}
+
+/**
+ * Determines whether to show a bundle preview (read-only, not persisted).
+ * Preview is shown when bundle creation is not required but user might benefit
+ * from seeing what a bundle would look like.
+ */
+export function shouldPreviewBundle(
+  snapshot: ProjectEvidenceSnapshot,
+  context: BundleCreationContext,
+): boolean {
+  // Don't preview if we're already creating
+  if (shouldCreateBundle(snapshot, context)) return false;
+  if (context.hasDemoPreloadedBundle) return true;
+  if (context.hasMultiTechIntent && context.techniqueCount >= 2) return true;
+  return false;
+}
+
+/**
+ * Determines the creation reason based on context.
+ */
+export function determineCreationReason(
+  snapshot: ProjectEvidenceSnapshot,
+  context: BundleCreationContext,
+): BundleCreationReason {
+  if (context.hasDemoPreloadedBundle) return 'demo_preloaded';
+  if (context.route === '/workspace/multi') return 'multi_tech_comparison';
+  if (context.userAction === 'send_to_agent') return 'agent_requested_evidence_package';
+  if (context.userAction === 'send_to_notebook') return 'notebook_report_handoff';
+  if (context.userAction === 'send_to_report') return 'notebook_report_handoff';
+  if (snapshot.sourceMode === 'google_drive_connected' && context.techniqueCount >= 2) return 'drive_import_preview';
+  if (snapshot.sourceMode === 'user_uploaded' && context.techniqueCount >= 2) return 'uploaded_multi_file';
+  if (context.userAction === 'attach_to_project') return 'project_attachment';
+  if (context.userAction === 'close_validation_gap') return 'validation_gap_closure';
+  return 'manual_bundle_creation';
+}
+
+/**
+ * Determines the initial lifecycle state for a new bundle.
+ */
+export function getInitialBundleLifecycleState(
+  snapshot: ProjectEvidenceSnapshot,
+  context: BundleCreationContext,
+): BundleLifecycleState {
+  // Preview state for non-committed bundles
+  if (shouldPreviewBundle(snapshot, context)) {
+    return 'preview';
+  }
+
+  // Created state for committed bundles
+  return 'created';
 }

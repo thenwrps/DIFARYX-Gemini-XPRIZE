@@ -26,9 +26,12 @@ export function LeftSidebar({
     currentDataset.technique,
     currentDataset.id
   );
+  const workspaceDemoRoute = workspaceRoute.includes('?')
+    ? `${workspaceRoute}&mode=demo`
+    : `${workspaceRoute}?mode=demo`;
 
-  const multiTechRoute = `/workspace/multi?project=${currentProject.id}`;
-  const notebookRoute = `/notebook?project=${currentProject.id}`;
+  const multiTechRoute = `/workspace/multi?project=${currentProject.id}&mode=demo`;
+  const notebookRoute = `/notebook?project=${currentProject.id}&mode=demo`;
 
   return (
     <aside className="flex w-[72px] shrink-0 flex-col border-r border-slate-200 bg-white">
@@ -36,7 +39,7 @@ export function LeftSidebar({
         <NavItem
           icon={Activity}
           label="Agent Workspace"
-          to="/demo/agent"
+          to={`/demo/agent?project=${currentProject.id}&mode=demo`}
           active
         />
         <NavItem
@@ -47,7 +50,7 @@ export function LeftSidebar({
         <NavItem
           icon={Database}
           label="Data"
-          to={workspaceRoute}
+          to={workspaceDemoRoute}
         />
         <NavItem
           icon={FileText}
@@ -57,7 +60,7 @@ export function LeftSidebar({
         <NavItem
           icon={History}
           label="History"
-          to="/history"
+          to="/history?mode=demo"
         />
         <NavItem
           icon={Settings}

@@ -3,6 +3,7 @@ export interface AgentRun {
   projectId: string;
   createdAt: string;
   mission: string;
+  workspaceParameters?: Record<string, Record<string, string | number | boolean | string[]>>;
   outputs: {
     phase: string;
     confidence: number;

@@ -8,6 +8,14 @@ import type { AgentEvidenceWorkspace } from '../../../utils/agentEvidenceModel';
 import type { RegistryProject } from '../../../data/demoProjectRegistry';
 import type { RuntimeMode } from '../../../runtime/difaryxRuntimeMode';
 import { ApprovalLedgerPanel } from '../../runtime/ApprovalLedgerPanel';
+import { getTechniqueWorkspaceConfig, type TechniqueWorkspaceId, type TechniqueParameterControl, type TechniqueParameterValue } from '../../../data/techniqueWorkspaceContent';
+import { ParameterControlField } from '../../workspace/ParameterControlField';
+import {
+  readParameterState,
+  setParameterOverride,
+  resetParameters as resetParameterState,
+  getParameterStateStorageKey,
+} from '../../../utils/parameterStateManager';
 
 // Mode configuration with tab IDs
 const AGENT_MODES = {
@@ -161,6 +169,7 @@ export function RightPanel({
             onUnlockConditions={onUnlockConditions}
             onLockConditions={onLockConditions}
             hasOverrides={agentContext.hasParameterOverrides}
+            registryProject={registryProject}
           />
         )}
         {mode === 'deterministic' && activeTab === 'evidence' && (
@@ -304,6 +313,7 @@ interface ParametersTabContentProps {
   onUnlockConditions?: () => void;
   onLockConditions?: () => void;
   hasOverrides?: boolean;
+  registryProject?: RegistryProject;
 }
 
 function ParametersTabContent({
@@ -316,9 +326,71 @@ function ParametersTabContent({
   onUnlockConditions,
   onLockConditions,
   hasOverrides,
+  registryProject,
 }: ParametersTabContentProps) {
   const hasDraft = draftParameters && Object.keys(draftParameters).length > 0;
   const canEdit = !isConditionLocked && !!onDraftParameterChange;
+
+  // Determine technique from registry project
+  const projectTechnique = registryProject?.techniques.find(t => t.available)?.id as TechniqueWorkspaceId | undefined;
+
+  // Get workspace config if technique is available
+  const workspaceConfig = projectTechnique ? getTechniqueWorkspaceConfig(projectTechnique) : null;
+
+  // Read current parameter state from localStorage
+  const projectId = registryProject?.id;
+  const [workspaceParameters, setWorkspaceParameters] = useState<Record<string, TechniqueParameterValue>>(() => {
+    if (!projectId || !projectTechnique) return {};
+    const paramState = readParameterState(projectId, projectTechnique);
+    return paramState.effectiveValues;
+  });
+
+  // Update workspace parameters when they change
+  const handleWorkspaceParameterChange = (control: TechniqueParameterControl, value: TechniqueParameterValue) => {
+    if (!projectId || !projectTechnique) return;
+
+    setWorkspaceParameters(prev => ({ ...prev, [control.id]: value }));
+
+    // Write to parameter state
+    setParameterOverride(projectId, projectTechnique, control.id, value, 'agent');
+  };
+
+  const handleToggleCheckbox = (control: TechniqueParameterControl, option: string) => {
+    const current = workspaceParameters[control.id];
+    const values = Array.isArray(current) ? current : [];
+    const next = values.includes(option)
+      ? values.filter((item) => item !== option)
+      : [...values, option];
+    handleWorkspaceParameterChange(control, next);
+  };
+
+  const handleResetWorkspaceParameters = () => {
+    if (!projectId || !projectTechnique || !workspaceConfig) return;
+
+    const paramState = resetParameterState(projectId, projectTechnique);
+    setWorkspaceParameters(paramState.effectiveValues);
+  };
+
+  const workspaceOverrideCount = projectId && projectTechnique
+    ? Object.keys(readParameterState(projectId, projectTechnique).overrides).length
+    : 0;
+
+  // Cross-tab sync: Listen for parameter changes from Workspace
+  useEffect(() => {
+    if (!projectId || !projectTechnique || typeof window === 'undefined') return;
+
+    const handleStorageChange = (event: StorageEvent) => {
+      const paramStateKey = getParameterStateStorageKey(projectId, projectTechnique);
+      if (event.key !== paramStateKey) return;
+
+      // Re-read parameters from localStorage
+      const paramState = readParameterState(projectId, projectTechnique);
+      setWorkspaceParameters(paramState.effectiveValues);
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [projectId, projectTechnique, workspaceConfig]);
 
   return (
     <>
@@ -361,20 +433,58 @@ function ParametersTabContent({
       )}
 
       {/* Override status banner */}
-      {hasOverrides && !hasDraft && (
+      {workspaceOverrideCount > 0 && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-start gap-2">
           <Edit3 size={14} className="text-blue-700 mt-0.5 shrink-0" />
           <div className="text-xs">
             <p className="font-semibold text-blue-900">Parameters Modified</p>
-            <p className="text-blue-700 mt-0.5">User-adjusted parameters are active. Trace, boundary, and notebook reflect these changes.</p>
+            <p className="text-blue-700 mt-0.5">{workspaceOverrideCount} parameter{workspaceOverrideCount !== 1 ? 's' : ''} adjusted. Changes sync with Workspace.</p>
           </div>
         </div>
       )}
 
-      {/* Parameter groups */}
+      {/* Workspace Parameters - using same controls as Workspace */}
+      {workspaceConfig && projectTechnique && (
+        <div className="rounded-lg border border-slate-200 bg-white p-3">
+          <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-3">
+            <Settings size={14} className="text-blue-600" />
+            {workspaceConfig.label} Parameters
+          </h3>
+          <div className="space-y-2">
+            {workspaceConfig.parameters.map((control) => (
+              <ParameterControlField
+                key={control.id}
+                control={control}
+                value={workspaceParameters[control.id] ?? control.defaultValue}
+                onChange={handleWorkspaceParameterChange}
+                onToggleCheckbox={handleToggleCheckbox}
+                disabled={isConditionLocked}
+              />
+            ))}
+          </div>
+          {!isConditionLocked && (
+            <div className="mt-3 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={handleResetWorkspaceParameters}
+                disabled={workspaceOverrideCount === 0}
+                className="w-full h-8 px-3 text-xs font-semibold rounded border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Reset to Defaults
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Project Parameters (non-technique parameters) */}
       {groups.map((group) => {
+        // Skip technique groups if we're showing workspace controls
+        if (workspaceConfig && (group.id === 'XRD' || group.id === 'XPS' || group.id === 'FTIR' || group.id === 'Raman')) {
+          return null;
+        }
+
         const groupDraft = draftParameters?.[group.id] || {};
-        const isProjectGroup = group.id === 'project';
         return (
           <div key={group.id} className="rounded-lg border border-slate-200 bg-white p-3">
             <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
@@ -419,28 +529,6 @@ function ParametersTabContent({
           </div>
         );
       })}
-
-      {/* Actions */}
-      {canEdit && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onApplyParameters}
-            disabled={!hasDraft}
-            className="flex-1 h-8 px-3 text-xs font-semibold rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            Apply Parameters
-          </button>
-          <button
-            type="button"
-            onClick={onResetParameters}
-            disabled={!hasOverrides && !hasDraft}
-            className="flex-1 h-8 px-3 text-xs font-semibold rounded border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            Reset to Defaults
-          </button>
-        </div>
-      )}
     </>
   );
 }

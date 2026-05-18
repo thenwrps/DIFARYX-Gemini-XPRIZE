@@ -40,6 +40,7 @@ export interface ProcessingResult {
   limitations: string[];
   followUpValidation: string[];
   metrics: Array<{ label: string; value: string }>;
+  workspaceParameters?: Record<string, Record<string, string | number | boolean | string[]>>;
 }
 
 export interface AgentDiscussionRefinement {
@@ -63,6 +64,7 @@ export interface AgentDiscussionRefinement {
   statusSummary: Array<{ label: string; value: string }>;
   reportTemplate: ReportTemplate;
   refinedAt: string;
+  workspaceParameters?: Record<string, Record<string, string | number | boolean | string[]>>;
 }
 
 export interface NotebookEntry {
@@ -82,6 +84,7 @@ export interface NotebookEntry {
   statusSummary: Array<{ label: string; value: string }>;
   sections: Array<{ heading: string; lines: string[] }>;
   reportTemplate: ReportTemplate;
+  workspaceParameters?: Record<string, Record<string, string | number | boolean | string[]>>;
 }
 
 export interface ReportSection {
@@ -93,6 +96,7 @@ export interface ReportSection {
   body: string;
   lines: string[];
   sourceLabel: string;
+  workspaceParameters?: Record<string, Record<string, string | number | boolean | string[]>>;
 }
 
 const PROCESSING_RESULTS_KEY = 'difaryx-workflow-processing-results';
@@ -359,7 +363,10 @@ export function normalizeNotebookTemplateMode(value?: string | null): NotebookTe
   return 'research';
 }
 
-export function createProcessingResultFromXrdDemo(projectId = DEFAULT_PROJECT_ID): ProcessingResult {
+export function createProcessingResultFromXrdDemo(
+  projectId = DEFAULT_PROJECT_ID,
+  workspaceParameters?: Record<string, Record<string, string | number | boolean | string[]>>,
+): ProcessingResult {
   const project = getWorkflowProject(projectId);
   const primaryTechnique = getPrimaryTechnique(project);
   const sourceRoute = `/workspace/${primaryTechnique.toLowerCase()}?project=${project.id}`;
@@ -389,6 +396,7 @@ export function createProcessingResultFromXrdDemo(projectId = DEFAULT_PROJECT_ID
       { label: 'Detected Features', value: detectedFeatures.length ? String(detectedFeatures.length) : copy.datasetLabel },
       { label: 'Evidence State', value: project.reportReadiness.label },
     ],
+    workspaceParameters,
   };
 }
 
@@ -433,6 +441,7 @@ export function refineDiscussionFromProcessing(
     })),
     reportTemplate: template.reportTemplate,
     refinedAt: DEMO_TIMESTAMP,
+    workspaceParameters: processingResult.workspaceParameters,
   };
 }
 
@@ -459,6 +468,7 @@ export function createNotebookEntryFromRefinement(
     statusSummary: refinement.statusSummary,
     sections: getTemplateSections(refinement, templateMode),
     reportTemplate: template.reportTemplate,
+    workspaceParameters: refinement.workspaceParameters,
   };
 }
 
@@ -477,6 +487,7 @@ export function createReportSectionFromNotebookEntry(entry: NotebookEntry): Repo
     body: lines.join('\n'),
     lines,
     sourceLabel: entry.sourceLabel,
+    workspaceParameters: entry.workspaceParameters,
   };
 }
 

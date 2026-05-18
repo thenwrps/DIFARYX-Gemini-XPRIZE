@@ -49,7 +49,7 @@ export function ConnectedAccountStatus({
           <Link2 size={15} className="text-primary" />
           <div>
             <div className="text-sm font-semibold text-text-main">{state.providerLabel}</div>
-            <div className="text-xs text-text-muted">Connection shell only; no external write action is active.</div>
+            <div className="text-xs text-text-muted">Preview/gated only; no external write action is active.</div>
           </div>
         </div>
         <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badgeClass(state.status)}`}>

@@ -1,8 +1,9 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
+  Bot,
   Brain,
   CheckCircle2,
   ChevronDown,
@@ -22,6 +23,9 @@ import {
   Terminal,
 } from 'lucide-react';
 import { Graph } from '../components/ui/Graph';
+import { Card } from '../components/ui/Card';
+import { DashboardLayout } from '../components/layout/DashboardLayout';
+import { useAuth } from '../contexts/AuthContext';
 import { runXrdPhaseIdentificationAgent } from '../agents/xrdAgent';
 import {
   demoProjects,
@@ -90,6 +94,15 @@ import {
   requiresApproval,
   type RuntimeMode,
 } from '../runtime/difaryxRuntimeMode';
+import {
+  getStoredWorkspaceMode,
+  setWorkspaceMode,
+} from '../utils/workspaceMode';
+import {
+  buildEvidenceRouteSearch,
+  getEvidenceRouteContext,
+  type EvidenceRouteContext,
+} from '../utils/evidenceRouteContext';
 
 type TechniqueContext = Technique;
 type AgentMode = 'deterministic' | 'guided' | 'autonomous';
@@ -219,6 +232,11 @@ const AGENT_MODES: Record<AgentMode, {
     inputLabel: 'Review Objective',
     inputPlaceholder: 'Define the review objective. The agent will inspect evidence, identify validation gaps, and recommend the next scientific action.',
   },
+};
+
+const normalizeAgentMode = (value: string | null): AgentMode => {
+  if (value === 'guided' || value === 'autonomous' || value === 'deterministic') return value;
+  return 'deterministic';
 };
 
 const MODEL_MODE_LABELS: Record<ModelMode, string> = {
@@ -938,6 +956,15 @@ import {
   readProjectWorkspaceParameters,
   writeProjectWorkspaceParameters,
 } from '../utils/workspaceParameterOverrides';
+import {
+  getParameterProvenanceSummary,
+  formatProvenanceSource,
+} from '../utils/parameterProvenanceSummary';
+import type { TechniqueWorkspaceId } from '../data/techniqueWorkspaceContent';
+import { getXrdProcessingParams, getXrdParameterSnapshot } from '../utils/xrdParameterAdapter';
+import { getRamanParameterSnapshot } from '../utils/ramanParameterAdapter';
+import { getXpsParameterSnapshot } from '../utils/xpsParameterAdapter';
+import { getFtirParameterSnapshot } from '../utils/ftirParameterAdapter';
 
 function FormulaText({
   children,
@@ -1180,12 +1207,166 @@ function toAgentRunResult(
   };
 }
 
+function AgentUserWorkspaceEmptyState({ email }: { email?: string }) {
+  return (
+    <DashboardLayout>
+      <div className="h-full overflow-y-auto bg-slate-50 p-6">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Agent Workspace</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-text-main">User Agent Workspace</h1>
+            {email && <p className="mt-1 text-sm text-text-muted">Signed in as {email}</p>}
+          </div>
+          <Card className="rounded-lg border-dashed bg-white p-10 text-center">
+            <Bot size={42} className="mx-auto text-text-dim" />
+            <h2 className="mt-4 text-lg font-bold text-text-main">No active user workflow</h2>
+            <p className="mt-2 text-sm text-text-muted">Upload evidence or create a project before running the user agent workspace.</p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <Link
+                to="/analysis?source=user_uploaded&next=agent"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
+              >
+                Upload evidence
+              </Link>
+              <Link
+                to="/dashboard"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50"
+              >
+                Create project
+              </Link>
+              <Link
+                to="/demo/agent?project=cu-fe2o4-spinel&mode=demo"
+                onClick={() => setWorkspaceMode('demo')}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20"
+              >
+                Open demo agent workflow
+              </Link>
+            </div>
+            <p className="mt-5 text-xs font-semibold text-amber-700">External writes disabled</p>
+          </Card>
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
+
+function UploadedAgentContext({ routeContext }: { routeContext: EvidenceRouteContext }) {
+  const snapshot = getProjectEvidenceSnapshot(null, {
+    source: routeContext.source,
+    analysisSessionId: routeContext.sessionId,
+    uploadedRunId: routeContext.uploadedRunId,
+    driveFileId: routeContext.driveFileId,
+    projectIdExplicit: false,
+  });
+  const dataset = snapshot.activeDataset;
+  const evidenceQuery = buildEvidenceRouteSearch(routeContext);
+  const suffix = evidenceQuery ? `?${evidenceQuery}` : '';
+  const technique = snapshot.primaryTechnique.toLowerCase();
+  const workspacePath = `/workspace/${technique}?mode=quick${evidenceQuery ? `&${evidenceQuery}` : ''}`;
+
+  return (
+    <DashboardLayout>
+      <div className="h-full overflow-y-auto bg-slate-50 p-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-blue-700">User Workspace</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-text-main">Uploaded Evidence Review</h1>
+              <p className="mt-1 text-sm text-text-muted">Agent context is scoped to the uploaded file and does not load demo project defaults.</p>
+            </div>
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+              source=user_uploaded
+            </span>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <Card className="rounded-lg bg-white p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-text-main">{dataset?.fileName ?? snapshot.sampleIdentity}</h2>
+                  <p className="mt-1 text-sm text-text-muted">
+                    {snapshot.primaryTechnique} / {snapshot.sourceLabel ?? 'User-uploaded evidence'} / External writes disabled
+                  </p>
+                </div>
+                <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-700">
+                  {snapshot.permissionMode === 'read_only' ? 'read_only' : snapshot.permissionMode}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-md border border-border bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Detected technique</p>
+                  <p className="mt-1 text-sm font-bold text-text-main">{snapshot.availableTechniques.join(', ') || 'Metadata only'}</p>
+                </div>
+                <div className="rounded-md border border-border bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Parsed features</p>
+                  <p className="mt-1 text-sm font-bold text-text-main">{dataset?.detectedFeatures.length ?? 0}</p>
+                </div>
+                <div className="rounded-md border border-border bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Session</p>
+                  <p className="mt-1 truncate text-sm font-bold text-text-main">{routeContext.sessionId ?? routeContext.uploadedRunId ?? 'Local upload'}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-md border border-border bg-slate-50 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Workflow log</p>
+                <div className="mt-2 space-y-2 text-xs text-text-main">
+                  <p>Loaded uploaded evidence context.</p>
+                  <p>Preserved source=user_uploaded for Agent, Notebook, Report, and Workspace handoff.</p>
+                  <p>No external write action is enabled.</p>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="rounded-lg bg-white p-4">
+              <h2 className="text-sm font-bold text-text-main">Next actions</h2>
+              <div className="mt-3 grid gap-2">
+                <Link to={workspacePath} className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90">
+                  Open Workspace
+                </Link>
+                <Link to={`/notebook${suffix}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
+                  Send to Notebook
+                </Link>
+                <Link to={`/reports${suffix}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
+                  Create Report
+                </Link>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
+
 export default function AgentDemo() {
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  const routeContext = getEvidenceRouteContext({
+    authUser: user,
+    searchParams,
+    storedMode: getStoredWorkspaceMode(),
+  });
+  const hasExplicitDemoProject = Boolean(searchParams.get('project'));
+  const effectiveWorkspaceMode = routeContext.effectiveWorkspaceMode;
+
+  if (routeContext.isUploadedContext) {
+    return <UploadedAgentContext routeContext={routeContext} />;
+  }
+
+  if (effectiveWorkspaceMode === 'user' && !hasExplicitDemoProject) {
+    return <AgentUserWorkspaceEmptyState email={user?.email} />;
+  }
+
+  return <AgentDemoContent />;
+}
+
+function AgentDemoContent() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const projectIdFromUrl = normalizeRegistryProjectId(searchParams.get('project')) || DEFAULT_PROJECT_ID;
-  const modeFromUrl = (searchParams.get('mode') as AgentMode) || 'deterministic';
+  const modeFromUrl = normalizeAgentMode(searchParams.get('mode'));
 
   const [missionText, setMissionText] = useState(DEFAULT_MISSION);
   const [feedback, setFeedback] = useState('');
@@ -1195,6 +1376,7 @@ export default function AgentDemo() {
   );
   const [approvalAction, setApprovalAction] = useState<ApprovalActionPreview | null>(null);
   const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false);
+  const [moreDetailsOpen, setMoreDetailsOpen] = useState(false);
   const runningGuardRef = useRef(false);
   const runTokenRef = useRef(0);
 
@@ -1212,7 +1394,7 @@ export default function AgentDemo() {
 
   React.useEffect(() => {
     const newProjectId = normalizeRegistryProjectId(searchParams.get('project')) || DEFAULT_PROJECT_ID;
-    const newMode = (searchParams.get('mode') as AgentMode) || 'deterministic';
+    const newMode = normalizeAgentMode(searchParams.get('mode'));
 
     if (newProjectId !== agentState.projectId || newMode !== agentState.mode) {
       setAgentState(makeInitialState(newProjectId, newMode));
@@ -1237,6 +1419,7 @@ export default function AgentDemo() {
   }
 
   const registryProject = getRegistryProject(agentState.projectId);
+  const currentProject = registryProject._raw;
   const evidenceSnapshot = useMemo(
     () => getProjectEvidenceSnapshot(agentState.projectId, {
       source: searchParams.get('source'),
@@ -1259,17 +1442,35 @@ export default function AgentDemo() {
   const connectedAccountState = runtimeContext.sourceMode === 'google_drive_connected'
     ? getGoogleConnectedShellState()
     : getDefaultConnectedAccountState();
-  const evidenceBundle = useMemo(
-    () => createEvidenceBundleFromSnapshot(evidenceSnapshot, {
+
+  // Bundle gating: only create bundle when appropriate
+  const evidenceBundle = useMemo(() => {
+    const techniqueCount = evidenceSnapshot.availableTechniques.length;
+    const context: import('../runtime/evidenceBundle').BundleCreationContext = {
+      route: '/demo/agent',
+      techniqueCount,
+      hasMultiTechIntent: techniqueCount >= 2 || searchParams.get('bundle') === 'mixed',
+      isDemoProject: evidenceSnapshot.sourceMode === 'demo_preloaded',
+      hasDemoPreloadedBundle: currentProject.id === 'cu-fe2o4-spinel' && techniqueCount >= 2,
+    };
+
+    // Only create bundle if gating logic approves
+    const shouldCreate = techniqueCount >= 2 || context.hasDemoPreloadedBundle;
+    if (!shouldCreate) {
+      return null;
+    }
+
+    return createEvidenceBundleFromSnapshot(evidenceSnapshot, {
       includeDemoContext: searchParams.get('bundle') === 'mixed' || searchParams.get('source') === 'mixed',
-    }),
-    [evidenceSnapshot, searchParams],
-  );
+      lifecycleState: 'created',
+      creationReason: context.hasDemoPreloadedBundle ? 'demo_preloaded' : 'agent_requested_evidence_package',
+    });
+  }, [evidenceSnapshot, searchParams, currentProject.id]);
+
   const bundleTechniqueCoverage = useMemo(
-    () => getTechniqueCoverageFromBundle(evidenceBundle),
+    () => evidenceBundle ? getTechniqueCoverageFromBundle(evidenceBundle) : [],
     [evidenceBundle],
   );
-  const currentProject = registryProject._raw;
   const datasetOptions = useMemo(
     () => getDatasetOptions(agentState.context, agentState.projectId),
     [agentState.context, agentState.projectId],
@@ -1280,27 +1481,34 @@ export default function AgentDemo() {
   );
   const selectedDataset = selectedOption.dataset;
   const selectedProject = currentProject;
-  
+
   // Condition lock state - now controllable
   const [experimentConditionLock, setExperimentConditionLock] = useState<ExperimentConditionLock | null>(
     () => getLatestExperimentConditionLock(currentProject.id)
   );
-  
+
+  // Workspace parameter state: committed overrides + draft edits
+  const [workspaceParameters, setWorkspaceParameters] = useState<WorkspaceParameters>(
+    () => readProjectWorkspaceParameters(currentProject.id, getProjectTechniques(currentProject)),
+  );
+  const [draftParameters, setDraftParameters] = useState<WorkspaceParameters>({});
+
   const experimentConditionTopBarLabel = experimentConditionLock?.userConfirmed ? 'Locked' : 'Not locked';
   const contextConfig = CONTEXT_CONFIG[agentState.context];
   const stages = contextConfig.stages;
   const modeConfig = AGENT_MODES[agentState.mode];
   const xrdAnalysis = useMemo(
-    () =>
-      agentState.context === 'XRD'
-        ? runXrdPhaseIdentificationAgent({
-            datasetId: selectedDataset.id,
-            sampleName: selectedDataset.sampleName,
-            sourceLabel: selectedDataset.fileName,
-            dataPoints: selectedDataset.dataPoints,
-          })
-        : null,
-    [agentState.context, selectedDataset],
+    () => {
+      if (agentState.context !== 'XRD') return null;
+      const processingParams = getXrdProcessingParams(selectedProject.id);
+      return runXrdPhaseIdentificationAgent({
+        datasetId: selectedDataset.id,
+        sampleName: selectedDataset.sampleName,
+        sourceLabel: selectedDataset.fileName,
+        dataPoints: selectedDataset.dataPoints,
+      }, processingParams);
+    },
+    [agentState.context, selectedDataset, selectedProject.id],
   );
   const peakMarkers = useMemo(
     () =>
@@ -1342,9 +1550,9 @@ export default function AgentDemo() {
       return routeProcessingResult ??
         evidenceSnapshot.reportContext ??
         getLatestProcessingResult(selectedProject.id) ??
-        createProcessingResultFromXrdDemo(selectedProject.id);
+        createProcessingResultFromXrdDemo(selectedProject.id, workspaceParameters);
     },
-    [searchParams, selectedProject.id, evidenceSnapshot.reportContext],
+    [searchParams, selectedProject.id, evidenceSnapshot.reportContext, workspaceParameters],
   );
 
   const showFeedback = (message: string) => {
@@ -1446,10 +1654,11 @@ export default function AgentDemo() {
       projectId: option.project.id,
       createdAt: new Date().toISOString(),
       mission: missionText.trim() || DEFAULT_MISSION,
+      workspaceParameters: workspaceParameters,
       outputs: {
         phase: decision.primaryResult,
         confidence: 85, // Placeholder - fusionEngine doesn't use numeric confidence
-    confidenceLabel: 'Status',
+        confidenceLabel: 'Status',
         evidence: decision.basis,
         interpretation: decision.crossTech,
         caveats: decision.limitations,
@@ -1493,13 +1702,56 @@ export default function AgentDemo() {
     const config = CONTEXT_CONFIG[context];
     const xrdResult =
       context === 'XRD'
-        ? runXrdPhaseIdentificationAgent({
-            datasetId: option.dataset.id,
-            sampleName: option.dataset.sampleName,
-            sourceLabel: option.dataset.fileName,
-            dataPoints: option.dataset.dataPoints,
-          })
+        ? (() => {
+            const processingParams = getXrdProcessingParams(agentState.projectId);
+            const paramSnapshot = getXrdParameterSnapshot(agentState.projectId);
+            const result = runXrdPhaseIdentificationAgent({
+              datasetId: option.dataset.id,
+              sampleName: option.dataset.sampleName,
+              sourceLabel: option.dataset.fileName,
+              dataPoints: option.dataset.dataPoints,
+            }, processingParams);
+            // Log parameter snapshot used for processing
+            if (paramSnapshot.hasOverrides) {
+              appendLog({
+                stamp: '[params]',
+                message: `Applied ${paramSnapshot.overrideCount} custom XRD parameter${paramSnapshot.overrideCount !== 1 ? 's' : ''} (last updated by ${paramSnapshot.lastUpdatedBy})`,
+                type: 'system',
+              });
+            }
+            return result;
+          })()
         : null;
+
+    // Log parameter snapshots for other techniques (provenance-only, no actual processing)
+    if (context === 'Raman') {
+      const paramSnapshot = getRamanParameterSnapshot(agentState.projectId);
+      if (paramSnapshot.hasOverrides) {
+        appendLog({
+          stamp: '[params]',
+          message: `Applied ${paramSnapshot.overrideCount} custom Raman parameter${paramSnapshot.overrideCount !== 1 ? 's' : ''} (last updated by ${paramSnapshot.lastUpdatedBy})`,
+          type: 'system',
+        });
+      }
+    } else if (context === 'XPS') {
+      const paramSnapshot = getXpsParameterSnapshot(agentState.projectId);
+      if (paramSnapshot.hasOverrides) {
+        appendLog({
+          stamp: '[params]',
+          message: `Applied ${paramSnapshot.overrideCount} custom XPS parameter${paramSnapshot.overrideCount !== 1 ? 's' : ''} (last updated by ${paramSnapshot.lastUpdatedBy})`,
+          type: 'system',
+        });
+      }
+    } else if (context === 'FTIR') {
+      const paramSnapshot = getFtirParameterSnapshot(agentState.projectId);
+      if (paramSnapshot.hasOverrides) {
+        appendLog({
+          stamp: '[params]',
+          message: `Applied ${paramSnapshot.overrideCount} custom FTIR parameter${paramSnapshot.overrideCount !== 1 ? 's' : ''} (last updated by ${paramSnapshot.lastUpdatedBy})`,
+          type: 'system',
+        });
+      }
+    }
 
     setFeedback('');
     setAgentState((current) => ({
@@ -1768,7 +2020,7 @@ export default function AgentDemo() {
       message: `Saved deterministic demo notebook entry from the current interpretation context as ${notebookEntry.templateLabel}.`,
       type: 'success',
     });
-    navigate(`/notebook?project=${selectedProject.id}&entry=${notebookEntry.id}&template=${templateMode}${evidenceRouteSuffix}`);
+    navigate(`/notebook?project=${selectedProject.id}&mode=demo&entry=${notebookEntry.id}&template=${templateMode}${evidenceRouteSuffix}`);
   };
 
   const handleOpenSourceProcessing = () => {
@@ -1776,11 +2028,19 @@ export default function AgentDemo() {
   };
 
   const handleViewClaimBoundary = () => {
-    appendLog({
-      stamp: '[boundary]',
-      message: `Bundle ${evidenceBundle.bundleId} reviewed: ${bundleTechniqueCoverage.filter((item) => item.status === 'available').length} techniques available, ${evidenceBundle.missingRequiredTechniques.length} missing required, claim boundary remains validation-limited.`,
-      type: 'info',
-    });
+    if (evidenceBundle) {
+      appendLog({
+        stamp: '[boundary]',
+        message: `Bundle ${evidenceBundle.bundleId} reviewed: ${bundleTechniqueCoverage.filter((item) => item.status === 'available').length} techniques available, ${evidenceBundle.missingRequiredTechniques.length} missing required, claim boundary remains validation-limited.`,
+        type: 'info',
+      });
+    } else {
+      appendLog({
+        stamp: '[boundary]',
+        message: `Single-technique analysis: claim boundary remains validation-limited.`,
+        type: 'info',
+      });
+    }
     showFeedback('Claim boundary ready in the review log.');
   };
 
@@ -1807,12 +2067,6 @@ export default function AgentDemo() {
     () => getProjectTechniques(currentProject),
   );
   const [multiTechOpen, setMultiTechOpen] = useState(false);
-
-  // Workspace parameter state: committed overrides + draft edits
-  const [workspaceParameters, setWorkspaceParameters] = useState<WorkspaceParameters>(
-    () => readProjectWorkspaceParameters(currentProject.id, getProjectTechniques(currentProject)),
-  );
-  const [draftParameters, setDraftParameters] = useState<WorkspaceParameters>({});
 
   // Condition lock drives read-only mode for parameter editor
   const isConditionLocked = !!experimentConditionLock?.userConfirmed;
@@ -2025,179 +2279,118 @@ export default function AgentDemo() {
         return null;
       })()}
 
-      {/* COMPACT ONE-ROW HEADER */}
+      {/* COMPACT SINGLE-ROW HEADER */}
       <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-2.5">
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Left: Branding */}
-          <div className="flex items-center gap-2">
-            <Brain size={18} className="text-blue-600" />
-            <div className="flex flex-col">
-              <span className="text-sm font-bold text-slate-900">DIFARYX Agent v0.1</span>
-              <span className="text-[9px] uppercase tracking-wider text-slate-500">Scientific Workflow Agent</span>
-            </div>
+        <div className="flex items-center gap-2">
+          {/* Project Selector */}
+          <div className="relative">
+            <select
+              value={agentState.projectId}
+              disabled={runningGuardRef.current}
+              onChange={(e) => handleProjectChange(e.target.value)}
+              className="h-7 px-2 pr-6 text-xs font-semibold bg-white border border-slate-300 rounded text-slate-700 appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:border-slate-400"
+              title={currentProject.name}
+            >
+              {demoProjectRegistry.map((proj) => (
+                <option key={proj.id} value={proj.id}>
+                  {proj.title}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
 
-          <div className="h-6 w-px bg-slate-300" />
-
-          {/* Center: Project, Task, Mode, Conditions, Validation */}
-          <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
-            {/* Project Selector */}
-            <div className="relative">
-              <select
-                value={agentState.projectId}
-                disabled={runningGuardRef.current}
-                onChange={(e) => handleProjectChange(e.target.value)}
-                className="h-7 px-2 pr-6 text-xs font-semibold bg-white border border-slate-300 rounded text-slate-700 appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:border-slate-400"
-                title={currentProject.name}
-              >
-                {demoProjectRegistry.map((proj) => (
-                  <option key={proj.id} value={proj.id}>
-                    {proj.title}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          {/* Workflow Selector */}
+          {agentContext.evidenceMode === 'multi-tech' ? (
+            <MultiTechPopover
+              evidenceLayers={agentContext.evidenceLayers}
+              includedTechniques={includedTechniques}
+              selectedTechnique={agentContext.selectedTechnique}
+              onToggleIncluded={handleToggleIncluded}
+              onSelectTechnique={handleTechniqueSelect}
+              isOpen={multiTechOpen}
+              onToggleOpen={() => setMultiTechOpen((o) => !o)}
+              disabled={runningGuardRef.current}
+            />
+          ) : (
+            <div className="h-7 px-2.5 flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded text-[10px] font-semibold text-blue-700">
+              <Microscope size={11} />
+              <span className="truncate max-w-[120px]" title={agentContext.workspaceTitle}>{agentContext.workspaceTitle}</span>
             </div>
+          )}
 
-            {/* Task Pill: Multi-tech popover or single-tech static */}
-            {agentContext.evidenceMode === 'multi-tech' ? (
-              <MultiTechPopover
-                evidenceLayers={agentContext.evidenceLayers}
-                includedTechniques={includedTechniques}
-                selectedTechnique={agentContext.selectedTechnique}
-                onToggleIncluded={handleToggleIncluded}
-                onSelectTechnique={handleTechniqueSelect}
-                isOpen={multiTechOpen}
-                onToggleOpen={() => setMultiTechOpen((o) => !o)}
-                disabled={runningGuardRef.current}
-              />
-            ) : (
-              <div className="h-7 px-2.5 flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded text-[10px] font-semibold text-blue-700">
-                <Microscope size={11} />
-                <span className="truncate max-w-[140px]" title={agentContext.workspaceTitle}>{agentContext.workspaceTitle}</span>
-              </div>
-            )}
+          {/* Runtime Compact Chip */}
+          <div className={`h-7 px-2 flex items-center gap-1 border rounded text-[10px] font-semibold ${
+            runtimeMode === 'demo'
+              ? 'bg-slate-50 border-slate-200 text-slate-700'
+              : 'bg-amber-50 border-amber-200 text-amber-700'
+          }`}>
+            <span>{runtimeMode === 'demo' ? 'Demo' : 'Connected'}</span>
+          </div>
 
-            {/* Mode Selector */}
-            <div className="relative">
-              <select
-                value={agentState.mode}
-                disabled={runningGuardRef.current}
-                onChange={(e) => handleModeChange(e.target.value as AgentMode)}
-                className="h-7 px-2 pr-6 text-xs font-semibold bg-white border border-slate-300 rounded text-slate-700 appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:border-slate-400"
-              >
-                {Object.entries(AGENT_MODES).map(([key, config]) => (
-                  <option key={key} value={key}>
-                    {config.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
-
-            {/* Conditions Lock */}
-            <div className="h-7 px-2.5 flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded text-[10px] font-semibold text-amber-700">
-              <Lock size={11} />
-              <span>{experimentConditionTopBarLabel}</span>
-            </div>
-
-            {/* Validation Status */}
-            <div className="h-7 px-2.5 flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded text-[10px] font-semibold text-emerald-700">
-              <CheckCircle2 size={11} />
-              <span>{evidenceSnapshot.validationGaps.length > 0 ? 'Boundary Gated' : 'Boundary Ready'}</span>
-            </div>
-
-            {/* Runtime Governance */}
-            <div className="relative">
-              <select
-                value={runtimeMode}
-                disabled={runningGuardRef.current}
-                onChange={(e) => setRuntimeMode(e.target.value as RuntimeMode)}
-                className={`h-7 px-2 pr-6 text-[10px] font-semibold border rounded appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                  runtimeMode === 'demo'
-                    ? 'bg-slate-50 border-slate-200 text-slate-700'
-                    : 'bg-amber-50 border-amber-200 text-amber-700'
-                }`}
-                title={`Runtime governance: sourceMode=${runtimeGovernance.sourceMode}; permissionMode=${runtimeGovernance.permissionMode}`}
-              >
-                <option value="demo">Runtime: Demo</option>
-                <option value="connected">Runtime: Connected gated</option>
-              </select>
-              <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
-            <div className={`h-7 px-2.5 flex items-center gap-1.5 border rounded text-[10px] font-semibold ${getRuntimeBadgeClass(runtimeContext)}`}>
-              <Database size={11} />
-              <span>{getRuntimeBadgeLabel(runtimeContext)}</span>
-            </div>
+          {/* Bundle Compact Chip - only show if bundle exists */}
+          {evidenceBundle && (
             <div
-              className="h-7 max-w-[230px] px-2.5 flex items-center gap-1.5 bg-cyan-50 border border-cyan-200 rounded text-[10px] font-semibold text-cyan-700"
+              className="h-7 px-2 flex items-center gap-1 bg-cyan-50 border border-cyan-200 rounded text-[10px] font-semibold text-cyan-700"
               title={`${evidenceBundle.bundleId}: ${bundleTechniqueCoverage.map((item) => `${item.technique} ${item.status}`).join(', ')}`}
             >
-              <Layers size={11} />
-              <span className="truncate">{getEvidenceBundleBadgeLabel(evidenceBundle)} / {evidenceBundle.evidenceCompletenessScore}%</span>
+              <Layers size={10} />
+              <span>Bundle {evidenceBundle.evidenceCompletenessScore}%</span>
             </div>
-            <ConnectedAccountStatus
-              state={connectedAccountState}
-              capabilities={runtimeContext.sourceMode === 'google_drive_connected' ? ['drive_import', 'drive_export_future', 'gmail_draft_future'] : ['storage_future']}
-              compact
-            />
-            {runtimeContext.sourceMode === 'google_drive_connected' && (
-              <div className="h-7 max-w-[220px] px-2.5 flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded text-[10px] font-semibold text-blue-700">
-                <Database size={11} />
-                <span className="truncate" title={evidenceSnapshot.activeDataset?.fileName ?? 'Mock Drive evidence preview'}>
-                  {evidenceSnapshot.activeDataset?.fileName ?? 'Mock Drive evidence preview'}
-                </span>
-              </div>
-            )}
+          )}
+          {/* Boundary Compact Chip */}
+          <div className="h-7 px-2 flex items-center gap-1 bg-emerald-50 border border-emerald-200 rounded text-[10px] font-semibold text-emerald-700">
+            <CheckCircle2 size={10} />
+            <span>{evidenceSnapshot.validationGaps.length > 0 ? 'Boundary gated' : 'Boundary ready'}</span>
           </div>
 
-          {/* Right: Auto/Step Toggle, Run Button, Actions Dropdown */}
-          <div className="flex items-center gap-2">
-            {/* Auto/Step Toggle */}
-            <div className="flex h-7 items-center gap-1.5 bg-white border border-slate-300 rounded px-1">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 pl-1">Run:</span>
-              <div className="flex gap-0.5">
-                {(['auto', 'step'] as ExecutionMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    disabled={runningGuardRef.current}
-                    onClick={() => handleExecutionModeChange(mode)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors disabled:opacity-60 ${
-                      agentState.reasoningState.executionMode === mode
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-                    }`}
-                  >
-                    {mode === 'auto' ? 'Auto' : 'Step'}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="flex-1" />
 
-            {/* Run Button */}
+          {/* Run Mode Toggle */}
+          <div className="flex h-7 items-center gap-1 bg-white border border-slate-300 rounded px-1">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 pl-1">Run:</span>
+            <div className="flex gap-0.5">
+              {(['auto', 'step'] as ExecutionMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={runningGuardRef.current}
+                  onClick={() => handleExecutionModeChange(mode)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors disabled:opacity-60 ${
+                    agentState.reasoningState.executionMode === mode
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                  }`}
+                >
+                  {mode === 'auto' ? 'Auto' : 'Step'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Run Workflow Button */}
+          <button
+            type="button"
+            onClick={handlePrimaryRun}
+            disabled={runningGuardRef.current}
+            className="h-7 px-3 flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-blue-700 rounded text-[11px] font-bold text-white shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {agentState.reasoningState.status === 'running' ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Play size={12} fill="currentColor" />
+            )}
+            <span>Run Workflow</span>
+          </button>
+
+          {/* Actions Dropdown */}
+          <div className="relative">
             <button
               type="button"
-              onClick={handlePrimaryRun}
+              onClick={() => setActionsDropdownOpen(!actionsDropdownOpen)}
               disabled={runningGuardRef.current}
-              className="h-7 px-3 flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-blue-700 rounded text-[11px] font-bold text-white shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-7 px-2.5 flex items-center gap-1 bg-white border border-slate-300 rounded text-[11px] font-semibold text-slate-700 hover:border-blue-400 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {agentState.reasoningState.status === 'running' ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <Play size={12} fill="currentColor" />
-              )}
-              <span>Run Workflow</span>
-            </button>
-
-            {/* Actions Dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setActionsDropdownOpen(!actionsDropdownOpen)}
-                disabled={runningGuardRef.current}
-                className="h-7 px-2.5 flex items-center gap-1 bg-white border border-slate-300 rounded text-[11px] font-semibold text-slate-700 hover:border-blue-400 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
                 <span>Actions</span>
                 <ChevronDown size={12} />
               </button>
@@ -2260,9 +2453,105 @@ export default function AgentDemo() {
                   </button>
                 </div>
               )}
+          </div>
+
+          {/* More Details Button */}
+          <button
+            type="button"
+            onClick={() => setMoreDetailsOpen(!moreDetailsOpen)}
+            className="h-7 px-2.5 flex items-center gap-1 bg-white border border-slate-300 rounded text-[11px] font-semibold text-slate-700 hover:border-blue-400 hover:text-blue-700"
+          >
+            <span>More details</span>
+            <ChevronDown size={12} className={`transition-transform ${moreDetailsOpen ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+
+        {/* More Details Drawer */}
+        {moreDetailsOpen && (
+          <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+              <div>
+                <span className="font-semibold text-slate-600">Mode:</span>
+                <span className="ml-2 text-slate-700">{AGENT_MODES[agentState.mode].label}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-slate-600">Source mode:</span>
+                <span className="ml-2 text-slate-700">{runtimeContext.sourceMode.replace(/_/g, ' ')}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-slate-600">Runtime mode:</span>
+                <span className="ml-2 text-slate-700">{runtimeContext.runtimeMode}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-slate-600">Permission mode:</span>
+                <span className="ml-2 text-slate-700">{runtimeContext.permissionMode.replace(/_/g, ' ')}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-slate-600">Approval status:</span>
+                <span className="ml-2 text-slate-700">{runtimeContext.approvalStatus.replace(/_/g, ' ')}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-slate-600">Source label:</span>
+                <span className="ml-2 text-slate-700">{runtimeContext.sourceLabel}</span>
+              </div>
+              {evidenceBundle && (
+                <>
+                  <div>
+                    <span className="font-semibold text-slate-600">Evidence bundle:</span>
+                    <span className="ml-2 text-slate-700">{getEvidenceBundleBadgeLabel(evidenceBundle)}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-600">Completeness:</span>
+                    <span className="ml-2 text-slate-700">{evidenceBundle.evidenceCompletenessScore}%</span>
+                  </div>
+                </>
+              )}
+              <div>
+                <span className="font-semibold text-slate-600">Experiment conditions:</span>
+                <span className="ml-2 text-slate-700">{experimentConditionTopBarLabel}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-slate-600">Validation gaps:</span>
+                <span className="ml-2 text-slate-700">{evidenceSnapshot.validationGaps.length} identified</span>
+              </div>
+              {runtimeContext.sourceMode === 'google_drive_connected' && connectedAccountState.email && (
+                <>
+                  <div>
+                    <span className="font-semibold text-slate-600">Connected account:</span>
+                    <span className="ml-2 text-slate-700">{connectedAccountState.email}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-600">Drive capabilities:</span>
+                    <span className="ml-2 text-slate-700">Import enabled, Export future</span>
+                  </div>
+                </>
+              )}
+              <div className="col-span-2">
+                <span className="font-semibold text-slate-600">Dataset:</span>
+                <span className="ml-2 text-slate-700">{evidenceSnapshot.activeDataset?.fileName ?? 'No active dataset'}</span>
+              </div>
+              {(() => {
+                const availableTechniques = registryProject?.techniques.filter(t => t.available).map(t => t.id as TechniqueWorkspaceId) ?? [];
+                const parameterSummaries = availableTechniques.map(technique =>
+                  getParameterProvenanceSummary(selectedProject.id, technique)
+                ).filter(s => s.hasOverrides);
+
+                if (parameterSummaries.length === 0) return null;
+
+                return (
+                  <div className="col-span-2 pt-2 border-t border-slate-200">
+                    <span className="font-semibold text-slate-600">Modified parameters:</span>
+                    <span className="ml-2 text-slate-700">
+                      {parameterSummaries.map(s =>
+                        `${s.techniqueLabel}: ${s.overrideCount} (${formatProvenanceSource(s.lastUpdatedBy)})`
+                      ).join(', ')}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Three-Column Layout */}
@@ -2303,7 +2592,7 @@ export default function AgentDemo() {
           toolTrace={agentState.toolTrace}
           runtimeMode={runtimeMode}
           approvalLedgerProjectId={selectedProject.id}
-          approvalLedgerBundleId={evidenceBundle.bundleId}
+          approvalLedgerBundleId={evidenceBundle?.bundleId ?? `single-${selectedProject.id}`}
         />
       </div>
       <ApprovalActionDialog
