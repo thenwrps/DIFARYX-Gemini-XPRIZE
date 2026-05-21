@@ -23,6 +23,7 @@ import {
 } from '../utils/workspaceMode';
 import { getApprovalLedgerEntries, type ApprovalLedgerEntry } from '../runtime/approvalLedger';
 import { getAnalysisSessions, getStatusLabel, type AnalysisSession } from '../data/analysisSessions';
+import { runWhenIdle } from '../utils/idle';
 
 const EVENT_TYPES: ExperimentEventType[] = [
   'dataset_loaded',
@@ -85,16 +86,23 @@ export default function HistoryPage() {
     return next;
   }, [projectFilter, techniqueFilter, eventTypeFilter, showUserHistory]);
 
-  const userLedgerEntryCount = React.useMemo(
-    () => getApprovalLedgerEntries().filter((entry) => USER_HISTORY_SOURCE_MODES.includes(entry.sourceMode)).length,
-    [],
-  );
-  const userUploadedSessions = React.useMemo(
-    () => getAnalysisSessions()
-      .filter((session) => session.source === 'user_uploaded')
-      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
-    [],
-  );
+  const [userLedgerEntryCount, setUserLedgerEntryCount] = React.useState(0);
+  const [userUploadedSessions, setUserUploadedSessions] = React.useState<AnalysisSession[]>([]);
+
+  React.useEffect(() => {
+    if (!showUserHistory) return;
+
+    return runWhenIdle(() => {
+      setUserLedgerEntryCount(
+        getApprovalLedgerEntries().filter((entry) => USER_HISTORY_SOURCE_MODES.includes(entry.sourceMode)).length,
+      );
+      setUserUploadedSessions(
+        getAnalysisSessions()
+          .filter((session) => session.source === 'user_uploaded')
+          .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
+      );
+    });
+  }, [showUserHistory]);
 
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);

@@ -114,6 +114,7 @@ import {
   getEvidenceRouteContext,
   type EvidenceRouteContext,
 } from '../utils/evidenceRouteContext';
+import { runWhenIdle } from '../utils/idle';
 
 const NOTEBOOK_TEMPLATE_MODES: NotebookTemplateMode[] = ['research', 'rd', 'analytical'];
 const NOTEBOOK_TABS = ['Objective / Context', 'Evidence', 'Interpretation', 'Validation Gap', 'Decision'] as const;
@@ -769,12 +770,28 @@ function NotebookLabContent({ routeContext }: { routeContext: EvidenceRouteConte
     : (getProject(searchParams.get('project')) ?? getProject(null))!;
 
   // Get evidence snapshot first for uploaded context
-  const evidenceSnapshot = useMemo(() => getProjectEvidenceSnapshot(isUploadedContext ? null : project?.id, {
+  const initialEvidenceSnapshot = useMemo(() => getProjectEvidenceSnapshot(isUploadedContext ? null : project?.id, {
     source: routeContext.source,
     analysisSessionId: routeContext.sessionId,
     uploadedRunId: routeContext.uploadedRunId,
     driveFileId: routeContext.driveFileId,
+    deferStoredContext: !isUploadedContext,
   }), [isUploadedContext, project?.id, routeContext]);
+  const [evidenceSnapshot, setEvidenceSnapshot] = useState(initialEvidenceSnapshot);
+
+  useEffect(() => {
+    setEvidenceSnapshot(initialEvidenceSnapshot);
+    if (isUploadedContext) return;
+
+    return runWhenIdle(() => {
+      setEvidenceSnapshot(getProjectEvidenceSnapshot(project?.id, {
+        source: routeContext.source,
+        analysisSessionId: routeContext.sessionId,
+        uploadedRunId: routeContext.uploadedRunId,
+        driveFileId: routeContext.driveFileId,
+      }));
+    });
+  }, [initialEvidenceSnapshot, isUploadedContext, project?.id, routeContext]);
 
   // For uploaded context, create safe registry project from evidence snapshot
   const registryProject = isUploadedContext
@@ -836,22 +853,23 @@ function NotebookLabContent({ routeContext }: { routeContext: EvidenceRouteConte
   const [activeNotebookTab, setActiveNotebookTab] = useState<ActiveNotebookTab>('Objective / Context');
   const [selectedEvidenceTechnique, setSelectedEvidenceTechnique] = useState<Technique>(() => evidenceSnapshot.primaryTechnique);
   const [isEvidenceDrawerOpen, setIsEvidenceDrawerOpen] = useState(false);
-  const [localExperiments, setLocalExperiments] = useState(() => getLocalExperiments());
-  const [wizardNotebooks, setWizardNotebooks] = useState<ProjectNotebook[]>(() => getLocalProjectNotebooks());
+  const [localExperiments, setLocalExperiments] = useState<ReturnType<typeof getLocalExperiments>>([]);
+  const [wizardNotebooks, setWizardNotebooks] = useState<ProjectNotebook[]>([]);
+
+  useEffect(() => {
+    return runWhenIdle(() => {
+      setLocalExperiments(getLocalExperiments());
+      setWizardNotebooks(getLocalProjectNotebooks());
+    });
+  }, []);
+
   const activeWizardNotebook = useMemo(() => {
     const projectParam = searchParams.get('project');
     if (!projectParam) return null;
     // Demo project IDs always use the demo notebook branch - never treat them as wizard notebooks
     if (demoProjects.some((p) => p.id === projectParam)) return null;
-    // Re-read from localStorage so navigation to a newly-created notebook always resolves
-    const freshNotebooks = getLocalProjectNotebooks();
-    const found = freshNotebooks.find((nb) => nb.id === projectParam) ?? null;
-    // Keep sidebar state in sync if a new notebook was found
-    if (found && !wizardNotebooks.find((nb) => nb.id === projectParam)) {
-      setWizardNotebooks(freshNotebooks);
-    }
-    return found;
-  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+    return wizardNotebooks.find((nb) => nb.id === projectParam) ?? null;
+  }, [searchParams, wizardNotebooks]);
   const [observations, setObservations] = useState<string[]>([]);
   const [attachedRun, setAttachedRun] = useState<string | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -2164,6 +2182,45 @@ ${approvalLedgerMarkdown}
                     )}
                   </div>
                 </div>
+                {workflowNotebookEntry?.xrdBackendEvidenceSummary && (() => {
+                  const xbe = workflowNotebookEntry.xrdBackendEvidenceSummary;
+                  const formatSn = Number.isFinite(xbe.snRatio) ? (xbe.snRatio as number).toFixed(1) : 'N/A';
+                  const formatBaseline = Number.isFinite(xbe.baselineDeviation) ? (xbe.baselineDeviation as number).toFixed(3) : 'N/A';
+                  const formatSavedAt = (() => {
+                    try {
+                      const d = new Date(xbe.savedAt);
+                      return isNaN(d.getTime()) ? 'timestamp pending' : d.toLocaleString();
+                    } catch {
+                      return 'timestamp pending';
+                    }
+                  })();
+                  return (
+                    <div className="rounded-md border border-border bg-surface px-3 py-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-text-dim mb-1.5">{xbe.label}</div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3 lg:grid-cols-4">
+                        <div><span className="text-text-dim">Detected peaks:</span> <span className="font-semibold text-text-main">{xbe.detectedPeakCount}</span></div>
+                        <div><span className="text-text-dim">Fitted peaks:</span> <span className="font-semibold text-text-main">{xbe.fittedPeakCount}</span></div>
+                        <div><span className="text-text-dim">S/N ratio:</span> <span className="font-semibold text-text-main">{formatSn}</span></div>
+                        <div><span className="text-text-dim">Baseline deviation:</span> <span className="font-semibold text-text-main">{formatBaseline}</span></div>
+                        <div><span className="text-text-dim">Peak resolution:</span> <span className="font-semibold text-text-main">{xbe.peakResolution ?? 'N/A'}</span></div>
+                        <div><span className="text-text-dim">Matched peaks:</span> <span className="font-semibold text-text-main">{xbe.matchedPeakCount}</span></div>
+                      </div>
+                      {xbe.primaryPhase && (
+                        <div className="mt-1.5 text-xs">
+                          <span className="text-text-dim">Reference-supported phase indication:</span>{' '}
+                          <span className="font-semibold text-text-main">{xbe.primaryPhase}</span>
+                        </div>
+                      )}
+                      {xbe.phaseSummary && (
+                        <p className="mt-1 text-xs text-text-muted">{xbe.phaseSummary}</p>
+                      )}
+                      <p className="mt-1.5 text-[11px] text-amber-700 font-medium">{xbe.caveat}</p>
+                      <p className="mt-0.5 text-[10px] text-text-dim">
+                        Saved: {formatSavedAt} · Validation-limited notebook entry
+                      </p>
+                    </div>
+                  );
+                })()}
                 <div className="rounded-md border border-border bg-surface px-3 py-2">
                   <div className="flex items-start justify-between gap-3 mb-1.5">
                     <div>

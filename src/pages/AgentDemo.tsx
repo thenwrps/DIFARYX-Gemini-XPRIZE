@@ -108,6 +108,7 @@ import {
   getEvidenceRouteContext,
   type EvidenceRouteContext,
 } from '../utils/evidenceRouteContext';
+import { runWhenIdle } from '../utils/idle';
 
 type TechniqueContext = Technique;
 type AgentMode = 'deterministic' | 'guided' | 'autonomous';
@@ -1495,16 +1496,33 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
   }
 
   // For uploaded evidence, getProjectEvidenceSnapshot handles it directly
-  const evidenceSnapshot = useMemo(
+  const initialEvidenceSnapshot = useMemo(
     () => getProjectEvidenceSnapshot(isUploadedContext ? null : agentState.projectId, {
       source: routeContext.source,
       analysisSessionId: routeContext.sessionId,
       uploadedRunId: routeContext.uploadedRunId,
       driveFileId: routeContext.driveFileId,
       runtimeMode,
+      deferStoredContext: !isUploadedContext,
     }),
     [isUploadedContext, agentState.projectId, runtimeMode, routeContext],
   );
+  const [evidenceSnapshot, setEvidenceSnapshot] = useState(initialEvidenceSnapshot);
+
+  React.useEffect(() => {
+    setEvidenceSnapshot(initialEvidenceSnapshot);
+    if (isUploadedContext) return;
+
+    return runWhenIdle(() => {
+      setEvidenceSnapshot(getProjectEvidenceSnapshot(agentState.projectId, {
+        source: routeContext.source,
+        analysisSessionId: routeContext.sessionId,
+        uploadedRunId: routeContext.uploadedRunId,
+        driveFileId: routeContext.driveFileId,
+        runtimeMode,
+      }));
+    });
+  }, [initialEvidenceSnapshot, isUploadedContext, agentState.projectId, runtimeMode, routeContext]);
 
   // For uploaded context, create safe registry project from evidence snapshot
   const registryProject = isUploadedContext
@@ -1602,21 +1620,22 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
   );
   // Read persisted XRD backend evidence for Agent reasoning enrichment.
   // Uses closure access so finalizeRun can consume it without signature changes.
-  const xrdBackendEvidence = useMemo<XRDBackendEvidenceRecord | null>(
-    () => {
-      if (agentState.context !== 'XRD') return null;
+  const [xrdBackendEvidence, setXrdBackendEvidence] = useState<XRDBackendEvidenceRecord | null>(null);
 
+  React.useEffect(() => {
+    if (agentState.context !== 'XRD') {
+      setXrdBackendEvidence(null);
+      return;
+    }
+
+    return runWhenIdle(() => {
       try {
-        return readLatestXrdBackendEvidenceResult(
-          selectedProject.id,
-          undefined,
-        );
+        setXrdBackendEvidence(readLatestXrdBackendEvidenceResult(selectedProject.id, undefined));
       } catch {
-        return null;
+        setXrdBackendEvidence(null);
       }
-    },
-    [agentState.context, selectedProject.id],
-  );
+    });
+  }, [agentState.context, selectedProject.id]);
 
   const peakMarkers = useMemo(
     () =>

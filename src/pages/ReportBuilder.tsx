@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Clipboard, Download, FileText, Save, ShieldCheck } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
@@ -76,6 +76,7 @@ import {
   getEvidenceRouteContext,
   type EvidenceRouteContext,
 } from '../utils/evidenceRouteContext';
+import { runWhenIdle } from '../utils/idle';
 
 function reportTypeLabel(mode: NotebookTemplateMode) {
   if (mode === 'rd') return 'Technical Evidence Report';
@@ -444,12 +445,28 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
     : (getProject(requestedProjectId) ?? getProject(null))!;
 
   // Get evidence snapshot first for uploaded context
-  const evidenceSnapshot = useMemo(() => getProjectEvidenceSnapshot(isUploadedContext ? null : project?.id, {
+  const initialEvidenceSnapshot = useMemo(() => getProjectEvidenceSnapshot(isUploadedContext ? null : project?.id, {
     source: routeContext.source,
     analysisSessionId: routeContext.sessionId,
     uploadedRunId: routeContext.uploadedRunId,
     driveFileId: routeContext.driveFileId,
+    deferStoredContext: !isUploadedContext,
   }), [isUploadedContext, project?.id, routeContext]);
+  const [evidenceSnapshot, setEvidenceSnapshot] = useState(initialEvidenceSnapshot);
+
+  useEffect(() => {
+    setEvidenceSnapshot(initialEvidenceSnapshot);
+    if (isUploadedContext) return;
+
+    return runWhenIdle(() => {
+      setEvidenceSnapshot(getProjectEvidenceSnapshot(project?.id, {
+        source: routeContext.source,
+        analysisSessionId: routeContext.sessionId,
+        uploadedRunId: routeContext.uploadedRunId,
+        driveFileId: routeContext.driveFileId,
+      }));
+    });
+  }, [initialEvidenceSnapshot, isUploadedContext, project?.id, routeContext]);
 
   // For uploaded context, create safe registry project from evidence snapshot
   const registryProject = isUploadedContext

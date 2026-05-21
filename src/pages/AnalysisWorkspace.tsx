@@ -61,6 +61,7 @@ import {
 } from '../data/uploadedSignalRuns';
 import { getRegistryProject, normalizeRegistryProjectId } from '../data/demoProjectRegistry';
 import { cn } from '../components/ui/Button';
+import { runWhenIdle } from '../utils/idle';
 
 const TECHNIQUES = ['xrd', 'xps', 'ftir', 'raman'] as const;
 
@@ -575,7 +576,7 @@ export function AnalysisWorkspaceHome() {
   const userUploadMode = searchParams.get('source') === 'user_uploaded';
   const nextIntent = searchParams.get('next');
   const [selectedTechnique, setSelectedTechnique] = React.useState<AnalysisTechnique | null>(null);
-  const [sessions, setSessions] = React.useState<AnalysisSession[]>(() => getAnalysisSessions());
+  const [sessions, setSessions] = React.useState<AnalysisSession[]>([]);
   const [uploadedFile, setUploadedFile] = React.useState<{ name: string; sizeLabel: string; extension: string; parsed: ParsedUploadedSignalSuccess } | null>(null);
   const [uploadError, setUploadError] = React.useState('');
   const [uploadNotice, setUploadNotice] = React.useState('');
@@ -591,6 +592,12 @@ export function AnalysisWorkspaceHome() {
       .slice(0, 6),
     [sessions, userUploadMode],
   );
+
+  React.useEffect(() => {
+    return runWhenIdle(() => {
+      setSessions(getAnalysisSessions());
+    });
+  }, []);
 
   const createQuickSession = (
     technique: AnalysisTechnique,

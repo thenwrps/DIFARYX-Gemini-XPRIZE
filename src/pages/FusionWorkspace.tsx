@@ -20,6 +20,7 @@ import { ramanDemoData } from '../data/ramanDemoData';
 import type { FusionResult } from '../agents/fusionAgent/types';
 import { getRegistryProject, normalizeRegistryProjectId } from '../data/demoProjectRegistry';
 import { DEFAULT_PROJECT_ID } from '../data/demoProjects';
+import { runWhenIdle } from '../utils/idle';
 
 export default function FusionWorkspace() {
   const [searchParams] = useSearchParams();
@@ -51,7 +52,7 @@ export default function FusionWorkspace() {
   
   // Auto-run fusion on mount
   React.useEffect(() => {
-    handleRunFusion();
+    return runWhenIdle(handleRunFusion);
   }, [registryProject.id, hasFusionBundle]);
   
   // Get conclusion badge color

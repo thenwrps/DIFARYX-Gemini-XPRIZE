@@ -94,6 +94,7 @@ export interface ProjectEvidenceSnapshotOptions {
   driveImportPreview?: GoogleDriveImportPreview | null;
   runtimeMode?: RuntimeMode;
   projectIdExplicit?: boolean;
+  deferStoredContext?: boolean;
 }
 
 const TECHNIQUE_ORDER: Technique[] = ['XRD', 'XPS', 'FTIR', 'Raman'];
@@ -599,13 +600,14 @@ export function getProjectEvidenceSnapshot(
   projectId?: string | null,
   options?: ProjectEvidenceSnapshotOptions,
 ): ProjectEvidenceSnapshot {
+  const deferStoredContext = options?.deferStoredContext === true;
   const resolvedProjectId = fallbackProjectId(projectId);
   const project = getProject(resolvedProjectId) ?? getProject(DEFAULT_PROJECT_ID)!;
   const datasets = getProjectDatasets(project.id);
   const expectedTechniques = getExpectedTechniques(project);
-  const explicitSession = getAnalysisSession(options?.analysisSessionId ?? undefined);
-  const uploadedRun = getUploadedRun(options);
-  const projectUserSession = options?.source === 'user_uploaded' ? getLatestUserSessionForProject(project.id) : null;
+  const explicitSession = deferStoredContext ? null : getAnalysisSession(options?.analysisSessionId ?? undefined);
+  const uploadedRun = deferStoredContext ? null : getUploadedRun(options);
+  const projectUserSession = !deferStoredContext && options?.source === 'user_uploaded' ? getLatestUserSessionForProject(project.id) : null;
 
   if (uploadedRun && isUploadedSnapshotRequested(options)) {
     return buildUploadedRunSnapshot(project, uploadedRun, expectedTechniques, options);
@@ -638,7 +640,7 @@ export function getProjectEvidenceSnapshot(
     datasets.find((dataset) => dataset.technique === primaryTechnique && dataset.dataPoints.length > 0) ??
     datasets.find((dataset) => dataset.dataPoints.length > 0) ??
     null;
-  const savedEvidence = getSavedEvidence(project.id);
+  const savedEvidence = deferStoredContext ? [] : getSavedEvidence(project.id);
   const datasetEvidence = datasets.flatMap((dataset) => dataset.evidence);
   const sourceEvidence: EvidenceSnapshotEntry[] = project.evidenceSources.map((source) => ({
     id: `${project.id}-${source.technique.toLowerCase()}-${source.datasetId}`,
@@ -662,9 +664,9 @@ export function getProjectEvidenceSnapshot(
       mapEvidenceEntry(entry, datasets.find((dataset) => dataset.id === entry.datasetId) ?? null),
     ),
   ];
-  const refinement = getLatestAgentDiscussionRefinement(project.id);
-  const reportContext = getLatestProcessingResult(project.id);
-  const notebookContext = getLatestNotebookEntry(project.id);
+  const refinement = deferStoredContext ? null : getLatestAgentDiscussionRefinement(project.id);
+  const reportContext = deferStoredContext ? null : getLatestProcessingResult(project.id);
+  const notebookContext = deferStoredContext ? null : getLatestNotebookEntry(project.id);
   const runtimeContext = isGoogleConnectedSnapshotRequested(options)
     ? getRuntimeContextForEvidenceSource('google_drive_connected', 'connected')
     : getRuntimeContextForEvidenceSource('demo_preloaded');

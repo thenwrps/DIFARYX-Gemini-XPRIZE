@@ -75,6 +75,7 @@ import {
   getEvidenceRouteContext,
   type EvidenceRouteContext,
 } from '../utils/evidenceRouteContext';
+import { runWhenIdle } from '../utils/idle';
 
 // Cross-tech evidence types
 interface CrossTechEvidence {
@@ -889,12 +890,26 @@ function MultiTechWorkspaceContent() {
   // Canonical registry project - shared source of truth for cross-page data.
   const registryProject = useMemo(() => getRegistryProject(project.id), [project.id]);
   const crossTech = registryProject.crossTechniqueComparison;
-  const evidenceSnapshot = useMemo(() => getProjectEvidenceSnapshot(project.id, {
+  const initialEvidenceSnapshot = useMemo(() => getProjectEvidenceSnapshot(project.id, {
     source: searchParams.get('source'),
     uploadedRunId: searchParams.get('upload') ?? searchParams.get('uploadedRunId'),
     analysisSessionId: searchParams.get('sessionId') ?? searchParams.get('analysisId'),
     driveFileId: searchParams.get('driveFileId') ?? searchParams.get('driveImportId'),
+    deferStoredContext: true,
   }), [project.id, searchParams]);
+  const [evidenceSnapshot, setEvidenceSnapshot] = useState(initialEvidenceSnapshot);
+
+  useEffect(() => {
+    setEvidenceSnapshot(initialEvidenceSnapshot);
+    return runWhenIdle(() => {
+      setEvidenceSnapshot(getProjectEvidenceSnapshot(project.id, {
+        source: searchParams.get('source'),
+        uploadedRunId: searchParams.get('upload') ?? searchParams.get('uploadedRunId'),
+        analysisSessionId: searchParams.get('sessionId') ?? searchParams.get('analysisId'),
+        driveFileId: searchParams.get('driveFileId') ?? searchParams.get('driveImportId'),
+      }));
+    });
+  }, [initialEvidenceSnapshot, project.id, searchParams]);
 
   const evidenceBundle = useMemo(() => {
     const techniqueCount = evidenceSnapshot.availableTechniques.length;
@@ -967,8 +982,13 @@ function MultiTechWorkspaceContent() {
   const [yColumn, setYColumn] = useState(2);
   const [referenceScope, setReferenceScope] = useState('');
   const [latestUploadedRun, setLatestUploadedRun] = useState<UploadedSignalRun | null>(null);
-  const [uploadedRuns, setUploadedRuns] = useState<UploadedSignalRun[]>(() => readUploadedSignalRuns());
-  const [uploadStorageStatus, setUploadStorageStatus] = useState(() => getUploadedSignalStorageStatus());
+  const [uploadedRuns, setUploadedRuns] = useState<UploadedSignalRun[]>([]);
+  const [uploadStorageStatus, setUploadStorageStatus] = useState(() => ({
+    available: true,
+    corrupted: false,
+    savedCount: 0,
+    message: 'Checking saved beta uploads...',
+  }));
   const [handoffPrepared, setHandoffPrepared] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState('');
   const [uploadPanelExpanded, setUploadPanelExpanded] = useState(false);
@@ -994,6 +1014,15 @@ function MultiTechWorkspaceContent() {
     setSelectedClaimId(null);
     setActiveRightTab('inference');
   }, [project.id]);
+
+  useEffect(() => {
+    return runWhenIdle(() => {
+      const runs = readUploadedSignalRuns();
+      setUploadedRuns(runs);
+      setLatestUploadedRun((current) => current ?? runs[0] ?? null);
+      setUploadStorageStatus(getUploadedSignalStorageStatus());
+    });
+  }, []);
 
   const claimBoundary = CLAIM_BOUNDARY_BY_TECHNIQUE[selectedUploadTechnique];
   const activeUploadQuality = latestUploadedRun?.evidenceQuality ?? uploadErrorQuality;

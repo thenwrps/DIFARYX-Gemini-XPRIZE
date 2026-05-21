@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Card } from '../components/ui/Card';
 import { Graph } from '../components/ui/Graph';
@@ -68,6 +68,7 @@ import {
   toWorkspaceMode,
   type WorkspaceMode,
 } from '../utils/workspaceMode';
+import { runWhenIdle } from '../utils/idle';
 
 /* ─── workflow chain (top of dashboard) ─── */
 const WORKFLOW_STEPS = [
@@ -140,7 +141,18 @@ function EvidenceCoverageBar({ project }: { project: DemoProject }) {
 /* ─── project card — graph-first layout ─── */
 function ProjectCard({ project }: { project: RegistryProject }) {
   const navigate = useNavigate();
-  const evidenceSnapshot = getProjectEvidenceSnapshot(project.id);
+  const initialEvidenceSnapshot = useMemo(
+    () => getProjectEvidenceSnapshot(project.id, { deferStoredContext: true }),
+    [project.id],
+  );
+  const [evidenceSnapshot, setEvidenceSnapshot] = useState(initialEvidenceSnapshot);
+
+  useEffect(() => {
+    setEvidenceSnapshot(initialEvidenceSnapshot);
+    return runWhenIdle(() => {
+      setEvidenceSnapshot(getProjectEvidenceSnapshot(project.id));
+    });
+  }, [initialEvidenceSnapshot, project.id]);
   const evidenceSourceCount = evidenceSnapshot.availableTechniques.length + evidenceSnapshot.pendingTechniques.length;
   const evidenceCoverageLabel = `${evidenceSnapshot.availableTechniques.length}/${evidenceSourceCount || 0} sources`;
   const firstValidationGap = evidenceSnapshot.validationGaps[0];

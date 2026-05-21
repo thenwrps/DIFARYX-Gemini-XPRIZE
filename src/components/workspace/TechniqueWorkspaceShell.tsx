@@ -55,7 +55,7 @@ import {
   resetParameters as resetParameterState,
   getParameterStateStorageKey,
 } from '../../utils/parameterStateManager';
-import { getProjectEvidenceSnapshot } from '../../utils/evidenceSnapshot';
+import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../utils/evidenceSnapshot';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   getEffectiveWorkspaceMode,
@@ -76,6 +76,7 @@ import {
   updateUploadedRunProcessingResults,
   getUploadedRunById,
   type TechniqueFeature,
+  type UploadedSignalRun,
 } from '../../data/uploadedSignalRuns';
 import { runXrdPhaseIdentificationAgent } from '../../agents/xrdAgent/runner';
 import { getXrdProcessingParams, getXrdParameterSnapshot } from '../../utils/xrdParameterAdapter';
@@ -94,6 +95,7 @@ import { getXpsProcessingParams, getXpsParameterSnapshot } from '../../utils/xps
 import { runFtirProcessing } from '../../agents/ftirAgent/runner';
 import { getFtirProcessingParams, getFtirParameterSnapshot } from '../../utils/ftirParameterAdapter';
 import { getTechniqueProcessingSupport } from '../../utils/techniqueProcessingSupport';
+import { runWhenIdle } from '../../utils/idle';
 
 const RIGHT_TABS = ['Evidence', 'Parameters', 'Graph', 'Boundary', 'Trace'] as const;
 type RightTab = (typeof RIGHT_TABS)[number];
@@ -514,11 +516,11 @@ function loadPaneLayout(storageKey: string) {
   }
 }
 
-function buildQuickGraphData(session: AnalysisSession | null) {
+function buildQuickGraphData(session: AnalysisSession | null, uploadedRuns: UploadedSignalRun[] = []) {
   if (!session) return null;
 
   const uploadedRun = session.uploadedRunId
-    ? readUploadedSignalRuns().find((run) => run.id === session.uploadedRunId) ?? null
+    ? uploadedRuns.find((run) => run.id === session.uploadedRunId) ?? null
     : null;
 
   if (uploadedRun && uploadedRun.points.length > 0) {
@@ -633,16 +635,33 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     [blocksDemoProject, isUploadedContext, requestedProjectId],
   );
   const projectId = project?.id ?? null;
-  const evidenceSnapshot = useMemo(
+  const initialEvidenceSnapshot = useMemo<ProjectEvidenceSnapshot | null>(
     () => (projectId || isUploadedContext ? getProjectEvidenceSnapshot(isUploadedContext ? null : projectId, {
       source: routeContext.source,
       analysisSessionId: querySessionId,
       uploadedRunId: routeContext.uploadedRunId,
       driveFileId: routeContext.driveFileId,
       projectIdExplicit: Boolean(projectId) && !isUploadedContext,
+      deferStoredContext: !isUploadedContext,
     }) : null),
     [projectId, isUploadedContext, routeContext.source, routeContext.uploadedRunId, routeContext.driveFileId, querySessionId],
   );
+  const [evidenceSnapshot, setEvidenceSnapshot] = useState<ProjectEvidenceSnapshot | null>(initialEvidenceSnapshot);
+
+  useEffect(() => {
+    setEvidenceSnapshot(initialEvidenceSnapshot);
+    if (!projectId || isUploadedContext) return;
+
+    return runWhenIdle(() => {
+      setEvidenceSnapshot(getProjectEvidenceSnapshot(projectId, {
+        source: routeContext.source,
+        analysisSessionId: querySessionId,
+        uploadedRunId: routeContext.uploadedRunId,
+        driveFileId: routeContext.driveFileId,
+        projectIdExplicit: true,
+      }));
+    });
+  }, [initialEvidenceSnapshot, isUploadedContext, projectId, querySessionId, routeContext.source, routeContext.uploadedRunId, routeContext.driveFileId]);
   const focusedEvidence = useMemo(
     () => (project && !isUploadedContext ? getFocusedEvidenceSource(project, technique) : null),
     [project, isUploadedContext, technique],
@@ -683,7 +702,22 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         sourceLabel: evidenceSnapshot?.sourceLabel ?? 'Demo evidence',
         approvalStatus: evidenceSnapshot?.approvalStatus ?? 'not_required',
       } as const;
-  const quickGraphData = useMemo(() => buildQuickGraphData(quickAnalysisSession), [quickAnalysisSession]);
+  const [uploadedRunsForGraph, setUploadedRunsForGraph] = useState<UploadedSignalRun[]>([]);
+  useEffect(() => {
+    if (!quickAnalysisSession?.uploadedRunId) {
+      setUploadedRunsForGraph([]);
+      return;
+    }
+
+    return runWhenIdle(() => {
+      setUploadedRunsForGraph(readUploadedSignalRuns());
+    });
+  }, [quickAnalysisSession?.uploadedRunId]);
+
+  const quickGraphData = useMemo(
+    () => buildQuickGraphData(quickAnalysisSession, uploadedRunsForGraph),
+    [quickAnalysisSession, uploadedRunsForGraph],
+  );
   const uploadedGraphData = useMemo(() => buildSnapshotGraphData(snapshotDataset), [snapshotDataset]);
   const graphData = quickGraphData ?? uploadedGraphData ?? focusedEvidence?.graphData;
   const hasProjectEvidence = Boolean(
@@ -715,9 +749,18 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     buildDefaultSession(sessionStorageKey, config, hasProjectEvidence, Boolean(project), quickAnalysisSession),
   );
   const [paneLayout, setPaneLayout] = useState(() => buildDefaultPaneLayout(paneLayoutStorageKey));
-  const sharedOverrideCount = projectId
-    ? Object.keys(readParameterState(projectId, technique).overrides).length
-    : 0;
+  const [sharedOverrideCount, setSharedOverrideCount] = useState(0);
+
+  useEffect(() => {
+    if (!projectId) {
+      setSharedOverrideCount(0);
+      return;
+    }
+
+    return runWhenIdle(() => {
+      setSharedOverrideCount(Object.keys(readParameterState(projectId, technique).overrides).length);
+    });
+  }, [projectId, technique]);
 
   // XRD Backend integration state (XRD workspace only)
   const isXrdBackendEnabled = technique === 'xrd';
@@ -729,15 +772,28 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
 
   useEffect(() => {
     if (!isXrdBackendEnabled) return;
-    checkXrdBackendHealth()
-      .then(setXrdBackendHealth)
-      .catch(() =>
-        setXrdBackendHealth({
-          ok: false,
-          status: 'unreachable',
-          error: 'XRD backend health check failed',
-        }),
-      );
+    let active = true;
+    setXrdBackendHealth(null);
+
+    const cancel = runWhenIdle(() => {
+      checkXrdBackendHealth()
+        .then((status) => {
+          if (active) setXrdBackendHealth(status);
+        })
+        .catch(() => {
+          if (!active) return;
+          setXrdBackendHealth({
+            ok: false,
+            status: 'unreachable',
+            error: 'XRD backend health check failed',
+          });
+        });
+    });
+
+    return () => {
+      active = false;
+      cancel();
+    };
   }, [isXrdBackendEnabled]);
 
   useEffect(() => {
