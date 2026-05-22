@@ -64,10 +64,10 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
     pipeline: [
       { id: 'baseline', label: 'Baseline', summary: 'Baseline correction reviewed for phase assignment.' },
       { id: 'smooth', label: 'Smooth', summary: 'Smoothing applied before peak detection.' },
-      { id: 'peaks', label: 'Peaks', summary: 'Diffraction peaks detected and indexed where possible.' },
-      { id: 'fit', label: 'Fit', summary: 'Peak fit state preserved for evidence review.' },
-      { id: 'match', label: 'Match', summary: 'Reference matching contributes to the claim boundary.' },
-      { id: 'refinement', label: 'Refinement', summary: 'Optional refinement remains available for publication-level claims.' },
+      { id: 'peaks', label: 'Peak Detect', summary: 'Diffraction peaks detected and indexed where possible.' },
+      { id: 'fit', label: 'Fit Peaks', summary: 'Peak fit state preserved for evidence review.' },
+      { id: 'match', label: 'Match Ref', summary: 'Reference matching contributes to the claim boundary.' },
+      { id: 'refinement', label: 'Boundary', summary: 'Optional refinement remains available for publication-level claims.' },
     ],
     parameters: [
       {
@@ -181,12 +181,12 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       { id: 'assignment', label: 'Assignment' },
     ],
     pipeline: [
-      { id: 'background-subtraction', label: 'Background Subtraction', summary: 'Background model prepared for core-level regions.' },
-      { id: 'smoothing', label: 'Smoothing', summary: 'Signal smoothing applied before component review.' },
-      { id: 'peak-detection', label: 'Peak Detection', summary: 'Candidate photoelectron peaks detected.' },
-      { id: 'peak-fitting', label: 'Peak Fitting', summary: 'Component fit state recorded for review.' },
-      { id: 'chemical-state-assignment', label: 'Chemical State Assignment', summary: 'Oxidation-state assignment remains boundary-aware.' },
-      { id: 'review', label: 'Review', summary: 'Surface-state interpretation is reviewed against validation limits.' },
+      { id: 'background-subtraction', label: 'Baseline', summary: 'Background model prepared for core-level regions.' },
+      { id: 'smoothing', label: 'Smooth', summary: 'Signal smoothing applied before component review.' },
+      { id: 'peak-detection', label: 'Peak Detect', summary: 'Candidate photoelectron peaks detected.' },
+      { id: 'peak-fitting', label: 'Fit Peaks', summary: 'Component fit state recorded for review.' },
+      { id: 'chemical-state-assignment', label: 'Assign Peaks', summary: 'Oxidation-state assignment remains boundary-aware.' },
+      { id: 'review', label: 'Boundary', summary: 'Surface-state interpretation is reviewed against validation limits.' },
     ],
     parameters: [
       {
@@ -264,12 +264,11 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       { id: 'assignment', label: 'Assignment' },
     ],
     pipeline: [
-      { id: 'baseline-correction', label: 'Baseline Correction', summary: 'Baseline correction prepared for band review.' },
-      { id: 'smoothing', label: 'Smoothing', summary: 'Spectrum smoothing applied before band detection.' },
-      { id: 'band-detection', label: 'Band Detection', summary: 'Bands detected for functional evidence.' },
-      { id: 'band-assignment', label: 'Band Assignment', summary: 'Band assignments linked to project evidence.' },
-      { id: 'functional-group-analysis', label: 'Functional Group Analysis', summary: 'Functional-group context contributes to validation.' },
-      { id: 'review', label: 'Review', summary: 'Functional-group interpretation is reviewed against project limits.' },
+      { id: 'baseline-correction', label: 'Baseline', summary: 'Baseline correction prepared for band review.' },
+      { id: 'smoothing', label: 'Smooth', summary: 'Spectrum smoothing applied before band detection.' },
+      { id: 'band-detection', label: 'Band Detect', summary: 'Bands detected for functional evidence.' },
+      { id: 'band-assignment', label: 'Assign Bands', summary: 'Band assignments linked to project evidence.' },
+      { id: 'review', label: 'Boundary', summary: 'Functional-group interpretation is reviewed against project limits.' },
     ],
     parameters: [
       {
@@ -326,7 +325,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
         type: 'select',
         defaultValue: 'Functional groups',
         options: ['Functional groups', 'Surface hydroxyl', 'Metal-oxygen', 'Custom'],
-        affectedStepIds: ['band-assignment', 'functional-group-analysis'],
+        affectedStepIds: ['band-assignment', 'review'],
       },
       {
         id: 'normalization',
@@ -356,12 +355,11 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       { id: 'assignment', label: 'Assignment' },
     ],
     pipeline: [
-      { id: 'baseline-correction', label: 'Baseline Correction', summary: 'Baseline correction prepared for mode review.' },
-      { id: 'smoothing', label: 'Smoothing', summary: 'Signal smoothing applied before peak detection.' },
-      { id: 'peak-detection', label: 'Peak Detection', summary: 'Raman peaks detected for mode assignment.' },
-      { id: 'mode-assignment', label: 'Mode Assignment', summary: 'Vibrational modes linked to project interpretation.' },
-      { id: 'phase-defect-interpretation', label: 'Phase / Defect Interpretation', summary: 'Local structure limits are recorded in the boundary.' },
-      { id: 'review', label: 'Review', summary: 'Mode interpretation is reviewed against claim boundaries.' },
+      { id: 'baseline-correction', label: 'Baseline', summary: 'Baseline correction prepared for mode review.' },
+      { id: 'smoothing', label: 'Smooth', summary: 'Signal smoothing applied before peak detection.' },
+      { id: 'peak-detection', label: 'Peak Detect', summary: 'Raman peaks detected for mode assignment.' },
+      { id: 'mode-assignment', label: 'Assign Modes', summary: 'Vibrational modes linked to project interpretation.' },
+      { id: 'review', label: 'Boundary', summary: 'Mode interpretation is reviewed against claim boundaries.' },
     ],
     parameters: [
       {
@@ -428,7 +426,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
         type: 'select',
         defaultValue: 'Ferrite modes',
         options: ['Ferrite modes', 'Carbon bands', 'Oxide modes', 'Custom'],
-        affectedStepIds: ['mode-assignment', 'phase-defect-interpretation'],
+        affectedStepIds: ['mode-assignment', 'review'],
       },
       {
         id: 'cosmicRayRemoval',
