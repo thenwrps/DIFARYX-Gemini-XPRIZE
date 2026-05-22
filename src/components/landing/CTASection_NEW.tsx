@@ -4,14 +4,14 @@ import { Play, Workflow } from 'lucide-react';
 
 export default function CTASection() {
   return (
-    <section className="border-t border-slate-100 bg-gradient-to-br from-slate-900 to-slate-800 py-24">
-      <div className="mx-auto max-w-[1200px] px-6">
+    <section className="landing-dark-grid border-t border-slate-800 bg-[#060b16] py-20">
+      <div className="mx-auto max-w-[1280px] px-6 lg:px-8">
         <div className="text-center">
           <h2 className="mb-6 text-[36px] font-bold leading-[1.1] text-white lg:text-[44px]">
-            Experience deterministic scientific workflow execution
+            Experience a traceable scientific workflow from signal to report
           </h2>
-          <p className="mx-auto mb-10 max-w-3xl text-[17px] leading-relaxed text-slate-300">
-            Try the DIFARYX demo to see how deterministic execution, interpretation, and supporting data work together for traceable characterization discussions.
+          <p className="mx-auto mb-10 max-w-3xl text-[17px] leading-8 text-slate-300">
+            Try the DIFARYX demo to see how structured evidence, controlled preprocessing, agent reasoning, validation gaps, and report-ready discussion work together in a traceable characterization workflow.
           </p>
           
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
@@ -32,20 +32,19 @@ export default function CTASection() {
           </div>
 
           <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
-            <div className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
+            <div className="border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
               <div className="mb-2 text-[28px] font-bold text-white">4</div>
-              <div className="text-[13px] font-semibold text-slate-300">Characterization Techniques</div>
+              <div className="text-[13px] font-semibold text-slate-300">Characterization techniques</div>
               <div className="mt-1 text-[12px] text-slate-400">XRD, XPS, FTIR, Raman</div>
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
+            <div className="border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
               <div className="mb-2 text-[28px] font-bold text-white">7</div>
-              <div className="text-[13px] font-semibold text-slate-300">Workflow Steps</div>
-              <div className="mt-1 text-[12px] text-slate-400">From signal to interpretation</div>
+              <div className="text-[13px] font-semibold text-slate-300">Workflow steps</div>
+              <div className="mt-1 text-[12px] text-slate-400">From objective to report</div>
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
-              <div className="mb-2 text-[28px] font-bold text-white">100%</div>
-              <div className="text-[13px] font-semibold text-slate-300">Supporting Data</div>
-              <div className="mt-1 text-[12px] text-slate-400">Every step is traceable</div>
+            <div className="border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
+              <div className="mb-2 text-[20px] font-bold text-white">Source-linked supporting data</div>
+              <div className="text-[13px] font-semibold text-slate-300">Evidence paths remain visible</div>
             </div>
           </div>
         </div>

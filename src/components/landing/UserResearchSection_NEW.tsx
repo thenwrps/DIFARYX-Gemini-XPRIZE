@@ -1,68 +1,77 @@
 import React from 'react';
 import { Quote } from 'lucide-react';
+import { useLandingReveal } from './useLandingReveal';
 
-const researchFindings = [
+const feedbackChannels = ['Google Forms', 'LinkedIn', 'Reddit', 'Direct workflow discussions'];
+
+const researchSignals = [
   {
-    quote: "I spend more time exporting, converting, and plotting data than actually analyzing it.",
-    role: "Materials Scientist, University Lab",
-    context: "XRD + XPS workflow"
+    title: 'Lost processing context',
+    detail: 'Researchers need files, parameters, and figures to remain connected after preprocessing.',
   },
   {
-    quote: "Every time I switch between Origin, CasaXPS, and Python, I lose context and have to re-orient myself.",
-    role: "PhD Candidate, Catalysis Research",
-    context: "Multi-technique characterization"
+    title: 'Cross-tool interpretation',
+    detail: 'Technique results become harder to defend when the evidence trail is reconstructed late.',
   },
   {
-    quote: "I trust automation when I can see the parameters, inspect the preprocessing steps, and verify the evidence myself.",
-    role: "Senior Researcher, National Lab",
-    context: "Reproducibility requirements"
+    title: 'Reproducibility pressure',
+    detail: 'A result must preserve its assumptions, source data, and bounded claim language.',
   },
   {
-    quote: "Black-box automation tools are useless for scientific work. I need to understand how the system reached its conclusion.",
-    role: "Principal Investigator, Materials Institute",
-    context: "Decision transparency"
-  }
+    title: 'Black-box distrust',
+    detail: 'Automation earns trust by exposing control, uncertainty, and provenance.',
+  },
 ];
 
 export default function UserResearchSection() {
+  const { ref, isVisible } = useLandingReveal<HTMLElement>();
+
   return (
-    <section id="research" className="border-t border-slate-100 bg-slate-50 py-24">
-      <div className="mx-auto max-w-[1200px] px-6">
-        <div className="mb-12 text-center">
-          <h2 className="mb-4 text-[32px] font-bold leading-[1.2] text-slate-900 lg:text-[40px]">
-            Validated with researchers across materials science, catalysis, and surface chemistry
+    <section id="research" ref={ref} className="scroll-mt-24 border-t border-slate-200 bg-white py-20">
+      <div className="mx-auto max-w-[1280px] px-6 lg:px-8">
+        <div className={`landing-reveal max-w-[900px] ${isVisible ? 'is-visible' : ''}`}>
+          <p className="text-[12px] font-semibold uppercase text-blue-700">Research feedback</p>
+          <h2 className="mt-4 text-[32px] font-semibold leading-tight text-slate-950 lg:text-[44px]">
+            Shaped by early researcher feedback
           </h2>
-          <p className="mx-auto max-w-3xl text-[16px] leading-relaxed text-slate-600">
-            We interviewed 12 researchers at universities and national labs to understand their characterization workflows, pain points, and requirements for automation.
+          <p className="mt-5 text-[16px] leading-8 text-slate-600">
+            DIFARYX is shaped by feedback collected from chemistry and materials researchers through Google Forms, LinkedIn, Reddit, and direct workflow discussions. The feedback highlighted recurring pain points around disconnected tools, lost preprocessing context, weak reproducibility, and distrust of black-box automation.
           </p>
         </div>
-        
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {researchFindings.map((finding, index) => (
-            <div key={index} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 border border-blue-200">
-                <Quote size={18} className="text-blue-600" />
-              </div>
-              <p className="mb-4 text-[15px] leading-relaxed text-slate-700 italic">
-                "{finding.quote}"
-              </p>
-              <div className="flex items-center justify-between border-t border-slate-100 pt-4">
-                <div>
-                  <div className="text-[13px] font-bold text-slate-900">{finding.role}</div>
-                  <div className="text-[12px] text-slate-500">{finding.context}</div>
-                </div>
-              </div>
-            </div>
+
+        <div className="mt-10 flex flex-wrap gap-2">
+          {feedbackChannels.map((channel) => (
+            <span key={channel} className="border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-600">
+              {channel}
+            </span>
           ))}
         </div>
 
-        <div className="mt-12 rounded-2xl border border-blue-200 bg-blue-50 p-8">
-          <div className="text-center">
-            <h3 className="mb-3 text-[20px] font-bold text-slate-900">Key Research Insight</h3>
-            <p className="mx-auto max-w-3xl text-[15px] leading-relaxed text-slate-700">
-              Researchers want automation that <span className="font-bold text-blue-700">preserves control</span>, <span className="font-bold text-blue-700">shows evidence</span>, and <span className="font-bold text-blue-700">explains reasoning</span>. They reject black-box systems that hide parameters or decision logic.
-            </p>
-          </div>
+        <div className="mt-8 grid gap-4 md:grid-cols-2">
+          {researchSignals.map((signal, index) => (
+            <article
+              key={signal.title}
+              className={`landing-reveal border border-slate-200 bg-[#f8faff] p-5 ${isVisible ? 'is-visible' : ''}`}
+              style={{ transitionDelay: `${index * 80}ms` }}
+            >
+              <div className="flex items-start gap-4">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center border border-blue-100 bg-white text-blue-700">
+                  <Quote size={17} />
+                </span>
+                <div>
+                  <h3 className="text-[15px] font-semibold text-slate-950">{signal.title}</h3>
+                  <p className="mt-2 text-[13px] leading-6 text-slate-600">{signal.detail}</p>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <div className={`landing-reveal mt-10 border-l-4 border-blue-600 bg-blue-50 px-6 py-7 ${isVisible ? 'is-visible' : ''}`}>
+          <p className="text-[11px] font-semibold uppercase text-blue-700">Key insight</p>
+          <p className="mt-3 max-w-[1000px] text-[18px] font-medium leading-8 text-slate-900">
+            Researchers do not only need faster analysis. They need systems that preserve parameters, expose evidence, explain reasoning, and keep every interpretation linked to its source data.
+          </p>
         </div>
       </div>
     </section>

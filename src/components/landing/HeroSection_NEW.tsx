@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 import {
   createSvgPath,
   generateFtirTrace,
@@ -8,214 +9,209 @@ import {
   generateXrdTrace,
 } from '../../data/syntheticTraces';
 
-const signalTraces = [
+const heroEvidence = [
   {
     label: 'XRD',
-    subtitle: 'spinel diffraction',
-    color: '#22d3ee',
-    axis: '2θ',
+    role: 'phase indication detected',
+    boundary: 'reference validation required',
+    color: '#38bdf8',
     data: generateXrdTrace(180),
-  },
-  {
-    label: 'Raman',
-    subtitle: 'A1g mode response',
-    color: '#10b981',
-    axis: 'cm⁻¹',
-    data: generateRamanTrace(180),
-  },
-  {
-    label: 'FTIR',
-    subtitle: 'metal-oxygen bands',
-    color: '#ef4444',
-    axis: 'cm⁻¹',
-    data: generateFtirTrace(180),
+    position: 'lg:left-0 lg:top-8',
+    driftX: '10px',
   },
   {
     label: 'XPS',
-    subtitle: 'surface states',
-    color: '#8b5cf6',
-    axis: 'eV',
+    role: 'surface oxidation evidence',
+    boundary: 'not bulk confirmation',
+    color: '#818cf8',
     data: generateXpsTrace(180),
+    position: 'lg:right-0 lg:top-20',
+    driftX: '-10px',
+  },
+  {
+    label: 'FTIR',
+    role: 'functional-group support',
+    boundary: 'complementary evidence',
+    color: '#2dd4bf',
+    data: generateFtirTrace(180),
+    position: 'lg:left-2 lg:bottom-20',
+    driftX: '8px',
+  },
+  {
+    label: 'Raman',
+    role: 'vibrational fingerprint',
+    boundary: 'local-structure evidence',
+    color: '#a5b4fc',
+    data: generateRamanTrace(180),
+    position: 'lg:right-1 lg:bottom-5',
+    driftX: '-8px',
   },
 ];
 
-function SignalTraceCard({ trace }: { trace: (typeof signalTraces)[number] }) {
+const evidenceConsoleSteps = [
+  'Research Objective',
+  'Evidence Workspace',
+  'Agent Reasoning',
+  'Validation Gap',
+  'Decision',
+  'Notebook / Report',
+];
+
+function SpectrumTrace({ data, color }: { data: (typeof heroEvidence)[number]['data']; color: string }) {
   return (
-    <div className="rounded border border-slate-300 bg-white p-2.5 shadow-sm">
-      <div className="mb-1.5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: trace.color }} />
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-700">{trace.label}</span>
-        </div>
-        <span className="text-[8px] text-slate-500">{trace.subtitle}</span>
-      </div>
-      <div className="h-24 rounded border border-slate-200 bg-white p-2 relative">
-        <svg viewBox="0 0 240 88" className="h-full w-full" preserveAspectRatio="none">
-          {/* Grid lines - more like scientific software */}
-          <line x1="8" y1="76" x2="232" y2="76" stroke="#cbd5e1" strokeWidth="1" />
-          <line x1="8" y1="55" x2="232" y2="55" stroke="#e2e8f0" strokeWidth="0.5" />
-          <line x1="8" y1="34" x2="232" y2="34" stroke="#e2e8f0" strokeWidth="0.5" />
-          <line x1="8" y1="13" x2="232" y2="13" stroke="#e2e8f0" strokeWidth="0.5" />
-          {/* Vertical grid */}
-          <line x1="60" y1="8" x2="60" y2="80" stroke="#f1f5f9" strokeWidth="0.5" />
-          <line x1="120" y1="8" x2="120" y2="80" stroke="#f1f5f9" strokeWidth="0.5" />
-          <line x1="180" y1="8" x2="180" y2="80" stroke="#f1f5f9" strokeWidth="0.5" />
-          {/* Spectrum trace */}
-          <path
-            d={createSvgPath(trace.data, 240, 88, 8)}
-            fill="none"
-            stroke={trace.color}
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        </svg>
-        {/* Axis labels like scientific software */}
-        <div className="absolute bottom-0 left-1 text-[7px] text-slate-500">0</div>
-        <div className="absolute bottom-0 right-1 text-[7px] text-slate-500">{trace.axis}</div>
-        <div className="absolute top-0 left-0 text-[7px] text-slate-500">Int.</div>
-      </div>
-    </div>
+    <svg viewBox="0 0 230 72" preserveAspectRatio="none" className="h-full w-full" aria-hidden="true">
+      <line x1="8" y1="58" x2="222" y2="58" stroke="rgba(148,163,184,0.25)" strokeWidth="1" />
+      <line x1="8" y1="36" x2="222" y2="36" stroke="rgba(148,163,184,0.13)" strokeWidth="1" />
+      <path
+        className="landing-trace-path"
+        d={createSvgPath(data, 230, 72, 8)}
+        fill="none"
+        pathLength={1}
+        stroke={color}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
   );
 }
 
 export default function HeroSection() {
   return (
-    <section className="bg-white py-18 lg:py-24">
-      <div className="mx-auto max-w-[1200px] px-6">
-        <div className="grid grid-cols-1 items-center gap-14 lg:grid-cols-[55%_45%]">
-          {/* Left: Content */}
-          <div className="max-w-[640px]">
-            <h1 className="mb-6 text-[36px] font-extrabold leading-[1.05] tracking-[-0.04em] text-[#0B1220] sm:text-[44px] lg:text-[56px] xl:text-[64px]">
-              From experimental signal to evidence-linked interpretation
+    <section className="landing-dark-grid bg-[#060b16] text-white">
+      <div className="mx-auto max-w-[1280px] px-6 pb-6 pt-8 sm:pt-10 lg:px-8">
+        <div className="grid items-center gap-14 lg:grid-cols-[minmax(0,0.95fr)_minmax(560px,1fr)]">
+          <div className="landing-hero-copy max-w-[660px]">
+            <div className="mb-6 inline-flex items-center gap-3 border border-sky-200/15 bg-white/[0.07] px-3 py-2 text-[11px] font-semibold uppercase text-sky-100 backdrop-blur">
+              <span className="h-1.5 w-1.5 bg-sky-300 shadow-[0_0_18px_rgba(125,211,252,0.8)]" />
+              Evidence-linked scientific workflows
+            </div>
+            <h1 className="max-w-[620px] text-[38px] font-semibold leading-[1.02] text-white sm:text-[48px] lg:text-[56px] xl:text-[60px]">
+              Turn experimental signals into traceable scientific decisions.
             </h1>
-            <p className="mb-6 max-w-[620px] text-[16px] leading-[30px] text-slate-600 lg:text-[18px]">
-              DIFARYX unifies characterization data, executes structured analysis workflows, and turns experimental evidence into traceable scientific interpretation.
+            <p className="mt-6 max-w-[585px] text-[16px] leading-8 text-slate-200 sm:text-[18px]">
+              DIFARYX keeps spectra, experimental context, agent reasoning, validation gaps, and report memory connected so every decision stays tied to evidence.
             </p>
-            <p className="mb-8 max-w-[620px] text-[15px] leading-[28px] text-slate-500">
-              Built for cross-technique comparison, controllable preprocessing, reproducible reporting, and autonomous agent execution.
+            <p className="mt-5 max-w-[520px] border-l border-sky-300/35 pl-4 text-[14px] leading-7 text-slate-400">
+              Built for chemistry and materials R&amp;D across XRD, XPS, FTIR, and Raman.
             </p>
-
-            <div className="flex flex-col items-start gap-3">
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  to="/demo/agent?project=cu-fe2o4-spinel&mode=demo"
-                  className="inline-flex h-12 items-center justify-center rounded-xl bg-blue-600 px-6 text-[15px] font-bold text-white shadow-lg shadow-blue-600/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-600/25"
-                >
-                  Run Agent Demo
-                </Link>
-                <Link
-                  to="/login"
-                  className="inline-flex h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-6 text-[15px] font-bold text-slate-900 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-400 hover:shadow-md"
-                >
-                  Explore Workflow
-                </Link>
-              </div>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+              <Link
+                to="/demo/agent?project=cu-fe2o4-spinel&mode=demo"
+                className="inline-flex h-[52px] items-center justify-center gap-2 bg-blue-600 px-6 text-[15px] font-semibold text-white shadow-[0_20px_60px_rgba(37,99,235,0.34)] transition hover:bg-blue-500"
+              >
+                Launch Demo
+                <ArrowRight size={16} />
+              </Link>
+              <Link
+                to="/dashboard"
+                className="inline-flex h-[52px] items-center justify-center border border-white/20 bg-white/[0.08] px-6 text-[15px] font-semibold text-white backdrop-blur transition hover:border-sky-200/40 hover:bg-white/[0.12]"
+              >
+                View Evidence Workflow
+              </Link>
             </div>
           </div>
 
-          {/* Right: Product Preview - Desktop Software Style */}
-          <div className="relative">
-            {/* Window shadow and border */}
-            <div className="overflow-hidden rounded-lg border-2 border-slate-300 bg-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
-              {/* Title Bar - Desktop App Style */}
-              <div className="flex h-8 items-center justify-between border-b border-slate-300 bg-gradient-to-b from-slate-200 to-slate-100 px-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1.5">
-                    <div className="h-3 w-3 rounded-full bg-red-500 border border-red-600" />
-                    <div className="h-3 w-3 rounded-full bg-yellow-500 border border-yellow-600" />
-                    <div className="h-3 w-3 rounded-full bg-green-500 border border-green-600" />
-                  </div>
-                  <span className="ml-2 text-[11px] font-bold text-slate-700">DIFARYX - Multi-Technique Analysis</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="h-4 w-4 flex items-center justify-center text-slate-600 hover:bg-slate-200 rounded">
-                    <span className="text-[10px]">−</span>
-                  </div>
-                  <div className="h-4 w-4 flex items-center justify-center text-slate-600 hover:bg-slate-200 rounded">
-                    <span className="text-[10px]">□</span>
-                  </div>
-                  <div className="h-4 w-4 flex items-center justify-center text-slate-600 hover:bg-slate-200 rounded">
-                    <span className="text-[10px]">×</span>
-                  </div>
-                </div>
-              </div>
+          <div className="relative min-h-[580px] lg:min-h-[560px]">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] opacity-75">
+              <SpectrumTrace data={generateXrdTrace(260)} color="rgba(56,189,248,0.48)" />
+            </div>
+            <div className="pointer-events-none absolute inset-x-8 bottom-8 h-[310px] opacity-35">
+              <SpectrumTrace data={generateRamanTrace(260)} color="rgba(129,140,248,0.5)" />
+            </div>
+            <svg
+              viewBox="0 0 700 560"
+              preserveAspectRatio="none"
+              className="pointer-events-none absolute inset-0 hidden h-full w-full opacity-80 lg:block"
+              aria-hidden="true"
+            >
+              <path className="landing-hero-connector" d="M112 98 C184 98 226 132 282 172" />
+              <path className="landing-hero-connector" d="M592 152 C518 152 476 158 420 188" />
+              <path className="landing-hero-connector" d="M122 438 C200 438 226 404 282 372" />
+              <path className="landing-hero-connector" d="M586 474 C520 474 476 438 420 402" />
+              <circle cx="282" cy="172" r="3" className="landing-hero-node" />
+              <circle cx="420" cy="188" r="3" className="landing-hero-node" />
+              <circle cx="282" cy="372" r="3" className="landing-hero-node" />
+              <circle cx="420" cy="402" r="3" className="landing-hero-node" />
+            </svg>
 
-              {/* Menu Bar - Like Desktop Software */}
-              <div className="flex h-6 items-center gap-4 border-b border-slate-300 bg-slate-50 px-3 text-[10px] text-slate-700">
-                <span className="font-semibold hover:bg-slate-200 px-2 py-0.5 rounded cursor-default">File</span>
-                <span className="hover:bg-slate-200 px-2 py-0.5 rounded cursor-default">Edit</span>
-                <span className="hover:bg-slate-200 px-2 py-0.5 rounded cursor-default">View</span>
-                <span className="hover:bg-slate-200 px-2 py-0.5 rounded cursor-default">Analysis</span>
-                <span className="hover:bg-slate-200 px-2 py-0.5 rounded cursor-default">Tools</span>
-                <span className="hover:bg-slate-200 px-2 py-0.5 rounded cursor-default">Help</span>
-              </div>
-
-              {/* Toolbar - Desktop App Style */}
-              <div className="flex h-10 items-center gap-2 border-b border-slate-300 bg-slate-100 px-3">
-                <div className="flex items-center gap-1">
-                  <div className="h-7 w-7 flex items-center justify-center rounded border border-slate-300 bg-white hover:bg-slate-50 shadow-sm">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
-                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                    </svg>
-                  </div>
-                  <div className="h-7 w-7 flex items-center justify-center rounded border border-slate-300 bg-white hover:bg-slate-50 shadow-sm">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
-                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                    </svg>
-                  </div>
-                  <div className="h-7 w-7 flex items-center justify-center rounded border border-slate-300 bg-white hover:bg-slate-50 shadow-sm">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                  </div>
-                </div>
-                <div className="h-6 w-px bg-slate-300" />
-                <div className="flex-1 flex items-center gap-2">
-                  <span className="text-[10px] text-slate-600">Project:</span>
-                  <span className="text-[10px] font-semibold text-slate-700">CuFe2O4_Analysis</span>
-                </div>
-                <span className="rounded bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-[9px] font-bold text-emerald-700">
-                  Ready
-                </span>
-              </div>
-
-              {/* Main Content Area - Desktop Software Layout */}
-              <div className="bg-slate-50 p-3">
-                {/* Info Bar */}
-                <div className="mb-3 flex items-center justify-between rounded border border-slate-300 bg-white px-3 py-2 shadow-sm">
+            <div className="relative z-10 flex min-h-[580px] items-center justify-center lg:min-h-[560px]">
+              <div className="w-full max-w-[450px] border border-white/15 bg-slate-950/70 p-4 shadow-[0_32px_120px_rgba(2,6,23,0.68)] backdrop-blur-md">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
                   <div>
-                    <div className="text-[11px] font-bold text-slate-700">Multi-Technique Signal Analysis</div>
-                    <div className="text-[9px] text-slate-500">4 datasets loaded • Cross-technique correlation active</div>
+                    <div className="text-[11px] font-semibold uppercase text-sky-200">DIFARYX Evidence Console</div>
+                    <div className="mt-1 text-[12px] text-slate-400">Traceable characterization workflow</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[9px] text-slate-600">Review status:</span>
-                    <span className="rounded bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                      Supported
-                    </span>
-                  </div>
+                  <span className="border border-emerald-300/20 bg-emerald-300/10 px-2 py-1 text-[10px] font-semibold text-emerald-100">
+                    Deterministic demo
+                  </span>
                 </div>
 
-                {/* 4 Technique Windows Grid - Scientific Software Style */}
-                <div className="grid grid-cols-2 gap-3">
-                  {signalTraces.map((trace) => (
-                    <SignalTraceCard key={trace.label} trace={trace} />
+                <div className="mt-4 border border-white/10 bg-white/[0.05] p-3">
+                  <div className="text-[10px] font-semibold uppercase text-slate-400">Research Objective</div>
+                  <p className="mt-2 text-[13px] leading-6 text-slate-100">
+                    Compare structure, surface chemistry, and vibrational support before assigning a bounded next decision.
+                  </p>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {evidenceConsoleSteps.map((step, index) => (
+                    <div key={step} className="flex items-center gap-3">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center border border-sky-200/15 bg-sky-300/10 text-[11px] font-semibold text-sky-100">
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
+                      <div className="relative flex h-9 flex-1 items-center border border-white/10 bg-white/[0.055] px-3 text-[12px] font-medium text-slate-100">
+                        {step}
+                        {index < evidenceConsoleSteps.length - 1 && (
+                          <span className="landing-console-line absolute -bottom-[9px] left-5 h-[9px] w-px bg-gradient-to-b from-sky-300 via-indigo-300 to-transparent" />
+                        )}
+                      </div>
+                    </div>
                   ))}
                 </div>
 
-                {/* Status Bar - Desktop App Style */}
-                <div className="mt-3 flex items-center justify-between rounded border border-slate-300 bg-white px-3 py-1.5 text-[9px] text-slate-600 shadow-sm">
-                  <div className="flex items-center gap-4">
-                    <span>Status: Interpretation ready</span>
-                    <span>•</span>
-                    <span>Phase: CuFe₂O₄ inverse spinel</span>
+                <div className="mt-4 grid grid-cols-2 gap-2 border-t border-white/10 pt-4 text-[11px] text-slate-300">
+                  <div className="border border-white/10 bg-white/[0.04] px-2 py-2">Evidence sources linked</div>
+                  <div className="border border-white/10 bg-white/[0.04] px-2 py-2">Claim boundary visible</div>
+                </div>
+                <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_138px]">
+                  <div className="border border-amber-200/15 bg-amber-100/[0.07] p-3">
+                    <div className="text-[10px] font-semibold uppercase text-amber-100">Validation boundary</div>
+                    <p className="mt-2 text-[11px] leading-5 text-slate-200">
+                      Possible phase indication. Reference validation required before a stronger claim.
+                    </p>
                   </div>
-                  <span>Evidence: 24 features extracted</span>
+                  <div className="border border-sky-200/15 bg-sky-200/[0.07] p-3">
+                    <div className="text-[10px] font-semibold uppercase text-sky-100">Report handoff</div>
+                    <div className="mt-2 space-y-1 text-[10px] text-slate-200">
+                      <div>Evidence trace</div>
+                      <div>Gap notes</div>
+                      <div>Decision memory</div>
+                    </div>
+                  </div>
                 </div>
               </div>
+            </div>
+
+            <div className="relative z-20 -mt-10 grid gap-3 sm:grid-cols-2 lg:absolute lg:inset-0 lg:z-0 lg:mt-0 lg:block">
+              {heroEvidence.map((item) => (
+                <article
+                  key={item.label}
+                  className={`landing-evidence-float border border-white/15 bg-white/[0.09] p-3 shadow-[0_20px_80px_rgba(2,6,23,0.44)] backdrop-blur-md lg:absolute lg:w-[218px] ${item.position}`}
+                  style={{ '--landing-drift-x': item.driftX } as React.CSSProperties}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold uppercase text-sky-100">{item.label}</span>
+                    <span className="h-1.5 w-1.5" style={{ backgroundColor: item.color }} />
+                  </div>
+                  <div className="mt-2 h-14 border border-white/10 bg-slate-950/45 px-1">
+                    <SpectrumTrace data={item.data} color={item.color} />
+                  </div>
+                  <div className="mt-2 text-[12px] font-medium text-white">{item.role}</div>
+                  <div className="mt-1 text-[11px] leading-5 text-slate-300">{item.boundary}</div>
+                </article>
+              ))}
             </div>
           </div>
         </div>

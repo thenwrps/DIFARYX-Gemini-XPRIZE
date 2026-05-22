@@ -1,123 +1,174 @@
 import React from 'react';
-import { Atom, Layers, Waves, Sparkle } from 'lucide-react';
+import { Atom, Layers, Sparkle, Waves } from 'lucide-react';
+import {
+  createSvgPath,
+  generateFtirTrace,
+  generateRamanTrace,
+  generateXpsTrace,
+  generateXrdTrace,
+  SyntheticTracePoint,
+} from '../../data/syntheticTraces';
+import { useLandingReveal } from './useLandingReveal';
 
 const techniques = [
   {
     name: 'XRD',
     fullName: 'X-Ray Diffraction',
-    desc: 'Measures diffraction from crystallographic planes following Bragg\'s law. Provides bulk crystallographic information for phase identification and structural characterization.',
-    capabilities: ['Peak detection', 'Phase matching (ICDD/COD/AMCSD)', 'Lattice refinement', 'Crystallite size'],
+    role: 'Crystal structure / phase evidence',
+    desc: 'Bulk diffraction evidence helps bound phase and structural assignments.',
+    capabilities: ['Peak detection', 'Phase matching', 'Lattice refinement', 'Crystallite size'],
     Icon: Atom,
-    color: 'cyan'
+    color: '#0284c7',
+    data: generateXrdTrace(190),
   },
   {
     name: 'XPS',
     fullName: 'X-Ray Photoelectron Spectroscopy',
-    desc: 'Measures binding energies of core-level electrons to determine oxidation states and chemical bonding. Surface-sensitive technique with 5-10 nm sampling depth.',
-    capabilities: ['Peak fitting', 'Background subtraction (Shirley/Tougaard)', 'Quantification (Scofield RSF)', 'Oxidation state assignment'],
+    role: 'Surface chemistry / oxidation-state evidence',
+    desc: 'Surface-sensitive chemistry evidence supports oxidation-state review.',
+    capabilities: ['Peak fitting', 'Background subtraction', 'Quantification', 'Oxidation-state assignment'],
     Icon: Layers,
-    color: 'blue'
+    color: '#4f46e5',
+    data: generateXpsTrace(190),
   },
   {
     name: 'FTIR',
     fullName: 'Fourier-Transform Infrared Spectroscopy',
-    desc: 'Measures vibrational modes from infrared absorption by molecular bonds. Identifies functional groups and chemical composition.',
-    capabilities: ['Baseline correction', 'Band assignment', 'Functional group detection', 'ATR mode support'],
+    role: 'Functional group / bonding evidence',
+    desc: 'Vibrational band evidence supports functional-group and bonding context.',
+    capabilities: ['Baseline correction', 'Band assignment', 'Functional-group detection', 'ATR mode support'],
     Icon: Waves,
-    color: 'purple'
+    color: '#0f766e',
+    data: generateFtirTrace(190),
   },
   {
     name: 'Raman',
     fullName: 'Raman Spectroscopy',
-    desc: 'Measures inelastic scattering from vibrational modes. Provides molecular symmetry information and structural fingerprints.',
-    capabilities: ['Mode assignment', 'Factor group analysis', 'Peak deconvolution', 'Calibration (Si standard)'],
+    role: 'Vibrational fingerprint / local-structure evidence',
+    desc: 'Mode evidence adds local-structure and vibrational fingerprint context.',
+    capabilities: ['Mode assignment', 'Factor group analysis', 'Peak deconvolution', 'Calibration standard'],
     Icon: Sparkle,
-    color: 'emerald'
-  }
+    color: '#7c3aed',
+    data: generateRamanTrace(190),
+  },
 ];
 
-const colorMap = {
-  cyan: {
-    bg: 'bg-cyan-50',
-    border: 'border-cyan-200',
-    icon: 'text-cyan-600',
-    badge: 'bg-cyan-100 text-cyan-700'
-  },
-  blue: {
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    icon: 'text-blue-600',
-    badge: 'bg-blue-100 text-blue-700'
-  },
-  purple: {
-    bg: 'bg-purple-50',
-    border: 'border-purple-200',
-    icon: 'text-purple-600',
-    badge: 'bg-purple-100 text-purple-700'
-  },
-  emerald: {
-    bg: 'bg-emerald-50',
-    border: 'border-emerald-200',
-    icon: 'text-emerald-600',
-    badge: 'bg-emerald-100 text-emerald-700'
-  }
-};
+function TechniqueCurve({ data, color }: { data: SyntheticTracePoint[]; color: string }) {
+  return (
+    <svg viewBox="0 0 300 92" preserveAspectRatio="none" className="landing-technique-curve h-full w-full" aria-hidden="true">
+      <line x1="9" y1="74" x2="291" y2="74" stroke="#cbd5e1" strokeWidth="1" />
+      <line x1="9" y1="42" x2="291" y2="42" stroke="#e2e8f0" strokeWidth="1" />
+      <path
+        d={createSvgPath(data, 300, 92, 9)}
+        fill="none"
+        pathLength={1}
+        stroke={color}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
 
 export default function TechniqueCoverageSection() {
+  const { ref, isVisible } = useLandingReveal<HTMLElement>({ threshold: 0.12 });
+
   return (
-    <section id="techniques" className="border-t border-slate-100 bg-white py-24">
-      <div className="mx-auto max-w-[1200px] px-6">
-        <div className="mb-12 text-center">
-          <h2 className="mb-4 text-[32px] font-bold leading-[1.2] text-slate-900 lg:text-[40px]">
-            Four characterization techniques in one platform
+    <section id="techniques" ref={ref} className="scroll-mt-24 border-t border-slate-200 bg-[#f6f8fc] py-20">
+      <div className="mx-auto max-w-[1280px] px-6 lg:px-8">
+        <div className={`landing-reveal max-w-[900px] ${isVisible ? 'is-visible' : ''}`}>
+          <p className="text-[12px] font-semibold uppercase text-blue-700">Technique-specific evidence</p>
+          <h2 className="mt-4 text-[32px] font-semibold leading-tight text-slate-950 lg:text-[44px]">
+            Four characterization techniques, one evidence workflow
           </h2>
-          <p className="mx-auto max-w-3xl text-[16px] leading-relaxed text-slate-600">
-            DIFARYX supports XRD, XPS, FTIR, and Raman spectroscopy with technique-specific preprocessing, analysis tools, and cross-technique evidence fusion.
+          <p className="mt-5 text-[16px] leading-8 text-slate-600">
+            DIFARYX treats each technique as a source of bounded scientific evidence. XRD, XPS, FTIR, and Raman results are interpreted in context and linked to reasoning, validation gaps, and report-ready outputs.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {techniques.map(({ name, fullName, desc, capabilities, Icon, color }) => {
-            const colors = colorMap[color as keyof typeof colorMap];
-            return (
-              <div key={name} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-                <div className="mb-4 flex items-start gap-4">
-                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${colors.bg} border ${colors.border}`}>
-                    <Icon size={20} className={colors.icon} />
-                  </div>
+        <div className={`landing-technique-field mt-10 ${isVisible ? 'is-visible' : ''}`}>
+          <div className="grid gap-4 lg:grid-cols-4">
+            {techniques.map(({ name, fullName, role, desc, capabilities, Icon, color, data }, index) => (
+              <article
+                key={name}
+                className="landing-technique-card border border-slate-200 bg-white p-4 shadow-[0_22px_64px_rgba(15,23,42,0.08)]"
+                style={{ '--landing-delay': `${index * 130}ms` } as React.CSSProperties}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center border border-slate-200 bg-slate-50" style={{ color }}>
+                    <Icon size={18} />
+                  </span>
                   <div>
-                    <div className="mb-1 flex items-center gap-2">
-                      <h3 className="text-[18px] font-bold text-slate-900">{name}</h3>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${colors.badge}`}>
-                        {name}
-                      </span>
-                    </div>
-                    <p className="text-[13px] font-semibold text-slate-600">{fullName}</p>
+                    <h3 className="text-[18px] font-semibold text-slate-950">{name}</h3>
+                    <p className="mt-1 text-[11px] font-semibold text-slate-500">{fullName}</p>
                   </div>
                 </div>
-                <p className="mb-4 text-[14px] leading-relaxed text-slate-700">{desc}</p>
-                <div className="space-y-2">
-                  <div className="text-[12px] font-bold text-slate-500 uppercase tracking-wide">Capabilities</div>
-                  <ul className="space-y-1.5">
-                    {capabilities.map((capability, index) => (
-                      <li key={index} className="flex items-start gap-2">
-                        <div className={`mt-1.5 h-1 w-1 shrink-0 rounded-full ${colors.badge}`} />
-                        <span className="text-[13px] text-slate-600">{capability}</span>
-                      </li>
-                    ))}
-                  </ul>
+
+                <div className="mt-4 h-[92px] border border-slate-200 bg-slate-50 px-1">
+                  <TechniqueCurve data={data} color={color} />
+                </div>
+
+                <div className="mt-4 border-l-2 pl-3" style={{ borderColor: color }}>
+                  <div className="text-[12px] font-semibold text-slate-950">{role}</div>
+                  <p className="mt-2 text-[12px] leading-5 text-slate-600">{desc}</p>
+                </div>
+
+                <ul className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+                  {capabilities.map((capability) => (
+                    <li key={capability} className="flex gap-2 text-[12px] leading-5 text-slate-600">
+                      <span className="mt-2 h-1 w-1 shrink-0" style={{ backgroundColor: color }} />
+                      <span>{capability}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+
+          <div className="relative hidden h-24 lg:block">
+            <svg viewBox="0 0 1000 96" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-hidden="true">
+              <path className="landing-fusion-connector" d="M125 0 C125 34 350 48 500 94" />
+              <path className="landing-fusion-connector" d="M375 0 C375 34 438 56 500 94" />
+              <path className="landing-fusion-connector" d="M625 0 C625 34 562 56 500 94" />
+              <path className="landing-fusion-connector" d="M875 0 C875 34 650 48 500 94" />
+              <circle cx="500" cy="94" r="4" className="landing-fusion-node" />
+            </svg>
+          </div>
+
+          <div className="relative border border-blue-200 bg-slate-950 p-6 text-white shadow-[0_30px_92px_rgba(15,23,42,0.22)] lg:mx-auto lg:max-w-[960px]">
+            <div className="grid gap-5 lg:grid-cols-[260px_1fr] lg:items-start">
+              <div>
+                <div className="text-[11px] font-semibold uppercase text-sky-200">Central evidence panel</div>
+                <h3 className="mt-3 text-[24px] font-semibold leading-tight text-white">
+                  Cross-Technique Evidence Fusion
+                </h3>
+              </div>
+              <div>
+                <p className="text-[14px] leading-7 text-slate-200">
+                  Compare XRD phase assignments with XPS oxidation states, FTIR functional groups, and Raman vibrational modes in a unified evidence workspace. The agent synthesizes evidence across techniques to strengthen supporting data and identify conflicts.
+                </p>
+                <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                  <div className="border border-sky-200/15 bg-white/[0.07] p-3">
+                    <div className="text-[10px] font-semibold uppercase text-sky-100">Supporting evidence</div>
+                    <p className="mt-2 text-[11px] leading-5 text-slate-200">Phase, surface, bond, and mode signals remain source-linked.</p>
+                  </div>
+                  <div className="border border-amber-200/15 bg-amber-100/[0.07] p-3">
+                    <div className="text-[10px] font-semibold uppercase text-amber-100">Validation gap</div>
+                    <p className="mt-2 text-[11px] leading-5 text-slate-200">Reference validation required before phase-purity confirmation.</p>
+                  </div>
+                  <div className="border border-emerald-200/15 bg-emerald-100/[0.07] p-3">
+                    <div className="text-[10px] font-semibold uppercase text-emerald-100">Next scientific action</div>
+                    <p className="mt-2 text-[11px] leading-5 text-slate-200">Use the conflict review to bound the next measurement.</p>
+                  </div>
+                  <div className="border border-indigo-200/15 bg-indigo-100/[0.07] p-3">
+                    <div className="text-[10px] font-semibold uppercase text-indigo-100">Report-ready discussion</div>
+                    <p className="mt-2 text-[11px] leading-5 text-slate-200">Notebook memory keeps evidence, gaps, and decision notes together.</p>
+                  </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-12 rounded-2xl border border-slate-200 bg-slate-50 p-8">
-          <div className="text-center">
-            <h3 className="mb-3 text-[20px] font-bold text-slate-900">Cross-Technique Evidence Fusion</h3>
-            <p className="mx-auto max-w-3xl text-[15px] leading-relaxed text-slate-700">
-              Compare XRD phase assignments with XPS oxidation states, FTIR functional groups, and Raman vibrational modes in a unified multi-technique workspace. The agent synthesizes evidence across techniques to strengthen supporting data and resolve conflicts.
-            </p>
+            </div>
           </div>
         </div>
       </div>

@@ -1,91 +1,72 @@
 import React from 'react';
-import { Eye, Settings, FileCheck, GitBranch } from 'lucide-react';
+import { Eye, FileCheck, GitBranch, Settings } from 'lucide-react';
+import { useLandingReveal } from './useLandingReveal';
 
 const trustPrinciples = [
   {
-    title: 'Reasoning Transparency',
-    desc: 'See candidate comparison, conflict analysis, uncertainty assessment, and evidence synthesis. Every interpretation shows its supporting data.',
+    title: 'Reasoning transparency',
+    desc: 'Candidate comparison, conflict review, uncertainty, and evidence synthesis stay inspectable.',
     Icon: Eye,
-    color: 'blue'
   },
   {
-    title: 'Parameter Control',
-    desc: 'Switch between manual review and guided workflow modes. Edit preprocessing parameters, analysis thresholds, and reference sources.',
+    title: 'Parameter control',
+    desc: 'Preprocessing choices, thresholds, reference sources, and review modes remain visible.',
     Icon: Settings,
-    color: 'purple'
   },
   {
-    title: 'Evidence Provenance',
-    desc: 'Track which peaks, reference sources, and techniques contributed to each interpretation. Export reports with full evidence lineage.',
+    title: 'Evidence provenance',
+    desc: 'Peaks, signal sources, technique roles, and supporting objects carry lineage into outputs.',
     Icon: FileCheck,
-    color: 'emerald'
   },
   {
-    title: 'Source Attribution',
-    desc: 'Clear labels for deterministic analysis and interpretation. Researchers know which parts are rule-based and which are agent-prepared.',
+    title: 'Source attribution',
+    desc: 'Researchers can see what was derived from source evidence and what was prepared for discussion.',
     Icon: GitBranch,
-    color: 'amber'
-  }
+  },
+  {
+    title: 'Validation-aware claims',
+    desc: 'Missing references, claim boundaries, and complementary evidence needs are not hidden.',
+    Icon: FileCheck,
+  },
 ];
 
-const colorMap = {
-  blue: {
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    icon: 'text-blue-600'
-  },
-  purple: {
-    bg: 'bg-purple-50',
-    border: 'border-purple-200',
-    icon: 'text-purple-600'
-  },
-  emerald: {
-    bg: 'bg-emerald-50',
-    border: 'border-emerald-200',
-    icon: 'text-emerald-600'
-  },
-  amber: {
-    bg: 'bg-amber-50',
-    border: 'border-amber-200',
-    icon: 'text-amber-600'
-  }
-};
-
 export default function TrustControlSection() {
+  const { ref, isVisible } = useLandingReveal<HTMLElement>();
+
   return (
-    <section id="trust" className="border-t border-slate-100 bg-slate-50 py-24">
-      <div className="mx-auto max-w-[1200px] px-6">
-        <div className="mb-12 text-center">
-          <h2 className="mb-4 text-[32px] font-bold leading-[1.2] text-slate-900 lg:text-[40px]">
-            Trust through transparency and control
+    <section id="trust" ref={ref} className="scroll-mt-24 border-t border-slate-200 bg-white py-20">
+      <div className="mx-auto max-w-[1280px] px-6 lg:px-8">
+        <div className={`landing-reveal max-w-[900px] ${isVisible ? 'is-visible' : ''}`}>
+          <p className="text-[12px] font-semibold uppercase text-blue-700">Trust and control</p>
+          <h2 className="mt-4 text-[32px] font-semibold leading-tight text-slate-950 lg:text-[44px]">
+            Trust through visible evidence, parameters, and reasoning
           </h2>
-          <p className="mx-auto max-w-3xl text-[16px] leading-relaxed text-slate-600">
-            DIFARYX is designed for researchers who need to understand, verify, and control every step of the analysis workflow.
+          <p className="mt-5 text-[16px] leading-8 text-slate-600">
+            DIFARYX is designed for scientific review where automation has to remain explainable, controlled, and bounded by the evidence in front of the researcher.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {trustPrinciples.map(({ title, desc, Icon, color }) => {
-            const colors = colorMap[color as keyof typeof colorMap];
-            return (
-              <div key={title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-                <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-xl ${colors.bg} border ${colors.border}`}>
-                  <Icon size={20} className={colors.icon} />
-                </div>
-                <h3 className="mb-2 text-[17px] font-bold text-slate-900">{title}</h3>
-                <p className="text-[14px] leading-relaxed text-slate-600">{desc}</p>
-              </div>
-            );
-          })}
+        <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {trustPrinciples.map(({ title, desc, Icon }, index) => (
+            <article
+              key={title}
+              className={`landing-reveal border border-slate-200 bg-[#f8faff] p-5 ${isVisible ? 'is-visible' : ''}`}
+              style={{ transitionDelay: `${index * 70}ms` }}
+            >
+              <span className="flex h-10 w-10 items-center justify-center border border-blue-100 bg-white text-blue-700">
+                <Icon size={18} />
+              </span>
+              <h3 className="mt-4 text-[15px] font-semibold text-slate-950">{title}</h3>
+              <p className="mt-2 text-[13px] leading-6 text-slate-600">{desc}</p>
+            </article>
+          ))}
         </div>
 
-        <div className="mt-12 rounded-2xl border border-blue-200 bg-blue-50 p-8">
-          <div className="text-center">
-            <h3 className="mb-3 text-[20px] font-bold text-slate-900">No Black Boxes</h3>
-            <p className="mx-auto max-w-3xl text-[15px] leading-relaxed text-slate-700">
-              DIFARYX rejects the black-box approach. Every analysis step, parameter choice, evidence source, and reasoning step is visible, traceable, and verifiable. Researchers maintain full control while benefiting from autonomous execution.
-            </p>
-          </div>
+        <div className={`landing-reveal mt-10 border border-slate-200 bg-slate-950 px-6 py-7 text-white ${isVisible ? 'is-visible' : ''}`}>
+          <div className="text-[11px] font-semibold uppercase text-sky-200">No black boxes</div>
+          <p className="mt-3 max-w-[1030px] text-[18px] font-medium leading-8 text-slate-100">
+            No black boxes. Every analysis step, parameter choice, evidence source, and reasoning step should remain visible, traceable, and verifiable.
+          </p>
         </div>
       </div>
     </section>

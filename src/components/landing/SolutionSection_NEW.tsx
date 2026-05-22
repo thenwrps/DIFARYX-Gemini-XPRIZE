@@ -1,88 +1,91 @@
 import React from 'react';
-import { Workflow, Brain, FileCheck, Layers } from 'lucide-react';
+import { Brain, FileCheck, Layers, Workflow } from 'lucide-react';
+import { useLandingReveal } from './useLandingReveal';
 
 const solutionPillars = [
   {
     title: 'Unified Workflow System',
-    desc: 'Single platform for XRD, XPS, FTIR, and Raman data. Load signals, preprocess, compare, and report without switching tools.',
+    desc: 'Load signals, preprocess, compare, reason, and report across XRD, XPS, FTIR, and Raman without losing the scientific chain.',
     Icon: Workflow,
-    color: 'blue'
   },
   {
     title: 'Scientific Reasoning Layer',
-    desc: 'The workflow plans analysis steps, executes tools, collects evidence, reasons over uncertainty, and prepares traceable interpretations.',
+    desc: 'The agent reasons over structured evidence objects, uncertainty, validation gaps, and source-linked interpretations.',
     Icon: Brain,
-    color: 'purple'
   },
   {
     title: 'Controllable Preprocessing',
-    desc: 'Researchers set parameters for baseline correction, smoothing, normalization, and peak detection. Hybrid mode combines manual control with agent optimization.',
+    desc: 'Researchers keep parameters for baseline correction, smoothing, normalization, thresholds, and reference review visible.',
     Icon: FileCheck,
-    color: 'emerald'
   },
   {
     title: 'Cross-Technique Evidence Fusion',
-    desc: 'Compare XRD phase assignments with XPS oxidation states, FTIR functional groups, and Raman vibrational modes in one view.',
+    desc: 'Technique-specific results connect to supporting data, conflicts, and the next bounded scientific action.',
     Icon: Layers,
-    color: 'amber'
-  }
+  },
 ];
 
-const colorMap = {
-  blue: {
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    icon: 'text-blue-600'
-  },
-  purple: {
-    bg: 'bg-purple-50',
-    border: 'border-purple-200',
-    icon: 'text-purple-600'
-  },
-  emerald: {
-    bg: 'bg-emerald-50',
-    border: 'border-emerald-200',
-    icon: 'text-emerald-600'
-  },
-  amber: {
-    bg: 'bg-amber-50',
-    border: 'border-amber-200',
-    icon: 'text-amber-600'
-  }
-};
+const contextRows = [
+  ['Research objective', 'Resolve structure, surface state, and supporting vibrational evidence'],
+  ['Experimental setup', 'Sample, preparation, measurement, processing context'],
+  ['Signal inputs', 'XRD, XPS, FTIR, Raman uploads and derived features'],
+  ['Output boundary', 'Decision notes with validation gaps kept visible'],
+];
 
 export default function SolutionSection() {
+  const { ref, isVisible } = useLandingReveal<HTMLElement>();
+
   return (
-    <section id="solution" className="border-t border-slate-100 bg-white py-24">
-      <div className="mx-auto max-w-[1200px] px-6">
-        <div className="mb-12 text-center">
-          <h2 className="mb-4 text-[32px] font-bold leading-[1.2] text-slate-900 lg:text-[40px]">
-            DIFARYX unifies characterization workflows with scientific reasoning
-          </h2>
-          <p className="mx-auto max-w-3xl text-[16px] leading-relaxed text-slate-600">
-            A single platform that combines structured scientific workflows with planning, execution, evidence collection, reasoning, and report-ready discussion.
-          </p>
-        </div>
+    <section id="product" ref={ref} className="scroll-mt-24 border-t border-slate-200 bg-[#f7f9fc] py-20">
+      <div className="mx-auto max-w-[1280px] px-6 lg:px-8">
+        <div className="grid gap-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(500px,1fr)]">
+          <div className={`landing-reveal ${isVisible ? 'is-visible' : ''}`}>
+            <p className="text-[12px] font-semibold uppercase text-blue-700">Structured scientific context</p>
+            <h2 className="mt-4 text-[32px] font-semibold leading-tight text-slate-950 lg:text-[44px]">
+              DIFARYX is a workflow intelligence system, not an isolated analyzer.
+            </h2>
+            <p className="mt-5 text-[16px] leading-8 text-slate-600">
+              Experimental R&amp;D needs more than a graph viewer or a dashboard. DIFARYX connects objective, setup, uploaded signals, evidence review, agent reasoning, validation gaps, notebook memory, and report generation in one traceable workflow.
+            </p>
+          </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {solutionPillars.map(({ title, desc, Icon, color }) => {
-            const colors = colorMap[color as keyof typeof colorMap];
-            return (
-              <div key={title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-                <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-xl ${colors.bg} border ${colors.border}`}>
-                  <Icon size={20} className={colors.icon} />
-                </div>
-                <h3 className="mb-2 text-[17px] font-bold text-slate-900">{title}</h3>
-                <p className="text-[14px] leading-relaxed text-slate-600">{desc}</p>
+          <div className={`landing-reveal border border-slate-200 bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.08)] ${isVisible ? 'is-visible' : ''}`}>
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+              <div>
+                <div className="text-[11px] font-semibold uppercase text-blue-700">Context record</div>
+                <div className="mt-1 text-[14px] font-semibold text-slate-950">Scientific setup travels with evidence</div>
               </div>
-            );
-          })}
+              <span className="border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                Traceable
+              </span>
+            </div>
+            <dl className="mt-3 divide-y divide-slate-100">
+              {contextRows.map(([term, detail]) => (
+                <div key={term} className="grid gap-1 py-3 sm:grid-cols-[150px_1fr]">
+                  <dt className="text-[12px] font-semibold text-slate-500">{term}</dt>
+                  <dd className="text-[13px] leading-6 text-slate-800">{detail}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </div>
 
-        <div className="mt-12 text-center">
-          <p className="text-[15px] font-semibold text-slate-700">
-            DIFARYX executes structured scientific workflows directly from experimental signals.
-          </p>
+        <div className="mt-10 grid gap-4 md:grid-cols-2">
+          {solutionPillars.map(({ title, desc, Icon }, index) => (
+            <article
+              key={title}
+              className={`landing-reveal flex gap-4 border border-slate-200 bg-white p-5 ${isVisible ? 'is-visible' : ''}`}
+              style={{ transitionDelay: `${index * 70}ms` }}
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center border border-blue-100 bg-blue-50 text-blue-700">
+                <Icon size={19} />
+              </span>
+              <div>
+                <h3 className="text-[15px] font-semibold text-slate-950">{title}</h3>
+                <p className="mt-2 text-[13px] leading-6 text-slate-600">{desc}</p>
+              </div>
+            </article>
+          ))}
         </div>
       </div>
     </section>

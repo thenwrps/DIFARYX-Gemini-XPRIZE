@@ -23,7 +23,7 @@ const resourceLinks = [
 
 export default function Footer() {
   return (
-    <footer id="company" className="py-12 border-t border-slate-200 bg-white">
+    <footer id="company" className="scroll-mt-24 py-12 border-t border-slate-200 bg-white">
       <div className="max-w-[1280px] mx-auto px-8">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-8">
           <div className="col-span-2 md:col-span-1">
@@ -67,7 +67,7 @@ export default function Footer() {
             </ul>
           </div>
 
-          <div>
+          <div id="join-waitlist" className="scroll-mt-28">
             <h4 className="text-[10px] font-bold text-slate-900 uppercase tracking-wider mb-3">Stay Updated</h4>
             <p className="text-[11px] text-slate-500 mb-2.5">Follow DIFARYX updates and demo availability.</p>
             <div className="flex">

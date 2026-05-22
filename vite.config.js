@@ -6,6 +6,19 @@ export default defineConfig({
   resolve: {
     extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
   },
+  optimizeDeps: {
+    holdUntilCrawlEnd: false,
+  },
+  server: {
+    watch: {
+      ignored: [
+        '**/.venv/**',
+        '**/venv/**',
+        '**/server/python/**',
+        '**/DIFARYX-demo/real-app/**',
+      ],
+    },
+  },
   build: {
     rollupOptions: {
       output: {
