@@ -1,8 +1,8 @@
 import { lazy, Suspense, type ReactElement } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 
-import SignIn from "./pages/SignIn";
-import AuthCallback from "./pages/AuthCallback";
+const SignIn = lazy(() => import("./pages/SignIn"));
+const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
@@ -45,10 +45,81 @@ const ProjectEvidenceRegistry = lazy(() =>
 );
 
 function AppRouteLoading() {
+  const path = typeof window !== "undefined" ? window.location.pathname : "/";
+
+  // 1. Public/Auth Route loader (sleek, minimal, premium branding spinner)
+  if (
+    path === "/" ||
+    path.startsWith("/login") ||
+    path.startsWith("/signin") ||
+    path.startsWith("/auth")
+  ) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-white px-6">
+        <div className="flex flex-col items-center">
+          <div className="relative flex h-12 w-12 items-center justify-center">
+            {/* Spinning track */}
+            <div className="absolute inset-0 rounded-full border-[3px] border-slate-100" />
+            {/* Spinning arc */}
+            <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-blue-600 animate-spin" />
+          </div>
+          <p className="mt-5 text-[11px] font-bold tracking-[0.2em] text-slate-400 uppercase">
+            DIFARYX
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  // 2. Protected dashboard/workspace route loader (lightweight layout skeleton)
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-slate-700">
-      <div className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm font-semibold shadow-sm">
-        Loading workspace...
+    <main className="flex min-h-screen bg-slate-50 text-slate-900 font-sans">
+      {/* Sidebar Skeleton */}
+      <aside className="hidden md:flex w-64 border-r border-slate-200 bg-white flex-col p-4 space-y-6 shrink-0">
+        <div className="h-8 w-28 bg-slate-100 animate-pulse rounded" />
+        <div className="space-y-3 flex-1 pt-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-10 bg-slate-100 animate-pulse rounded-md" />
+          ))}
+        </div>
+      </aside>
+
+      {/* Main Content Skeleton */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Topbar Skeleton */}
+        <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 shrink-0">
+          <div className="h-8 w-48 bg-slate-100 animate-pulse rounded" />
+          <div className="h-8 w-8 bg-slate-100 animate-pulse rounded-full" />
+        </header>
+
+        {/* Workspace/Content Area Skeleton */}
+        <div className="flex-1 p-6 space-y-6 overflow-hidden flex flex-col">
+          <div className="h-8 w-48 bg-slate-100 animate-pulse rounded shrink-0" />
+
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
+            {/* Left/Center Panel (Graph Area) */}
+            <div className="lg:col-span-2 border border-slate-200 bg-white rounded-lg p-5 flex flex-col space-y-4 min-h-0">
+              <div className="h-6 w-36 bg-slate-100 animate-pulse rounded shrink-0" />
+              <div className="flex-1 bg-slate-50 animate-pulse rounded border border-slate-100 relative overflow-hidden flex items-center justify-center">
+                {/* Subtle loading indicator inside graph */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="h-8 w-8 rounded-full border-[2.5px] border-slate-200 border-t-blue-500 animate-spin" />
+                </div>
+              </div>
+            </div>
+
+            {/* Right Panel (Controls/Details) */}
+            <div className="border border-slate-200 bg-white rounded-lg p-5 flex flex-col space-y-4 min-h-0">
+              <div className="h-6 w-24 bg-slate-100 animate-pulse rounded shrink-0" />
+              <div className="space-y-3 flex-1 overflow-hidden pt-2">
+                <div className="h-12 bg-slate-50 animate-pulse rounded" />
+                <div className="h-12 bg-slate-50 animate-pulse rounded" />
+                <div className="h-12 bg-slate-50 animate-pulse rounded" />
+                <div className="h-12 bg-slate-50 animate-pulse rounded" />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   );
