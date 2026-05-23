@@ -57,6 +57,60 @@ export interface XRDPhaseMatch {
   [key: string]: unknown;
 }
 
+export type XRDReferenceMatchV2Status =
+  | 'candidate_match'
+  | 'candidate_screening'
+  | 'no_match'
+  | string;
+
+export type XRDReferenceMatchV2ClaimLevel =
+  | 'reference_supported_candidate'
+  | 'structure_family_indication'
+  | 'weak_candidate'
+  | 'none'
+  | string;
+
+export interface XRDReferenceMatchV2MatchedPeak {
+  measured_two_theta?: number | null;
+  reference_two_theta?: number | null;
+  delta_two_theta?: number | null;
+  hkl?: string | null;
+  reference_relative_intensity?: number | null;
+  [key: string]: unknown;
+}
+
+export interface XRDReferenceMatchV2Candidate {
+  phase_id?: string | null;
+  phase_label?: string | null;
+  formula?: string | null;
+  structure_family?: string | null;
+  elements?: string[] | null;
+  database_ref?: string | null;
+  matched_peak_count?: number | null;
+  reference_peak_count?: number | null;
+  coverage_ratio?: number | null;
+  mean_delta_two_theta?: number | null;
+  position_score?: number | null;
+  coverage_score?: number | null;
+  chemistry_score?: number | null;
+  score?: number | null;
+  matched_peaks?: XRDReferenceMatchV2MatchedPeak[];
+  [key: string]: unknown;
+}
+
+export interface XRDReferenceMatchV2 {
+  status?: XRDReferenceMatchV2Status | null;
+  claim_level?: XRDReferenceMatchV2ClaimLevel | null;
+  phase_confirmed?: boolean;
+  phase_purity_confirmed?: boolean;
+  reference_set_id?: string | null;
+  candidate_count?: number | null;
+  ranked_candidates?: XRDReferenceMatchV2Candidate[];
+  primary_candidate?: XRDReferenceMatchV2Candidate | null;
+  limitations?: string[];
+  [key: string]: unknown;
+}
+
 // ── Full processing response ────────────────────────────────────────
 
 export type XRDPeakResolution =
@@ -75,6 +129,7 @@ export interface XRDProcessResponse {
   detected_peaks: XRDDetectedPeak[];
   fitted_peaks: XRDFittedPeak[];
   phase_match: XRDPhaseMatch | null;
+  reference_match_v2?: XRDReferenceMatchV2 | null;
   sn_ratio: number;
   baseline_deviation: number;
   peak_resolution: XRDPeakResolution;
@@ -135,6 +190,7 @@ export interface XRDProcessPayload {
 export interface XRDNormalizedResult {
   raw: XRDProcessResponse;
   scientificEvidenceObject?: ScientificEvidenceObject;
+  referenceMatchV2?: XRDReferenceMatchV2 | null;
   detectedPeakCount: number;
   fittedPeakCount: number;
   snRatio: number;

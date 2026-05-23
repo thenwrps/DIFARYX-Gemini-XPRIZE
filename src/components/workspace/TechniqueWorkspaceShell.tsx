@@ -96,7 +96,7 @@ import {
   XRDBackendError,
   type XRDHealthStatus,
 } from '../../services/xrdBackendClient';
-import type { XRDNormalizedResult } from '../../types/xrdBackend';
+import type { XRDNormalizedResult, XRDReferenceMatchV2, XRDReferenceMatchV2Candidate } from '../../types/xrdBackend';
 import type { XRDDatasetContext } from '../../types/xrdDatasetContext';
 import type { XRDParameters } from '../../types/xrdParameters';
 import { saveXrdBackendEvidenceResult } from '../../data/xrdBackendEvidence';
@@ -207,6 +207,51 @@ function formatStateLabel(state: PipelineStepState) {
 
 function makeTimeLabel() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+const REFERENCE_MATCH_V2_BOUNDARY_NOTES = [
+  'Candidate evidence only; not identity confirmation.',
+  'Not phase purity confirmation.',
+  'Composition-sensitive evidence required for stronger assignment.',
+];
+
+const REFERENCE_LIMITATION_REPLACEMENTS = [
+  { pattern: new RegExp(`\\b${['confirmed', 'phase'].join(' ')}\\b`, 'gi'), replacement: 'phase assignment' },
+  { pattern: new RegExp(`\\b${['identified', 'as'].join(' ')}\\b`, 'gi'), replacement: 'assigned as' },
+  { pattern: new RegExp(`\\b${['pure', 'phase'].join(' ')}\\b`, 'gi'), replacement: 'single-phase material' },
+  { pattern: new RegExp(`\\b${['definitive', 'match'].join(' ')}\\b`, 'gi'), replacement: 'strongest candidate' },
+  { pattern: new RegExp(`\\b${['phase', 'purity', 'confirmed'].join(' ')}\\b`, 'gi'), replacement: 'phase purity assignment' },
+];
+
+function formatReferenceMatchNumber(value: number | null | undefined, digits = 2) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Not available';
+  return value.toFixed(digits);
+}
+
+function formatReferenceMatchPeakCount(candidate: XRDReferenceMatchV2Candidate | null) {
+  const matchedCount = candidate?.matched_peak_count ?? candidate?.matched_peaks?.length;
+  const referenceCount = candidate?.reference_peak_count;
+
+  if (typeof matchedCount === 'number' && typeof referenceCount === 'number') {
+    return `${matchedCount} / ${referenceCount}`;
+  }
+  if (typeof matchedCount === 'number') return String(matchedCount);
+  return 'Not available';
+}
+
+function cleanReferenceLimitation(limitation: string) {
+  return REFERENCE_LIMITATION_REPLACEMENTS.reduce(
+    (text, { pattern, replacement }) => text.replace(pattern, replacement),
+    limitation.trim(),
+  );
+}
+
+function getReferenceMatchBoundaryNotes(referenceMatch: XRDReferenceMatchV2) {
+  const backendLimitations = referenceMatch.limitations
+    ?.map(cleanReferenceLimitation)
+    .filter(Boolean) ?? [];
+
+  return Array.from(new Set([...REFERENCE_MATCH_V2_BOUNDARY_NOTES, ...backendLimitations]));
 }
 
 function getProjectFromQuery(projectId: string | null): RegistryProject | null {
@@ -2234,6 +2279,10 @@ function EvidencePanel({
                 </Panel>
               )}
 
+              {xrdBackendResult.referenceMatchV2 && (
+                <XRDReferenceCandidateEvidence referenceMatch={xrdBackendResult.referenceMatchV2} />
+              )}
+
               {xrdBackendSaved && (
                 <Panel title="Evidence Handoff" icon={<CheckCircle2 size={13} />}>
                   <p className="text-[10px] font-bold text-emerald-700">
@@ -2257,6 +2306,78 @@ function EvidencePanel({
         </>
       )}
     </div>
+  );
+}
+
+function XRDReferenceCandidateEvidence({ referenceMatch }: { referenceMatch: XRDReferenceMatchV2 }) {
+  const primaryCandidate = referenceMatch.primary_candidate ?? referenceMatch.ranked_candidates?.[0] ?? null;
+  const matchedPeaks = primaryCandidate?.matched_peaks ?? [];
+  const visibleMatchedPeaks = matchedPeaks.slice(0, 5);
+  const boundaryNotes = getReferenceMatchBoundaryNotes(referenceMatch);
+
+  return (
+    <Panel title="Reference Candidate Evidence" icon={<Search size={13} />}>
+      <div className="space-y-2 text-[11px]">
+        <div className="space-y-1">
+          <Metric label="Status" value={referenceMatch.status || 'Not available'} />
+          <Metric label="Claim level" value={referenceMatch.claim_level || 'Not available'} />
+          <Metric label="Reference set" value={referenceMatch.reference_set_id || 'Not available'} />
+          <Metric label="Candidate count" value={typeof referenceMatch.candidate_count === 'number' ? String(referenceMatch.candidate_count) : 'Not available'} />
+          <Metric label="Primary candidate" value={primaryCandidate?.phase_label || primaryCandidate?.phase_id || 'Not available'} />
+          {primaryCandidate?.formula && <Metric label="Formula" value={primaryCandidate.formula} />}
+          {primaryCandidate?.structure_family && <Metric label="Family" value={primaryCandidate.structure_family} />}
+          {primaryCandidate?.database_ref && <Metric label="Database ref" value={primaryCandidate.database_ref} />}
+          <Metric label="Score" value={formatReferenceMatchNumber(primaryCandidate?.score)} />
+          <Metric label="Matched peaks" value={formatReferenceMatchPeakCount(primaryCandidate)} />
+          <Metric label="Coverage ratio" value={formatReferenceMatchNumber(primaryCandidate?.coverage_ratio)} />
+          <Metric label="Mean delta 2theta" value={formatReferenceMatchNumber(primaryCandidate?.mean_delta_two_theta, 3)} />
+        </div>
+
+        {visibleMatchedPeaks.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-[9px] font-bold uppercase tracking-wide text-text-muted">Matched peak candidates</p>
+            <div className="overflow-x-auto rounded border border-border">
+              <table className="min-w-full table-fixed text-[9px]">
+                <thead className="bg-surface text-text-muted">
+                  <tr>
+                    <th className="px-1.5 py-1 text-left font-bold">Measured 2theta</th>
+                    <th className="px-1.5 py-1 text-left font-bold">Reference 2theta</th>
+                    <th className="px-1.5 py-1 text-left font-bold">Delta 2theta</th>
+                    <th className="px-1.5 py-1 text-left font-bold">hkl</th>
+                    <th className="px-1.5 py-1 text-left font-bold">Ref. intensity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleMatchedPeaks.map((peak, index) => (
+                    <tr key={`${peak.measured_two_theta}-${peak.reference_two_theta}-${peak.hkl ?? index}`} className="border-t border-border/60">
+                      <td className="px-1.5 py-1 font-mono text-text-main">{formatReferenceMatchNumber(peak.measured_two_theta, 2)}</td>
+                      <td className="px-1.5 py-1 font-mono text-text-main">{formatReferenceMatchNumber(peak.reference_two_theta, 2)}</td>
+                      <td className="px-1.5 py-1 font-mono text-text-main">{formatReferenceMatchNumber(peak.delta_two_theta, 3)}</td>
+                      <td className="px-1.5 py-1 font-semibold text-text-main">{peak.hkl || '-'}</td>
+                      <td className="px-1.5 py-1 font-mono text-text-main">{formatReferenceMatchNumber(peak.reference_relative_intensity, 1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {matchedPeaks.length > visibleMatchedPeaks.length && (
+              <p className="text-[9px] font-semibold text-text-muted">
+                Showing first {visibleMatchedPeaks.length} of {matchedPeaks.length} matched peak candidates.
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5">
+          <p className="text-[9px] font-bold uppercase tracking-wide text-amber-900">Claim boundary</p>
+          <ul className="mt-1 space-y-0.5 text-[10px] leading-relaxed text-amber-900">
+            {boundaryNotes.map((note) => (
+              <li key={note}>- {note}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </Panel>
   );
 }
 

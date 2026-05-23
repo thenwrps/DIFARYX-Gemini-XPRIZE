@@ -75,6 +75,7 @@ export function normalizeXrdBackendResponse(
   const phaseMatch = raw.phase_match;
   return {
     raw,
+    referenceMatchV2: raw.reference_match_v2 ?? null,
     detectedPeakCount: raw.detected_peaks?.length ?? 0,
     fittedPeakCount: raw.fitted_peaks?.length ?? 0,
     snRatio: raw.sn_ratio ?? 0,
