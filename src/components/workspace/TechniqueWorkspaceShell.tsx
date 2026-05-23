@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   ChevronDown,
@@ -38,6 +39,16 @@ import {
   type TechniqueWorkspaceId,
   type TechniqueWorkspaceConfig,
 } from '../../data/techniqueWorkspaceContent';
+import { DEFAULT_XRD_PARAMETERS } from '../../config/xrdDefaults';
+import {
+  XRD_BASELINE_METHOD_OPTIONS,
+  XRD_CLAIM_MODE_OPTIONS,
+  XRD_MATCH_MODE_OPTIONS,
+  XRD_PEAK_FIT_MODEL_OPTIONS,
+  XRD_REFERENCE_SOURCE_OPTIONS,
+  XRD_SMOOTHING_METHOD_OPTIONS,
+  type XRDParameterOption,
+} from '../../config/xrdParameterOptions';
 import { ParameterControlField } from './ParameterControlField';
 import { TechniqueEvidenceRail } from './TechniqueEvidenceRail';
 import {
@@ -86,6 +97,8 @@ import {
   type XRDHealthStatus,
 } from '../../services/xrdBackendClient';
 import type { XRDNormalizedResult } from '../../types/xrdBackend';
+import type { XRDDatasetContext } from '../../types/xrdDatasetContext';
+import type { XRDParameters } from '../../types/xrdParameters';
 import { saveXrdBackendEvidenceResult } from '../../data/xrdBackendEvidence';
 import { runRamanProcessing } from '../../agents/ramanAgent/runner';
 import { getRamanProcessingParams, getRamanParameterSnapshot } from '../../utils/ramanParameterAdapter';
@@ -2272,6 +2285,22 @@ function ParametersPanel({
   processingStateLabel: string;
   sharedOverrideCount: number;
 }) {
+  if (config.id === 'xrd') {
+    return (
+      <XRDParametersPanel
+        config={config}
+        sessionState={sessionState}
+        affectedStepLabels={affectedStepLabels}
+        onApply={onApply}
+        onReprocess={onReprocess}
+        onReset={onReset}
+        onSavePreset={onSavePreset}
+        processingStateLabel={processingStateLabel}
+        sharedOverrideCount={sharedOverrideCount}
+      />
+    );
+  }
+
   return (
     <div className="space-y-2">
       <Panel title="Processing Controls" icon={<FlaskConical size={13} />}>
@@ -2336,6 +2365,701 @@ function ParametersPanel({
         </div>
       </Panel>
     </div>
+  );
+}
+
+function cloneDefaultXrdParameters(): XRDParameters {
+  return {
+    ...DEFAULT_XRD_PARAMETERS,
+    range: { ...DEFAULT_XRD_PARAMETERS.range },
+    radiation: { ...DEFAULT_XRD_PARAMETERS.radiation },
+    baseline: { ...DEFAULT_XRD_PARAMETERS.baseline },
+    smoothing: { ...DEFAULT_XRD_PARAMETERS.smoothing },
+    peakDetection: { ...DEFAULT_XRD_PARAMETERS.peakDetection },
+    peakFitting: { ...DEFAULT_XRD_PARAMETERS.peakFitting },
+    referenceMatch: {
+      ...DEFAULT_XRD_PARAMETERS.referenceMatch,
+      candidatePhaseIds: [...DEFAULT_XRD_PARAMETERS.referenceMatch.candidatePhaseIds],
+    },
+    boundary: { ...DEFAULT_XRD_PARAMETERS.boundary },
+  };
+}
+
+function createDefaultXrdDatasetContext(): XRDDatasetContext {
+  return {
+    sampleName: '',
+    materialClass: '',
+    knownElements: [],
+    expectedElements: [],
+    excludedElements: [],
+    declaredPhases: [],
+    candidatePhaseIds: [],
+    excludedPhaseIds: [],
+    referenceSource: DEFAULT_XRD_PARAMETERS.referenceMatch.referenceSource,
+    referenceSetId: DEFAULT_XRD_PARAMETERS.referenceMatch.referenceSetId,
+    identitySource: 'user_declared',
+    identityConfidence: 'declared',
+  };
+}
+
+function parseXrdListInput(value: string) {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseXrdNumberInput(value: string, fallback: number) {
+  const nextValue = Number.parseFloat(value);
+  return Number.isFinite(nextValue) ? nextValue : fallback;
+}
+
+function getXrdRadiationSourceLabel(source: XRDParameters['radiation']['source']) {
+  if (source === 'cu_ka') return 'Cu Kα';
+  return source;
+}
+
+function XRDParametersPanel({
+  config,
+  sessionState,
+  affectedStepLabels,
+  onApply,
+  onReprocess,
+  onReset,
+  onSavePreset,
+  processingStateLabel,
+  sharedOverrideCount,
+}: {
+  config: TechniqueWorkspaceConfig;
+  sessionState: WorkspaceSessionState;
+  affectedStepLabels: string[];
+  onApply: () => void;
+  onReprocess: () => void;
+  onReset: () => void;
+  onSavePreset: () => void;
+  processingStateLabel: string;
+  sharedOverrideCount: number;
+}) {
+  const [parameters, setParameters] = useState<XRDParameters>(cloneDefaultXrdParameters);
+  const [datasetContext, setDatasetContext] = useState<XRDDatasetContext>(createDefaultXrdDatasetContext);
+  const [knownElementsInput, setKnownElementsInput] = useState('');
+  const [declaredPhasesInput, setDeclaredPhasesInput] = useState('');
+  const [candidatePhaseIdsInput, setCandidatePhaseIdsInput] = useState('');
+
+  function updateParameterStage<TStage extends keyof XRDParameters>(
+    stage: TStage,
+    updates: Partial<XRDParameters[TStage]>,
+  ) {
+    setParameters((current) => ({
+      ...current,
+      [stage]: {
+        ...current[stage],
+        ...updates,
+      },
+    }));
+  }
+
+  function updateDatasetField<TKey extends keyof XRDDatasetContext>(
+    field: TKey,
+    value: XRDDatasetContext[TKey],
+  ) {
+    setDatasetContext((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function updateReferenceSource(referenceSource: XRDDatasetContext['referenceSource']) {
+    updateDatasetField('referenceSource', referenceSource);
+    updateParameterStage('referenceMatch', { referenceSource });
+  }
+
+  function updateReferenceSetId(referenceSetId: string) {
+    const nextReferenceSetId = referenceSetId || undefined;
+    updateDatasetField('referenceSetId', nextReferenceSetId);
+    updateParameterStage('referenceMatch', { referenceSetId: nextReferenceSetId });
+  }
+
+  function updateKnownElements(value: string) {
+    setKnownElementsInput(value);
+    updateDatasetField('knownElements', parseXrdListInput(value));
+  }
+
+  function updateDeclaredPhases(value: string) {
+    setDeclaredPhasesInput(value);
+    updateDatasetField('declaredPhases', parseXrdListInput(value));
+  }
+
+  function updateCandidatePhaseIds(value: string) {
+    setCandidatePhaseIdsInput(value);
+    updateParameterStage('referenceMatch', { candidatePhaseIds: parseXrdListInput(value) });
+  }
+
+  return (
+    <div className="space-y-2">
+      <Panel title="Dataset Binding Status" icon={<Database size={13} />}>
+        <XRDStatusText tone="info">Dataset context is user-declared.</XRDStatusText>
+        <div className="mt-1.5">
+          <XRDStatusText tone="neutral">New XRD controls remain local frontend state in this phase.</XRDStatusText>
+        </div>
+        <div className="mt-2 space-y-1">
+          <Metric label="Identity source" value={datasetContext.identitySource} />
+          <Metric label="Identity confidence" value={datasetContext.identityConfidence} />
+          <Metric label="Reference binding" value={datasetContext.referenceSetId || 'Reference set required'} />
+        </div>
+        <p className="mt-2 text-[10px] font-bold uppercase tracking-wide text-text-main">Dataset Context</p>
+        <div className="mt-1.5 grid grid-cols-1 gap-2">
+          <XRDTextField
+            label="Sample name"
+            value={datasetContext.sampleName ?? ''}
+            onChange={(sampleName) => updateDatasetField('sampleName', sampleName || undefined)}
+            placeholder="e.g. CoFe2O4/SBA-15"
+          />
+          <XRDTextField
+            label="Material class"
+            value={datasetContext.materialClass ?? ''}
+            onChange={(materialClass) => updateDatasetField('materialClass', materialClass || undefined)}
+            placeholder="e.g. supported spinel ferrite catalyst"
+          />
+          <XRDTextField
+            label="Known elements"
+            value={knownElementsInput}
+            onChange={updateKnownElements}
+            placeholder="e.g. Co, Fe, O, Si"
+          />
+          <XRDTextField
+            label="Declared phases"
+            value={declaredPhasesInput}
+            onChange={updateDeclaredPhases}
+            placeholder="e.g. CoFe2O4, SBA-15"
+          />
+          <XRDSelectField
+            label="Reference source"
+            value={datasetContext.referenceSource}
+            options={XRD_REFERENCE_SOURCE_OPTIONS}
+            onChange={updateReferenceSource}
+          />
+          <XRDTextField
+            label="Reference set id"
+            value={datasetContext.referenceSetId ?? ''}
+            onChange={updateReferenceSetId}
+            placeholder="Reference set id"
+          />
+        </div>
+      </Panel>
+
+      <Panel title="Range & Radiation" icon={<FlaskConical size={13} />}>
+        <div className="grid grid-cols-2 gap-2">
+          <XRDNumberField
+            label="2theta min"
+            value={parameters.range.twoThetaMin}
+            min={0}
+            max={180}
+            step={0.1}
+            unit="deg"
+            onChange={(twoThetaMin) => updateParameterStage('range', { twoThetaMin })}
+          />
+          <XRDNumberField
+            label="2theta max"
+            value={parameters.range.twoThetaMax}
+            min={0}
+            max={180}
+            step={0.1}
+            unit="deg"
+            onChange={(twoThetaMax) => updateParameterStage('range', { twoThetaMax })}
+          />
+          <XRDReadOnlyField label="Radiation source" value={getXrdRadiationSourceLabel(parameters.radiation.source)} />
+          <XRDNumberField
+            label="Wavelength"
+            value={parameters.radiation.wavelengthAngstrom}
+            min={0}
+            step={0.0001}
+            unit="angstrom"
+            onChange={(wavelengthAngstrom) => updateParameterStage('radiation', { wavelengthAngstrom })}
+          />
+        </div>
+      </Panel>
+
+      <Panel title="Baseline" icon={<GitBranch size={13} />}>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="col-span-2">
+            <XRDSelectField
+              label="Method"
+              value={parameters.baseline.method}
+              options={XRD_BASELINE_METHOD_OPTIONS}
+              onChange={(method) => updateParameterStage('baseline', { method })}
+            />
+          </div>
+          <XRDNumberField
+            label="Lambda"
+            value={parameters.baseline.lambda}
+            min={0}
+            step={1000}
+            onChange={(lambda) => updateParameterStage('baseline', { lambda })}
+          />
+          <XRDNumberField
+            label="p"
+            value={parameters.baseline.p}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(p) => updateParameterStage('baseline', { p })}
+          />
+        </div>
+      </Panel>
+
+      <Panel title="Smoothing" icon={<GitBranch size={13} />}>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="col-span-2">
+            <XRDSelectField
+              label="Method"
+              value={parameters.smoothing.method}
+              options={XRD_SMOOTHING_METHOD_OPTIONS}
+              onChange={(method) => updateParameterStage('smoothing', { method })}
+            />
+          </div>
+          <XRDNumberField
+            label="Window size"
+            value={parameters.smoothing.windowSize}
+            min={1}
+            step={2}
+            onChange={(windowSize) => updateParameterStage('smoothing', { windowSize })}
+          />
+          <XRDNumberField
+            label="Polynomial order"
+            value={parameters.smoothing.polynomialOrder}
+            min={0}
+            step={1}
+            onChange={(polynomialOrder) => updateParameterStage('smoothing', { polynomialOrder })}
+          />
+        </div>
+      </Panel>
+
+      <Panel title="Peak Detection" icon={<Search size={13} />}>
+        <div className="grid grid-cols-2 gap-2">
+          <XRDNumberField
+            label="Min prominence"
+            value={parameters.peakDetection.minProminence}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(minProminence) => updateParameterStage('peakDetection', { minProminence })}
+          />
+          <XRDNumberField
+            label="Min distance"
+            value={parameters.peakDetection.minDistanceDeg}
+            min={0}
+            step={0.01}
+            unit="deg"
+            onChange={(minDistanceDeg) => updateParameterStage('peakDetection', { minDistanceDeg })}
+          />
+          <XRDNumberField
+            label="Min height ratio"
+            value={parameters.peakDetection.minHeightRatio}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(minHeightRatio) => updateParameterStage('peakDetection', { minHeightRatio })}
+          />
+          <XRDNumberField
+            label="Max peak count"
+            value={parameters.peakDetection.maxPeakCount}
+            min={1}
+            step={1}
+            onChange={(maxPeakCount) => updateParameterStage('peakDetection', { maxPeakCount })}
+          />
+        </div>
+      </Panel>
+
+      <Panel title="Peak Fitting" icon={<Sparkles size={13} />}>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="col-span-2">
+            <XRDSelectField
+              label="Model"
+              value={parameters.peakFitting.model}
+              options={XRD_PEAK_FIT_MODEL_OPTIONS}
+              onChange={(model) => updateParameterStage('peakFitting', { model })}
+            />
+          </div>
+          <XRDNumberField
+            label="Fit window"
+            value={parameters.peakFitting.fitWindowDeg}
+            min={0}
+            step={0.1}
+            unit="deg"
+            onChange={(fitWindowDeg) => updateParameterStage('peakFitting', { fitWindowDeg })}
+          />
+          <XRDNumberField
+            label="Max iterations"
+            value={parameters.peakFitting.maxIterations}
+            min={1}
+            step={1}
+            onChange={(maxIterations) => updateParameterStage('peakFitting', { maxIterations })}
+          />
+          <div className="col-span-2">
+            <XRDToggleField
+              label="Calculate crystallite size"
+              checked={parameters.peakFitting.calculateCrystalliteSize}
+              onChange={(calculateCrystalliteSize) => updateParameterStage('peakFitting', { calculateCrystalliteSize })}
+            />
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title="Reference Candidate Match" icon={<FileText size={13} />}>
+        <div className="space-y-1.5">
+          <XRDStatusText tone={parameters.referenceMatch.referenceSetId ? 'neutral' : 'warning'}>
+            Reference matching requires a selected reference set.
+          </XRDStatusText>
+          <XRDStatusText tone="info">XRD reference matching is candidate evidence only.</XRDStatusText>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="col-span-2">
+            <XRDToggleField
+              label="Reference match"
+              checked={parameters.referenceMatch.enabled}
+              onChange={(enabled) => updateParameterStage('referenceMatch', { enabled })}
+            />
+          </div>
+          <div className="col-span-2">
+            <XRDSelectField
+              label="Match mode"
+              value={parameters.referenceMatch.matchMode}
+              options={XRD_MATCH_MODE_OPTIONS}
+              onChange={(matchMode) => updateParameterStage('referenceMatch', { matchMode })}
+            />
+          </div>
+          <XRDSelectField
+            label="Reference source"
+            value={parameters.referenceMatch.referenceSource}
+            options={XRD_REFERENCE_SOURCE_OPTIONS}
+            onChange={updateReferenceSource}
+          />
+          <XRDTextField
+            label="Reference set id"
+            value={parameters.referenceMatch.referenceSetId ?? ''}
+            onChange={updateReferenceSetId}
+            placeholder="Reference set id"
+          />
+          <div className="col-span-2">
+            <XRDTextField
+              label="Candidate phase ids"
+              value={candidatePhaseIdsInput}
+              onChange={updateCandidatePhaseIds}
+              placeholder="e.g. cofe2o4_icsd_15342, sba15_amorphous_reference"
+            />
+          </div>
+          <XRDNumberField
+            label="2theta tolerance"
+            value={parameters.referenceMatch.toleranceTwoTheta}
+            min={0}
+            step={0.1}
+            unit="deg"
+            onChange={(toleranceTwoTheta) => updateParameterStage('referenceMatch', { toleranceTwoTheta })}
+          />
+          <XRDNumberField
+            label="Min matched peaks"
+            value={parameters.referenceMatch.minMatchedPeaks}
+            min={0}
+            step={1}
+            onChange={(minMatchedPeaks) => updateParameterStage('referenceMatch', { minMatchedPeaks })}
+          />
+          <XRDNumberField
+            label="Min coverage ratio"
+            value={parameters.referenceMatch.minCoverageRatio}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(minCoverageRatio) => updateParameterStage('referenceMatch', { minCoverageRatio })}
+          />
+          <XRDNumberField
+            label="Min score"
+            value={parameters.referenceMatch.minScore}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(minScore) => updateParameterStage('referenceMatch', { minScore })}
+          />
+          <div className="col-span-2">
+            <XRDToggleField
+              label="Use relative intensity"
+              checked={parameters.referenceMatch.useRelativeIntensity}
+              onChange={(useRelativeIntensity) => updateParameterStage('referenceMatch', { useRelativeIntensity })}
+            />
+          </div>
+          <XRDNumberField
+            label="Intensity tolerance"
+            value={parameters.referenceMatch.intensityToleranceRatio}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(intensityToleranceRatio) => updateParameterStage('referenceMatch', { intensityToleranceRatio })}
+          />
+          <XRDToggleField
+            label="Allow unknown search"
+            checked={parameters.referenceMatch.allowUnknownSearch}
+            onChange={(allowUnknownSearch) => updateParameterStage('referenceMatch', { allowUnknownSearch })}
+          />
+        </div>
+        <div className="mt-2 space-y-1">
+          <Metric label="Identity claim" value={parameters.referenceMatch.allowIdentityClaim ? 'Enabled' : 'Blocked'} />
+          <Metric label="Phase purity claim" value={parameters.referenceMatch.allowPhasePurityClaim ? 'Enabled' : 'Blocked'} />
+        </div>
+      </Panel>
+
+      <Panel title="Boundary" icon={<Lock size={13} />}>
+        <XRDStatusText tone="warning">
+          Identity confirmation and phase purity confirmation remain blocked.
+        </XRDStatusText>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="col-span-2">
+            <XRDToggleField
+              label="Boundary gate"
+              checked={parameters.boundary.enabled}
+              onChange={(enabled) => updateParameterStage('boundary', { enabled })}
+            />
+          </div>
+          <div className="col-span-2">
+            <XRDSelectField
+              label="Claim mode"
+              value={parameters.boundary.claimMode}
+              options={XRD_CLAIM_MODE_OPTIONS}
+              onChange={(claimMode) => updateParameterStage('boundary', { claimMode })}
+            />
+          </div>
+          <XRDToggleField
+            label="Require complementary evidence"
+            checked={parameters.boundary.requireComplementaryEvidence}
+            onChange={(requireComplementaryEvidence) => updateParameterStage('boundary', { requireComplementaryEvidence })}
+          />
+          <XRDToggleField
+            label="Require reference set"
+            checked={parameters.boundary.requireReferenceSetForMatch}
+            onChange={(requireReferenceSetForMatch) => updateParameterStage('boundary', { requireReferenceSetForMatch })}
+          />
+          <div className="col-span-2">
+            <XRDToggleField
+              label="Require sample context for targeted match"
+              checked={parameters.boundary.requireSampleContextForTargetedMatch}
+              onChange={(requireSampleContextForTargetedMatch) => updateParameterStage('boundary', { requireSampleContextForTargetedMatch })}
+            />
+          </div>
+        </div>
+        <div className="mt-2 space-y-1">
+          <Metric label="Identity confirmation" value={parameters.boundary.allowIdentityClaim ? 'Enabled' : 'Blocked'} />
+          <Metric label="Phase purity confirmation" value={parameters.boundary.allowPhasePurityClaim ? 'Enabled' : 'Blocked'} />
+        </div>
+      </Panel>
+
+      <Panel title="Legacy Demo Processing" icon={<Play size={13} />}>
+        <p className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] leading-relaxed text-text-muted">
+          These existing demo actions use the current workspace parameter path. The Phase 2 XRD controls above remain local frontend state.
+        </p>
+        <div className="mt-2 space-y-1.5">
+          <Metric label="Affected step" value={affectedStepLabels.join(', ')} />
+          <Metric label="Status" value={processingStateLabel} />
+          <Metric label="Shared overrides" value={sharedOverrideCount > 0 ? `${sharedOverrideCount} active` : 'None'} />
+          <Metric
+            label="Recalculated"
+            value={sessionState.pendingRecalculation || sessionState.dirty
+              ? `${config.graphLabel}, ${config.featureLabel}, evidence boundary`
+              : 'No pending recalculation'}
+          />
+          <Metric label="Preset" value={sessionState.presetSavedLabel ? `Saved ${sessionState.presetSavedLabel}` : 'No preset saved'} />
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onApply}
+            className="h-8 rounded bg-primary px-2 text-[11px] font-bold text-white hover:bg-primary/90"
+          >
+            Apply Parameters
+          </button>
+          <button
+            type="button"
+            onClick={onReprocess}
+            className="h-8 rounded border border-blue-200 bg-blue-50 px-2 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
+          >
+            {config.reprocessLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onReset}
+            className="h-8 rounded border border-border bg-background px-2 text-[11px] font-bold text-text-main hover:bg-surface-hover"
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            onClick={onSavePreset}
+            className="h-8 rounded border border-border bg-background px-2 text-[11px] font-bold text-text-main hover:bg-surface-hover"
+          >
+            Save Preset
+          </button>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function XRDFieldLabel({ label, unit }: { label: string; unit?: string }) {
+  return (
+    <span className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide text-text-muted">
+      {label}
+      {unit && <span className="normal-case tracking-normal">{unit}</span>}
+    </span>
+  );
+}
+
+function XRDTextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="block rounded border border-border bg-background px-2 py-1.5">
+      <XRDFieldLabel label={label} />
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="mt-1 h-8 w-full rounded border border-border bg-white px-2 text-xs font-semibold text-text-main placeholder:font-medium placeholder:text-text-muted focus:border-primary focus:outline-none"
+      />
+    </label>
+  );
+}
+
+function XRDNumberField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  unit,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+}) {
+  return (
+    <label className="block rounded border border-border bg-background px-2 py-1.5">
+      <XRDFieldLabel label={label} unit={unit} />
+      <input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(event) => onChange(parseXrdNumberInput(event.target.value, value))}
+        className="mt-1 h-8 w-full rounded border border-border bg-white px-2 text-xs font-semibold text-text-main focus:border-primary focus:outline-none"
+      />
+    </label>
+  );
+}
+
+function XRDSelectField<TValue extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: TValue;
+  options: XRDParameterOption<TValue>[];
+  onChange: (value: TValue) => void;
+}) {
+  return (
+    <label className="block rounded border border-border bg-background px-2 py-1.5">
+      <XRDFieldLabel label={label} />
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as TValue)}
+        className="mt-1 h-8 w-full rounded border border-border bg-white px-2 text-xs font-semibold text-text-main focus:border-primary focus:outline-none"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function XRDReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-border bg-background px-2 py-1.5">
+      <XRDFieldLabel label={label} />
+      <div className="mt-1 flex h-8 items-center rounded border border-border bg-slate-50 px-2 text-xs font-semibold text-text-main">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function XRDToggleField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="rounded border border-border bg-background px-2 py-1.5">
+      <XRDFieldLabel label={label} />
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`mt-1 inline-flex h-7 w-full items-center justify-between rounded border px-2 text-xs font-bold ${
+          checked
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : 'border-slate-200 bg-slate-50 text-slate-600'
+        }`}
+      >
+        <span>{checked ? 'Enabled' : 'Disabled'}</span>
+        <span className={`h-4 w-8 rounded-full p-0.5 ${checked ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+          <span
+            className={`block h-3 w-3 rounded-full bg-white transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`}
+          />
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function XRDStatusText({
+  tone,
+  children,
+}: {
+  tone: 'neutral' | 'info' | 'warning';
+  children: React.ReactNode;
+}) {
+  const className = tone === 'warning'
+    ? 'border-amber-200 bg-amber-50 text-amber-800'
+    : tone === 'info'
+    ? 'border-blue-200 bg-blue-50 text-blue-900'
+    : 'border-slate-200 bg-slate-50 text-text-muted';
+
+  return (
+    <p className={`rounded border px-2 py-1.5 text-[10px] leading-relaxed ${className}`}>
+      {children}
+    </p>
   );
 }
 

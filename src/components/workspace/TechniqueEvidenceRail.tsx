@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertTriangle, CheckCircle2, Circle, Database, Download, FileText, Layers, Play, Save, Sparkles } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Circle, Database, Download, FileText, Layers, Play, Save, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { TechniqueWorkspaceConfig } from '../../data/techniqueWorkspaceContent';
 import { formatChemicalFormula } from '../../utils/chemicalFormula';
@@ -77,19 +77,10 @@ function MetadataRow({ label, value }: { label: string; value: React.ReactNode }
   );
 }
 
-export function DatasetTab({
+function DatasetTab({
   config,
   dataset,
-  onSaveSession,
-  attachProjectPath,
-  agentPath,
-  notebookPath,
-  reportPath,
-  exportPath,
-}: Pick<
-  TechniqueEvidenceRailProps,
-  'config' | 'dataset' | 'onSaveSession' | 'attachProjectPath' | 'agentPath' | 'notebookPath' | 'reportPath' | 'exportPath'
->) {
+}: Pick<TechniqueEvidenceRailProps, 'config' | 'dataset'>) {
   return (
     <div className="space-y-3">
       <div className="rounded border border-border bg-background p-2">
@@ -98,7 +89,7 @@ export function DatasetTab({
             <Database size={13} />
           </span>
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Uploaded Dataset</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Dataset</p>
             <p className="mt-0.5 break-words text-xs font-semibold leading-snug text-text-main">
               {formatChemicalFormula(dataset.fileName)}
             </p>
@@ -130,56 +121,34 @@ export function DatasetTab({
           </span>
         ))}
       </div>
-
-      <div className="space-y-1.5">
-        <button
-          type="button"
-          onClick={onSaveSession}
-          className="flex h-8 w-full items-center justify-between rounded border border-border px-2.5 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
-        >
-          Save Quick Session <Save size={13} />
-        </button>
-        <Link
-          to={attachProjectPath}
-          className="flex h-8 w-full items-center justify-between rounded border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-semibold text-amber-800 transition-colors hover:bg-amber-100"
-        >
-          Attach to Project <Layers size={13} />
-        </Link>
-        <Link
-          to={agentPath}
-          className="flex h-8 w-full items-center justify-between rounded bg-primary px-2.5 text-[11px] font-semibold text-white transition-colors hover:bg-primary/90"
-        >
-          Send to Agent <Sparkles size={13} />
-        </Link>
-        <Link
-          to={notebookPath}
-          className="flex h-8 w-full items-center justify-between rounded border border-border px-2.5 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
-        >
-          Send to Notebook <FileText size={13} />
-        </Link>
-        <Link
-          to={reportPath}
-          className="flex h-8 w-full items-center justify-between rounded border border-border px-2.5 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
-        >
-          Create Report <FileText size={13} />
-        </Link>
-        <Link
-          to={exportPath}
-          className="flex h-8 w-full items-center justify-between rounded border border-border px-2.5 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
-        >
-          Export <Download size={13} />
-        </Link>
-      </div>
     </div>
   );
 }
 
-export function ProcessingPipelineTab({
+function ProcessingPipelineTab({
   config,
   pipelineStates,
   autoMode,
   onToggleAutoMode,
-}: Pick<TechniqueEvidenceRailProps, 'config' | 'pipelineStates' | 'autoMode' | 'onToggleAutoMode'>) {
+  onSaveSession,
+  attachProjectPath,
+  agentPath,
+  notebookPath,
+  reportPath,
+  exportPath,
+}: Pick<
+  TechniqueEvidenceRailProps,
+  | 'config'
+  | 'pipelineStates'
+  | 'autoMode'
+  | 'onToggleAutoMode'
+  | 'onSaveSession'
+  | 'attachProjectPath'
+  | 'agentPath'
+  | 'notebookPath'
+  | 'reportPath'
+  | 'exportPath'
+>) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -214,6 +183,56 @@ export function ProcessingPipelineTab({
           );
         })}
       </div>
+
+      <details className="group pt-1">
+        <summary className="flex h-8 cursor-pointer list-none items-center justify-between rounded border border-border bg-background px-2.5 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover [&::-webkit-details-marker]:hidden">
+          <span className="inline-flex items-center gap-1.5">
+            <Sparkles size={13} className="text-primary" />
+            Actions
+          </span>
+          <ChevronDown size={13} className="text-text-muted transition-transform group-open:rotate-180" />
+        </summary>
+
+        <div className="mt-1.5 space-y-1 rounded border border-border bg-background p-1.5 shadow-sm">
+          <button
+            type="button"
+            onClick={onSaveSession}
+            className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
+          >
+            Save Quick Session <Save size={12} />
+          </button>
+          <Link
+            to={attachProjectPath}
+            className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-amber-800 transition-colors hover:bg-amber-50"
+          >
+            Attach to Project <Layers size={12} />
+          </Link>
+          <Link
+            to={agentPath}
+            className="flex h-7 w-full items-center justify-between rounded bg-primary px-2 text-[10px] font-semibold text-white transition-colors hover:bg-primary/90"
+          >
+            Send to Agent <Sparkles size={12} />
+          </Link>
+          <Link
+            to={notebookPath}
+            className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
+          >
+            Send to Notebook <FileText size={12} />
+          </Link>
+          <Link
+            to={reportPath}
+            className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
+          >
+            Create Report <FileText size={12} />
+          </Link>
+          <Link
+            to={exportPath}
+            className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
+          >
+            Export <Download size={12} />
+          </Link>
+        </div>
+      </details>
     </div>
   );
 }

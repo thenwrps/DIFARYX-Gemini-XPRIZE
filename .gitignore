@@ -1,6 +1,9 @@
+# ------------------------------------------------------------
 # Logs
-logs
+# ------------------------------------------------------------
+logs/
 *.log
+*.err
 .vite-dev-*.err
 .vite-dev-*.log
 npm-debug.log*
@@ -9,42 +12,81 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# ------------------------------------------------------------
+# Node / Vite / Build output
+# ------------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+.vite/
+.vite-dev.pid
 *.local
 
+# ------------------------------------------------------------
+# Python cache / compiled files
+# ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# ------------------------------------------------------------
+# Python virtual environments
+# ------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+
+# ------------------------------------------------------------
+# Python test / tooling cache
+# ------------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ------------------------------------------------------------
+# Environment files
+# Keep .env.example tracked, ignore real local secrets
+# ------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# ------------------------------------------------------------
 # Editor directories and files
+# ------------------------------------------------------------
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-
-.env
-.env.local
-.env.*.local
-.kiro/
-*.err
-*.log
-node_modules/
-dist/
-
 *.code-workspace
 
-**/.env
-**/.env.local
-**/.env.*.local
+# ------------------------------------------------------------
+# Agent / local tool state
+# ------------------------------------------------------------
+.kiro/
 
+# ------------------------------------------------------------
 # Nested duplicate project copy
+# ------------------------------------------------------------
 DIFARYX-demo/
-.vite-dev.pid
 
+# ------------------------------------------------------------
 # Local implementation notes and generated reports
+# ------------------------------------------------------------
 AGENT_DEMO_PROJECT_AWARENESS_COMPLETE.md
 AGENT_DEMO_REFACTOR_COMPLETE.md
 AGENT_DEMO_REFACTOR_PLAN.md
