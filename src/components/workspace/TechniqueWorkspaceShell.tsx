@@ -184,6 +184,13 @@ interface PaneLayoutState {
   lastUpdatedAt: string;
 }
 
+interface XRDBackendSignalSource {
+  x: number[];
+  y: number[];
+  fileName?: string;
+  uploadedRunId?: string;
+}
+
 function statusBadgeClass(status: string) {
   const normalized = status.toLowerCase();
   if (normalized.includes('available') || normalized.includes('supported') || normalized.includes('ready')) {
@@ -653,6 +660,20 @@ function getQuickFeatureRows(session: AnalysisSession | null, fallbackRows: Arra
   });
 }
 
+function buildXrdBackendSignalSource(
+  points: Array<{ x: number; y: number }>,
+  source: Omit<XRDBackendSignalSource, 'x' | 'y'>,
+): XRDBackendSignalSource | null {
+  const finitePoints = points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  if (finitePoints.length === 0) return null;
+
+  return {
+    ...source,
+    x: finitePoints.map((point) => point.x),
+    y: finitePoints.map((point) => point.y),
+  };
+}
+
 export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName, sessionId }: TechniqueWorkspaceShellProps) {
   const isQuickMode = mode === 'quick';
   const config = useMemo(() => getTechniqueWorkspaceConfig(technique), [technique]);
@@ -1023,6 +1044,67 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     );
   };
 
+  const getXrdBackendSignalSource = (): XRDBackendSignalSource | null => {
+    if (!isXrdBackendEnabled) return null;
+
+    const uploadedRunId = routeContext.uploadedRunId ?? quickAnalysisSession?.uploadedRunId ?? null;
+    const uploadedRun = uploadedRunId ? getUploadedRunById(uploadedRunId) : null;
+
+    if (uploadedRun?.technique === 'XRD') {
+      return buildXrdBackendSignalSource(uploadedRun.points, {
+        uploadedRunId: uploadedRun.id,
+        fileName: uploadedRun.fileName,
+      });
+    }
+
+    if ((isUploadedContext || isQuickMode) && graphData?.type === 'XRD') {
+      return buildXrdBackendSignalSource(graphData.data, {
+        uploadedRunId: uploadedRunId ?? undefined,
+        fileName: datasetLabel,
+      });
+    }
+
+    return null;
+  };
+
+  const runXrdBackendProcessing = (signalSource: XRDBackendSignalSource) => {
+    setXrdBackendLoading(true);
+    setXrdBackendError(null);
+    setXrdBackendSaved(false);
+
+    processXrdSkillEvidence({
+      x: signalSource.x,
+      y: signalSource.y,
+      datasetContext: xrdDatasetContext,
+      parameters: xrdParameters,
+    })
+      .then((normalized) => {
+        setXrdBackendResult(normalized);
+        setXrdBackendLoading(false);
+        saveXrdBackendEvidenceResult(
+          projectId ?? undefined,
+          signalSource.uploadedRunId,
+          normalized,
+          signalSource.fileName,
+        );
+        setXrdBackendSaved(true);
+        setSessionState((prev) =>
+          addLog(
+            prev,
+            `[backend] XRD backend processing complete - ${normalized.detectedPeakCount} peaks, S/N ${normalized.snRatio.toFixed(1)} (evidence saved for handoff)`,
+          ),
+        );
+      })
+      .catch((err) => {
+        const message = err instanceof XRDBackendError ? err.message : 'XRD backend unreachable';
+        setXrdBackendError(message);
+        setXrdBackendLoading(false);
+        setSessionState((prev) =>
+          addLog(prev, `[backend] XRD backend call failed (non-blocking): ${message}`),
+        );
+      });
+  };
+
   const reprocess = () => {
     // For uploaded XRD context, run actual processing
     if (isUploadedContext && technique === 'xrd' && routeContext.uploadedRunId) {
@@ -1159,6 +1241,13 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         );
       }
       return;
+    }
+
+    if (technique === 'xrd') {
+      const backendSignalSource = getXrdBackendSignalSource();
+      if (backendSignalSource) {
+        runXrdBackendProcessing(backendSignalSource);
+      }
     }
 
     // For uploaded Raman context, run actual processing
