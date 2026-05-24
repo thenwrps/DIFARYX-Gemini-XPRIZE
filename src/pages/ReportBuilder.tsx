@@ -85,12 +85,114 @@ function reportTypeLabel(mode: NotebookTemplateMode) {
   return 'Research Evidence Report';
 }
 
+type ReportXrdReferenceCandidateSummary = NonNullable<NotebookEntry['xrdReferenceMatchV2Summary']>;
+
+const REPORT_XRD_REFERENCE_CANDIDATE_FALLBACK_LIMITATIONS = [
+  'Candidate match is based on peak-position agreement.',
+  'Chemical identity requires composition-sensitive evidence.',
+  'Phase purity is outside this XRD-only candidate evidence.',
+];
+
+function isBlockedReportReferenceCandidatePhrase(value: string) {
+  const normalized = value.toLowerCase();
+  return (
+    (normalized.includes('confirmed') && normalized.includes('phase')) ||
+    (normalized.includes('confirmed') && normalized.includes('identity')) ||
+    (normalized.includes('identified') && normalized.includes(' as ')) ||
+    (normalized.includes('pure') && normalized.includes('phase')) ||
+    (normalized.includes('definitive') && normalized.includes('match'))
+  );
+}
+
+function safeReportReferenceCandidateText(value: string | undefined | null): string | null {
+  const normalized = value?.trim();
+  if (!normalized) return null;
+  return isBlockedReportReferenceCandidatePhrase(normalized) ? null : normalized;
+}
+
+function formatReportReferenceNumber(value: number | undefined | null, digits = 2): string | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : null;
+}
+
+function buildXrdReferenceCandidateReportSection(
+  summary?: ReportXrdReferenceCandidateSummary,
+): DemoExportSection[] {
+  if (!summary) return [];
+
+  const primaryCandidate = summary.primaryCandidate;
+  const claimLevel = safeReportReferenceCandidateText(summary.claimLevel) ?? 'candidate evidence';
+  const referenceSetId = safeReportReferenceCandidateText(summary.referenceSetId);
+  const phaseLabel = safeReportReferenceCandidateText(primaryCandidate?.phaseLabel);
+  const formula = safeReportReferenceCandidateText(primaryCandidate?.formula);
+  const structureFamily = safeReportReferenceCandidateText(primaryCandidate?.structureFamily);
+  const databaseRef = safeReportReferenceCandidateText(primaryCandidate?.databaseRef);
+  const score = formatReportReferenceNumber(primaryCandidate?.score);
+  const coverageRatio = formatReportReferenceNumber(primaryCandidate?.coverageRatio);
+  const meanDeltaTwoTheta = formatReportReferenceNumber(primaryCandidate?.meanDeltaTwoTheta);
+  const matchedPeakCount = typeof primaryCandidate?.matchedPeakCount === 'number' && Number.isFinite(primaryCandidate.matchedPeakCount)
+    ? primaryCandidate.matchedPeakCount
+    : null;
+  const referencePeakCount = typeof primaryCandidate?.referencePeakCount === 'number' && Number.isFinite(primaryCandidate.referencePeakCount)
+    ? primaryCandidate.referencePeakCount
+    : null;
+  const matchedPeaksDisplay = matchedPeakCount !== null
+    ? `${matchedPeakCount}${referencePeakCount !== null ? ` / ${referencePeakCount}` : ''}`
+    : null;
+
+  const matchedPeakPreviewLines = (Array.isArray(summary.matchedPeaksPreview) ? summary.matchedPeaksPreview : [])
+    .slice(0, 5)
+    .map((peak, index) => {
+      const measured = formatReportReferenceNumber(peak.measuredTwoTheta);
+      const reference = formatReportReferenceNumber(peak.referenceTwoTheta);
+      const delta = formatReportReferenceNumber(peak.deltaTwoTheta);
+      if (!measured || !reference || !delta) return null;
+      const hkl = safeReportReferenceCandidateText(peak.hkl);
+      const refIntensity = formatReportReferenceNumber(peak.referenceRelativeIntensity, 0);
+      return `Matched peak ${index + 1}: measured 2theta ${measured}; reference 2theta ${reference}; delta 2theta ${delta}${hkl ? `; hkl ${hkl}` : ''}${refIntensity ? `; ref. intensity ${refIntensity}` : ''}.`;
+    })
+    .filter((line): line is string => Boolean(line));
+
+  const limitations = (Array.isArray(summary.limitations) ? summary.limitations : [])
+    .map((limitation) => safeReportReferenceCandidateText(limitation))
+    .filter((limitation): limitation is string => Boolean(limitation));
+  const displayLimitations = limitations.length ? limitations : REPORT_XRD_REFERENCE_CANDIDATE_FALLBACK_LIMITATIONS;
+
+  const primaryCandidateLine = phaseLabel || formula
+    ? `Primary candidate: ${[phaseLabel, formula].filter(Boolean).join(' / ')}.`
+    : null;
+
+  return [
+    {
+      heading: 'XRD Reference Candidate Evidence',
+      lines: [
+        'Reference candidate evidence: Candidate-level agreement with the selected reference set.',
+        `Claim level: ${claimLevel}.`,
+        ...(referenceSetId ? [`Reference set id: ${referenceSetId}.`] : []),
+        ...(primaryCandidateLine ? [primaryCandidateLine] : []),
+        ...(structureFamily ? [`Structure family: ${structureFamily}.`] : []),
+        ...(databaseRef ? [`Database reference: ${databaseRef}.`] : []),
+        ...(score ? [`Score: ${score}.`] : []),
+        ...(matchedPeaksDisplay ? [`Matched peaks: ${matchedPeaksDisplay}.`] : []),
+        ...(coverageRatio ? [`Coverage ratio: ${coverageRatio}.`] : []),
+        ...(meanDeltaTwoTheta ? [`Mean delta 2theta: ${meanDeltaTwoTheta}.`] : []),
+        ...matchedPeakPreviewLines,
+        'This is not chemical identity confirmation.',
+        'This is not phase purity confirmation.',
+        'Composition-sensitive evidence is required for stronger assignment.',
+        'Safety flags applied: phaseConfirmed=false; phasePurityConfirmed=false.',
+        ...displayLimitations.map((limitation) => `Limitation: ${limitation}`),
+      ],
+    },
+  ];
+}
+
 function buildReportSections(
   snapshot: ProjectEvidenceSnapshot,
   bundle: EvidenceBundle | null,
   registryProject: ReturnType<typeof getRegistryProject>,
   reportSection: ReturnType<typeof createReportSectionFromNotebookEntry>,
   xrdBackendEvidenceSummary?: NotebookEntry['xrdBackendEvidenceSummary'],
+  xrdReferenceMatchV2Summary?: NotebookEntry['xrdReferenceMatchV2Summary'],
 ): DemoExportSection[] {
   const availableTechniques = snapshot.availableTechniques.join(', ') || 'No technique evidence linked';
   const pendingTechniques = snapshot.pendingTechniques.join(', ') || 'None';
@@ -167,6 +269,7 @@ function buildReportSections(
         },
       ]
     : [];
+  const xrdReferenceCandidateSection = buildXrdReferenceCandidateReportSection(xrdReferenceMatchV2Summary);
 
   return [
     {
@@ -248,6 +351,7 @@ function buildReportSections(
       ],
     },
     ...xrdBackendEvidenceSection,
+    ...xrdReferenceCandidateSection,
   ];
 }
 
@@ -578,8 +682,22 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
     [workflowNotebookEntry],
   );
   const reportSections = useMemo(
-    () => buildReportSections(evidenceSnapshot, evidenceBundle, registryProject, workflowReportSection, workflowNotebookEntry?.xrdBackendEvidenceSummary),
-    [evidenceSnapshot, evidenceBundle, registryProject, workflowReportSection, workflowNotebookEntry?.xrdBackendEvidenceSummary],
+    () => buildReportSections(
+      evidenceSnapshot,
+      evidenceBundle,
+      registryProject,
+      workflowReportSection,
+      workflowNotebookEntry?.xrdBackendEvidenceSummary,
+      workflowNotebookEntry?.xrdReferenceMatchV2Summary,
+    ),
+    [
+      evidenceSnapshot,
+      evidenceBundle,
+      registryProject,
+      workflowReportSection,
+      workflowNotebookEntry?.xrdBackendEvidenceSummary,
+      workflowNotebookEntry?.xrdReferenceMatchV2Summary,
+    ],
   );
   const reportTemplate = NOTEBOOK_TEMPLATES[templateMode];
   const reportStatus =
