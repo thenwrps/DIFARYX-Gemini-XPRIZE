@@ -21,6 +21,7 @@ import {
   Save,
   Search,
   Sparkles,
+  Trash2,
   ZoomIn,
 } from 'lucide-react';
 import { Graph } from '../ui/Graph';
@@ -106,6 +107,15 @@ import {
   type XRDLocalReferenceParseResult,
 } from '../../types/xrdLocalReference';
 import { parseXrdLocalReferenceText } from '../../utils/xrdLocalReferenceParser';
+import {
+  buildXrdLocalReferenceDraftFromParseResult,
+  deleteXrdLocalReferenceDraft,
+  getXrdLocalReferenceValidationLevel,
+  getXrdLocalReferenceValidationLevelLabel,
+  listXrdLocalReferenceDrafts,
+  saveXrdLocalReferenceDraft,
+  type XRDStoredLocalReferenceRecord,
+} from '../../data/xrdLocalReferences';
 import { saveXrdBackendEvidenceResult } from '../../data/xrdBackendEvidence';
 import { runRamanProcessing } from '../../agents/ramanAgent/runner';
 import { getRamanProcessingParams, getRamanParameterSnapshot } from '../../utils/ramanParameterAdapter';
@@ -2308,6 +2318,8 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                 xrdParameters={xrdParameters}
                 xrdDatasetContext={xrdDatasetContext}
                 xrdHasFiniteSignal={xrdHasFiniteSignal}
+                xrdLocalReferenceProjectId={projectId ?? undefined}
+                xrdLocalReferenceUploadedRunId={routeContext.uploadedRunId ?? quickAnalysisSession?.uploadedRunId ?? undefined}
                 onXrdParametersChange={setXrdParameters}
                 onXrdDatasetContextChange={setXrdDatasetContext}
               />
@@ -2697,6 +2709,8 @@ function ParametersPanel({
   xrdParameters,
   xrdDatasetContext,
   xrdHasFiniteSignal,
+  xrdLocalReferenceProjectId,
+  xrdLocalReferenceUploadedRunId,
   onXrdParametersChange,
   onXrdDatasetContextChange,
 }: {
@@ -2714,6 +2728,8 @@ function ParametersPanel({
   xrdParameters: XRDParameters;
   xrdDatasetContext: XRDDatasetContext;
   xrdHasFiniteSignal: boolean;
+  xrdLocalReferenceProjectId?: string;
+  xrdLocalReferenceUploadedRunId?: string;
   onXrdParametersChange: React.Dispatch<React.SetStateAction<XRDParameters>>;
   onXrdDatasetContextChange: React.Dispatch<React.SetStateAction<XRDDatasetContext>>;
 }) {
@@ -2732,6 +2748,8 @@ function ParametersPanel({
         parameters={xrdParameters}
         datasetContext={xrdDatasetContext}
         hasFiniteSignal={xrdHasFiniteSignal}
+        projectId={xrdLocalReferenceProjectId}
+        uploadedRunId={xrdLocalReferenceUploadedRunId}
         onParametersChange={onXrdParametersChange}
         onDatasetContextChange={onXrdDatasetContextChange}
       />
@@ -2856,6 +2874,30 @@ function getXrdRadiationSourceLabel(source: XRDParameters['radiation']['source']
   return source;
 }
 
+function formatXrdLocalReferenceTimestamp(value: string | undefined) {
+  if (!value) return 'Not saved';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getXrdLocalReferenceDraftsForContext(projectId?: string, uploadedRunId?: string) {
+  const drafts = listXrdLocalReferenceDrafts(projectId);
+  if (uploadedRunId) {
+    return drafts.filter((draft) => draft.uploadedRunId === uploadedRunId);
+  }
+  if (!projectId) {
+    return drafts.filter((draft) => !draft.uploadedRunId);
+  }
+  return drafts;
+}
+
 function XRDParametersPanel({
   config,
   sessionState,
@@ -2869,6 +2911,8 @@ function XRDParametersPanel({
   parameters,
   datasetContext,
   hasFiniteSignal,
+  projectId,
+  uploadedRunId,
   onParametersChange,
   onDatasetContextChange,
 }: {
@@ -2884,6 +2928,8 @@ function XRDParametersPanel({
   parameters: XRDParameters;
   datasetContext: XRDDatasetContext;
   hasFiniteSignal: boolean;
+  projectId?: string;
+  uploadedRunId?: string;
   onParametersChange: React.Dispatch<React.SetStateAction<XRDParameters>>;
   onDatasetContextChange: React.Dispatch<React.SetStateAction<XRDDatasetContext>>;
 }) {
@@ -2895,6 +2941,20 @@ function XRDParametersPanel({
   const [localReferenceParsePreview, setLocalReferenceParsePreview] = useState<XRDLocalReferenceParseResult>(
     () => createEmptyXrdLocalReferenceParseResult(),
   );
+  const [localReferenceDrafts, setLocalReferenceDrafts] = useState<XRDStoredLocalReferenceRecord[]>(() => (
+    getXrdLocalReferenceDraftsForContext(projectId, uploadedRunId)
+  ));
+  const [localReferenceSaveStatus, setLocalReferenceSaveStatus] = useState<string | null>(null);
+  const localReferenceValidationLevel = getXrdLocalReferenceValidationLevel(localReferenceParsePreview);
+  const canSaveLocalReferencePreview = localReferenceParsePreview.status === 'parsed_preview'
+    && localReferenceParsePreview.peaks.length > 0
+    && localReferenceValidationLevel !== 'invalid_preview';
+  const latestLocalReferenceDraft = localReferenceDrafts[0] ?? null;
+
+  useEffect(() => {
+    setLocalReferenceDrafts(getXrdLocalReferenceDraftsForContext(projectId, uploadedRunId));
+    setLocalReferenceSaveStatus(null);
+  }, [projectId, uploadedRunId]);
 
   function updateParameterStage<TStage extends keyof XRDParameters>(
     stage: TStage,
@@ -2971,12 +3031,52 @@ function XRDParametersPanel({
     };
   }
 
+  function refreshLocalReferenceDrafts() {
+    setLocalReferenceDrafts(getXrdLocalReferenceDraftsForContext(projectId, uploadedRunId));
+  }
+
+  function handleSaveLocalReferencePreview() {
+    if (!canSaveLocalReferencePreview) {
+      setLocalReferenceSaveStatus('Local reference preview is not ready to save.');
+      return;
+    }
+
+    const draft = buildXrdLocalReferenceDraftFromParseResult(localReferenceParsePreview, {
+      projectId,
+      uploadedRunId,
+    });
+    const savedDraft = saveXrdLocalReferenceDraft(draft);
+    if (!savedDraft) {
+      setLocalReferenceSaveStatus('Unable to save local reference preview in this browser.');
+      return;
+    }
+
+    refreshLocalReferenceDrafts();
+    setLocalReferenceSaveStatus(`Local reference preview saved ${formatXrdLocalReferenceTimestamp(savedDraft.savedAt)}.`);
+  }
+
+  function handleClearLocalReferencePreview() {
+    setLocalReferenceParsePreview(createEmptyXrdLocalReferenceParseResult());
+    setLocalReferenceSaveStatus('Preview cleared. Saved local reference drafts were unchanged.');
+  }
+
+  function handleDeleteLocalReferenceDraft(draftId: string) {
+    const deleted = deleteXrdLocalReferenceDraft(draftId);
+    refreshLocalReferenceDrafts();
+    setLocalReferenceSaveStatus(deleted
+      ? 'Saved local reference preview deleted.'
+      : 'Saved local reference preview was not found.');
+  }
+
   async function handleLocalReferenceFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     if (!file) {
       setLocalReferenceParsePreview(createEmptyXrdLocalReferenceParseResult());
+      setLocalReferenceSaveStatus(null);
       return;
     }
+
+    setLocalReferenceSaveStatus(null);
 
     if (file.size > XRD_LOCAL_REFERENCE_MAX_FILE_BYTES) {
       setLocalReferenceParsePreview(buildLocalReferenceParseError(
@@ -3369,11 +3469,39 @@ function XRDParametersPanel({
               label="Parse status"
               value={getXrdLocalReferenceValidationStatusLabel(localReferenceParsePreview.status)}
             />
+            <Metric
+              label="Validation level"
+              value={getXrdLocalReferenceValidationLevelLabel(localReferenceValidationLevel)}
+            />
             <Metric label="Source file" value={localReferenceParsePreview.sourceFileName || 'No file selected'} />
             <Metric label="Parsed peaks" value={localReferenceParsePreview.peaks.length} />
             <Metric label="Backend available" value="No" />
             <Metric label="Used for matching" value="No" />
           </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleSaveLocalReferencePreview}
+              disabled={!canSaveLocalReferencePreview}
+              className="inline-flex min-h-8 items-center justify-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-alt disabled:text-text-muted"
+            >
+              <Save size={12} />
+              Save local reference preview
+            </button>
+            <button
+              type="button"
+              onClick={handleClearLocalReferencePreview}
+              className="inline-flex min-h-8 items-center justify-center gap-1 rounded border border-border bg-background px-2 text-[10px] font-bold text-text-main hover:bg-surface-hover"
+            >
+              <RotateCcw size={12} />
+              Clear preview
+            </button>
+          </div>
+          {localReferenceSaveStatus && (
+            <p className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-text-muted">
+              {localReferenceSaveStatus}
+            </p>
+          )}
           {(localReferenceParsePreview.validation.errors.length > 0 || localReferenceParsePreview.validation.warnings.length > 0) && (
             <div className="mt-2 grid grid-cols-1 gap-1">
               {localReferenceParsePreview.validation.errors.length > 0 && (
@@ -3430,6 +3558,53 @@ function XRDParametersPanel({
         </div>
 
         <div className="mt-2 rounded border border-border bg-background px-2 py-2">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-wide text-text-muted">Saved local reference preview</p>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-text-muted">
+                Stored drafts are frontend review records only.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full border border-border bg-surface-alt px-2 py-0.5 text-[9px] font-bold text-text-muted">
+              {localReferenceDrafts.length} saved
+            </span>
+          </div>
+          {latestLocalReferenceDraft ? (
+            <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-bold text-text-main">{latestLocalReferenceDraft.sourceFileName}</p>
+                  <p className="mt-0.5 text-[9px] text-text-muted">
+                    Saved {formatXrdLocalReferenceTimestamp(latestLocalReferenceDraft.savedAt)}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[9px] font-bold text-blue-800">
+                  {getXrdLocalReferenceValidationLevelLabel(latestLocalReferenceDraft.validationLevel)}
+                </span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-1">
+                <Metric label="Parse status" value={getXrdLocalReferenceValidationStatusLabel(latestLocalReferenceDraft.validationStatus)} />
+                <Metric label="Stored peaks" value={latestLocalReferenceDraft.parseResult.peaks.length} />
+                <Metric label="Backend available" value="No" />
+                <Metric label="Used for matching" value="No" />
+              </div>
+              <button
+                type="button"
+                onClick={() => handleDeleteLocalReferenceDraft(latestLocalReferenceDraft.id)}
+                className="mt-2 inline-flex min-h-7 items-center justify-center gap-1 rounded border border-border bg-background px-2 text-[10px] font-bold text-text-main hover:bg-surface-hover"
+              >
+                <Trash2 size={12} />
+                Delete saved draft
+              </button>
+            </div>
+          ) : (
+            <p className="mt-2 rounded border border-dashed border-border bg-surface-alt px-2 py-1.5 text-[10px] leading-relaxed text-text-muted">
+              No saved local reference preview for this workspace context.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-2 rounded border border-border bg-background px-2 py-2">
           <p className="text-[9px] font-bold uppercase tracking-wide text-text-muted">Parser contract preview</p>
           <div className="mt-1 space-y-1">
             {XRD_LOCAL_REFERENCE_EXPECTED_COLUMNS.map((column) => (
@@ -3469,9 +3644,9 @@ function XRDParametersPanel({
         <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5">
           <p className="text-[9px] font-bold uppercase tracking-wide text-amber-900">Boundary</p>
           <ul className="mt-1 space-y-0.5 text-[10px] leading-relaxed text-amber-900">
-            <li>Uploaded local references are not used for backend matching in this phase.</li>
+            <li>Saved local references are not used for backend matching in this phase.</li>
             <li>Current backend matching uses active curated reference sets only.</li>
-            <li>Previewed reference peaks are not chemical identity confirmation.</li>
+            <li>Previewed/saved reference peaks are not chemical identity confirmation.</li>
             <li>Phase purity is not confirmed.</li>
           </ul>
         </div>
