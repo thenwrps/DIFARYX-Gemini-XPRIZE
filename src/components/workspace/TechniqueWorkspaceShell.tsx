@@ -97,7 +97,7 @@ import {
   XRDBackendError,
   type XRDHealthStatus,
 } from '../../services/xrdBackendClient';
-import type { XRDNormalizedResult, XRDReferenceMatchV2, XRDReferenceMatchV2Candidate } from '../../types/xrdBackend';
+import type { XRDLocalReferencePayload, XRDNormalizedResult, XRDReferenceMatchV2, XRDReferenceMatchV2Candidate } from '../../types/xrdBackend';
 import type { XRDDatasetContext } from '../../types/xrdDatasetContext';
 import type { XRDParameters } from '../../types/xrdParameters';
 import {
@@ -109,6 +109,7 @@ import {
 import { parseXrdLocalReferenceText } from '../../utils/xrdLocalReferenceParser';
 import {
   buildXrdLocalReferenceDraftFromParseResult,
+  buildXrdLocalReferencePayloadFromDraft,
   deleteXrdLocalReferenceDraft,
   getXrdLocalReferenceValidationLevel,
   getXrdLocalReferenceValidationLevelLabel,
@@ -988,6 +989,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   const [xrdBackendLoading, setXrdBackendLoading] = useState(false);
   const [xrdBackendError, setXrdBackendError] = useState<string | null>(null);
   const [xrdBackendSaved, setXrdBackendSaved] = useState(false);
+  const [useXrdLocalReferenceForBackend, setUseXrdLocalReferenceForBackend] = useState(false);
 
   useEffect(() => {
     if (!isXrdBackendEnabled) return;
@@ -1014,6 +1016,10 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       cancel();
     };
   }, [isXrdBackendEnabled]);
+
+  useEffect(() => {
+    setUseXrdLocalReferenceForBackend(false);
+  }, [projectId, routeContext.uploadedRunId, quickAnalysisSession?.uploadedRunId]);
 
   useEffect(() => {
     setActiveCenterTab(config.centerTabs[0].id);
@@ -1220,12 +1226,28 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     return null;
   };
 
+  const getXrdLocalReferencePayloadForBackend = (
+    signalSource: XRDBackendSignalSource,
+  ): XRDLocalReferencePayload | undefined => {
+    if (!useXrdLocalReferenceForBackend) return undefined;
+
+    const latestDraft = getXrdLocalReferenceDraftsForContext(
+      projectId ?? undefined,
+      signalSource.uploadedRunId ?? routeContext.uploadedRunId ?? quickAnalysisSession?.uploadedRunId ?? undefined,
+    )[0];
+    if (!latestDraft) return undefined;
+
+    return buildXrdLocalReferencePayloadFromDraft(latestDraft);
+  };
+
   const runXrdBackendProcessing = (signalSource: XRDBackendSignalSource) => {
+    const localReference = getXrdLocalReferencePayloadForBackend(signalSource);
     debugXrdReprocessTrace('backend process call started', {
       xLength: signalSource.x.length,
       yLength: signalSource.y.length,
       fileName: signalSource.fileName,
       uploadedRunId: signalSource.uploadedRunId,
+      localReferenceEnabled: Boolean(localReference),
     });
     setXrdBackendLoading(true);
     setXrdBackendError(null);
@@ -1236,6 +1258,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       y: signalSource.y,
       datasetContext: xrdDatasetContext,
       parameters: xrdParameters,
+      localReference,
     })
       .then((normalized) => {
         setXrdBackendResult(normalized);
@@ -1381,17 +1404,20 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
             setXrdBackendLoading(true);
             setXrdBackendError(null);
             setXrdBackendSaved(false);
+            const localReference = getXrdLocalReferencePayloadForBackend(backendSignalSource);
             debugXrdReprocessTrace('backend process call started', {
               xLength: backendSignalSource.x.length,
               yLength: backendSignalSource.y.length,
               fileName: backendSignalSource.fileName,
               uploadedRunId: backendSignalSource.uploadedRunId,
+              localReferenceEnabled: Boolean(localReference),
             });
             processXrdSkillEvidence({
               x: backendSignalSource.x,
               y: backendSignalSource.y,
               datasetContext: xrdDatasetContext,
               parameters: xrdParameters,
+              localReference,
             })
               .then((normalized) => {
                 setXrdBackendResult(normalized);
@@ -2320,6 +2346,8 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                 xrdHasFiniteSignal={xrdHasFiniteSignal}
                 xrdLocalReferenceProjectId={projectId ?? undefined}
                 xrdLocalReferenceUploadedRunId={routeContext.uploadedRunId ?? quickAnalysisSession?.uploadedRunId ?? undefined}
+                useXrdLocalReferenceForBackend={useXrdLocalReferenceForBackend}
+                onUseXrdLocalReferenceForBackendChange={setUseXrdLocalReferenceForBackend}
                 onXrdParametersChange={setXrdParameters}
                 onXrdDatasetContextChange={setXrdDatasetContext}
               />
@@ -2711,6 +2739,8 @@ function ParametersPanel({
   xrdHasFiniteSignal,
   xrdLocalReferenceProjectId,
   xrdLocalReferenceUploadedRunId,
+  useXrdLocalReferenceForBackend,
+  onUseXrdLocalReferenceForBackendChange,
   onXrdParametersChange,
   onXrdDatasetContextChange,
 }: {
@@ -2730,6 +2760,8 @@ function ParametersPanel({
   xrdHasFiniteSignal: boolean;
   xrdLocalReferenceProjectId?: string;
   xrdLocalReferenceUploadedRunId?: string;
+  useXrdLocalReferenceForBackend: boolean;
+  onUseXrdLocalReferenceForBackendChange: (enabled: boolean) => void;
   onXrdParametersChange: React.Dispatch<React.SetStateAction<XRDParameters>>;
   onXrdDatasetContextChange: React.Dispatch<React.SetStateAction<XRDDatasetContext>>;
 }) {
@@ -2750,6 +2782,8 @@ function ParametersPanel({
         hasFiniteSignal={xrdHasFiniteSignal}
         projectId={xrdLocalReferenceProjectId}
         uploadedRunId={xrdLocalReferenceUploadedRunId}
+        useLocalReferenceForBackend={useXrdLocalReferenceForBackend}
+        onUseLocalReferenceForBackendChange={onUseXrdLocalReferenceForBackendChange}
         onParametersChange={onXrdParametersChange}
         onDatasetContextChange={onXrdDatasetContextChange}
       />
@@ -2913,6 +2947,8 @@ function XRDParametersPanel({
   hasFiniteSignal,
   projectId,
   uploadedRunId,
+  useLocalReferenceForBackend,
+  onUseLocalReferenceForBackendChange,
   onParametersChange,
   onDatasetContextChange,
 }: {
@@ -2930,6 +2966,8 @@ function XRDParametersPanel({
   hasFiniteSignal: boolean;
   projectId?: string;
   uploadedRunId?: string;
+  useLocalReferenceForBackend: boolean;
+  onUseLocalReferenceForBackendChange: (enabled: boolean) => void;
   onParametersChange: React.Dispatch<React.SetStateAction<XRDParameters>>;
   onDatasetContextChange: React.Dispatch<React.SetStateAction<XRDDatasetContext>>;
 }) {
@@ -3063,6 +3101,9 @@ function XRDParametersPanel({
   function handleDeleteLocalReferenceDraft(draftId: string) {
     const deleted = deleteXrdLocalReferenceDraft(draftId);
     refreshLocalReferenceDrafts();
+    if (deleted && latestLocalReferenceDraft?.id === draftId) {
+      onUseLocalReferenceForBackendChange(false);
+    }
     setLocalReferenceSaveStatus(deleted
       ? 'Saved local reference preview deleted.'
       : 'Saved local reference preview was not found.');
@@ -3602,6 +3643,17 @@ function XRDParametersPanel({
               No saved local reference preview for this workspace context.
             </p>
           )}
+          <div className="mt-2">
+            <XRDToggleField
+              label="Use saved local reference for this backend run"
+              checked={Boolean(latestLocalReferenceDraft) && useLocalReferenceForBackend}
+              disabled={!latestLocalReferenceDraft}
+              onChange={(enabled) => onUseLocalReferenceForBackendChange(Boolean(latestLocalReferenceDraft) && enabled)}
+            />
+          </div>
+          <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] leading-relaxed text-amber-900">
+            Local reference matching is experimental and request-scoped. It does not confirm identity or phase purity.
+          </p>
         </div>
 
         <div className="mt-2 rounded border border-border bg-background px-2 py-2">
@@ -3876,10 +3928,12 @@ function XRDToggleField({
   label,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="rounded border border-border bg-background px-2 py-1.5">
@@ -3888,9 +3942,12 @@ function XRDToggleField({
         type="button"
         role="switch"
         aria-checked={checked}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`mt-1 inline-flex h-7 w-full items-center justify-between rounded border px-2 text-xs font-bold ${
-          checked
+          disabled
+            ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+            : checked
             ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
             : 'border-slate-200 bg-slate-50 text-slate-600'
         }`}

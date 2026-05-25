@@ -263,12 +263,49 @@ export interface XRDBackendGroupedParameters {
   [key: string]: unknown;
 }
 
+export type XRDLocalReferenceSourceType = 'uploaded_reference' | 'project_local_reference';
+
+export interface XRDLocalReferencePeakPayload {
+  twoTheta: number;
+  relativeIntensity?: number;
+  hkl?: string;
+  dSpacing?: number;
+}
+
+export interface XRDLocalReferencePayload {
+  enabled: boolean;
+  sourceType: XRDLocalReferenceSourceType;
+  referenceLabel: string;
+  formula?: string;
+  materialFamily?: string;
+  elements: string[];
+  sourceFileName?: string;
+  peaks: XRDLocalReferencePeakPayload[];
+}
+
+export interface XRDBackendLocalReferenceRequest {
+  enabled: boolean;
+  source_type: XRDLocalReferenceSourceType;
+  reference_label: string;
+  formula?: string;
+  material_family?: string;
+  elements: string[];
+  source_file_name?: string;
+  peaks: Array<{
+    two_theta: number;
+    relative_intensity?: number;
+    hkl?: string;
+    d_spacing?: number;
+  }>;
+}
+
 export interface XRDProcessPayload {
   x: number[];
   y: number[];
   params?: XRDProcessingParams;
   datasetContext?: XRDDatasetContext;
   parameters?: XRDParameters;
+  localReference?: XRDLocalReferencePayload;
 }
 
 // ── Normalized frontend result ──────────────────────────────────────

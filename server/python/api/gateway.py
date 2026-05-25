@@ -59,6 +59,7 @@ from xrd_engine.domain.models.xrd_params import (
 )
 from xrd_engine.services.reference_db_service import (
     FittedPeak,
+    match_local_reference_candidate,
     match_peaks,
     match_reference_candidates,
 )
@@ -277,6 +278,14 @@ def _build_response(
 # POST /process — Full XRD pipeline (JSON body)
 # ============================================================================
 
+def _extract_reference_match_measured_peaks(result) -> List[dict]:
+    """Prefer fitted centers for reference matching; fall back to detected positions."""
+    if result.fitted_peaks:
+        return [{"center": fp.center} for fp in result.fitted_peaks]
+    if result.detected_peaks:
+        return [{"center": dp.position} for dp in result.detected_peaks]
+    return []
+
 
 @app.post(
     "/process",
@@ -348,9 +357,23 @@ async def process_xrd(request: XRDProcessRequest):
             ref_params = (request.parameters.reference_match
                           if request.parameters else None)
             ctx = request.dataset_context
+            measured_peaks = _extract_reference_match_measured_peaks(result)
 
             # Case: enabled but no reference_set_id → blocked
-            if ref_params and ref_params.enabled and not ref_params.reference_set_id:
+            # Explicit request-scoped local reference takes precedence only when enabled.
+            if request.local_reference and request.local_reference.enabled:
+                tolerance_two_theta = (
+                    ref_params.tolerance_two_theta
+                    if ref_params else 0.5
+                )
+                min_score = ref_params.min_score if ref_params else 0.65
+                reference_match_v2_result = match_local_reference_candidate(
+                    measured_peaks=measured_peaks,
+                    local_reference=request.local_reference,
+                    tolerance_two_theta=tolerance_two_theta,
+                    min_score=min_score,
+                )
+            elif ref_params and ref_params.enabled and not ref_params.reference_set_id:
                 reference_match_v2_result = {
                     "status": "blocked",
                     "claim_level": "none",
@@ -854,7 +877,7 @@ async def process_xrd_skill(request: XRDProcessRequest):
     else:
         observations.append("No reference-supported phase indication could be resolved from the current database catalog.")
 
-    # Strictly use bounded language (avoiding absolute claims such as "confirmed phase purity")
+    # Strictly use bounded language and avoid absolute phase or purity claims.
     claim_boundaries = [
         "The resolved phase labels represent a reference-supported phase indication rather than a definitive phase confirmation.",
         "The claim is a validation-limited scientific claim based solely on 1D bulk diffraction geometry.",

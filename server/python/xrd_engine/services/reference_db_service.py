@@ -19,8 +19,9 @@ Phases in registry:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from xrd_engine.services.xrd_engine import FittedPeak
 
@@ -526,10 +527,244 @@ CURATED_REFERENCE_SETS: Dict[str, List[dict]] = {
     "spinel_ferrite_sba15_demo_set": _CURATED_PHASES,
 }
 
+DEFAULT_REFERENCE_MATCH_LIMITATIONS = [
+    "Candidate match is based on peak-position agreement.",
+    "Chemical identity requires composition-sensitive evidence.",
+    "Phase purity is not confirmed by XRD matching alone.",
+]
+
+LOCAL_REFERENCE_MATCH_LIMITATIONS = [
+    "Uploaded local reference matching is request-scoped candidate evidence.",
+    "Local reference provenance must be validated before stronger assignment.",
+    "Chemical identity requires composition-sensitive evidence.",
+    "Phase purity is not confirmed by XRD matching alone.",
+]
+
 
 def get_reference_set(reference_set_id: str) -> List[dict]:
     """Return the curated phases for a given reference_set_id, or empty list."""
     return CURATED_REFERENCE_SETS.get(reference_set_id, [])
+
+
+def _extract_measured_peak_positions(measured_peaks: List[dict]) -> List[float]:
+    """Extract finite measured peak positions from backend peak dictionaries."""
+    positions: List[float] = []
+    for peak in measured_peaks:
+        pos = peak.get("center")
+        if pos is None:
+            pos = peak.get("position")
+        if pos is None:
+            pos = peak.get("two_theta")
+        try:
+            value = float(pos)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            positions.append(value)
+    return positions
+
+
+def _score_reference_phase(
+    phase: dict,
+    measured_positions: List[float],
+    tolerance_two_theta: float,
+    known_elem_set: set[str],
+) -> dict:
+    """Score one reference phase against measured peak positions."""
+    ref_peaks = phase.get("peaks", [])
+    matched_peaks_list: List[dict] = []
+
+    for ref_peak in ref_peaks:
+        ref_2theta = float(ref_peak["two_theta"])
+        best_delta = float("inf")
+        best_measured = None
+        for measured_position in measured_positions:
+            delta = abs(measured_position - ref_2theta)
+            if delta < best_delta:
+                best_delta = delta
+                best_measured = measured_position
+
+        if best_measured is not None and best_delta <= tolerance_two_theta:
+            matched_peaks_list.append({
+                "measured_two_theta": round(best_measured, 4),
+                "reference_two_theta": round(ref_2theta, 4),
+                "delta_two_theta": round(best_measured - ref_2theta, 4),
+                "hkl": ref_peak.get("hkl"),
+                "reference_relative_intensity": ref_peak.get("relative_intensity"),
+            })
+
+    ref_peak_count = len(ref_peaks)
+    matched_peak_count = len(matched_peaks_list)
+    coverage_ratio = round(matched_peak_count / ref_peak_count, 4) if ref_peak_count > 0 else 0.0
+
+    if matched_peaks_list:
+        position_scores = [
+            max(0.0, 1.0 - abs(match["delta_two_theta"]) / tolerance_two_theta)
+            for match in matched_peaks_list
+        ]
+        position_score = round(sum(position_scores) / len(position_scores), 4)
+        mean_delta = round(
+            sum(abs(match["delta_two_theta"]) for match in matched_peaks_list) / len(matched_peaks_list),
+            4,
+        )
+    else:
+        position_score = 0.0
+        mean_delta = None
+
+    coverage_score = coverage_ratio
+    phase_elements = set(str(element).upper() for element in phase.get("elements", []))
+    if known_elem_set and phase_elements:
+        overlap = phase_elements & known_elem_set
+        chemistry_score = round(len(overlap) / len(phase_elements), 4)
+    else:
+        chemistry_score = 1.0
+
+    final_score = round(
+        0.50 * position_score + 0.35 * coverage_score + 0.15 * chemistry_score,
+        4,
+    )
+
+    return {
+        "phase_id": phase.get("phase_id", "local_reference_candidate"),
+        "phase_label": phase.get("phase_label", "Local reference candidate"),
+        "formula": phase.get("formula") or "Not provided",
+        "structure_family": phase.get("structure_family") or "local_reference",
+        "elements": phase.get("elements", []),
+        "database_ref": phase.get("database_ref"),
+        "matched_peak_count": matched_peak_count,
+        "reference_peak_count": ref_peak_count,
+        "coverage_ratio": coverage_ratio,
+        "mean_delta_two_theta": mean_delta,
+        "position_score": position_score,
+        "coverage_score": coverage_score,
+        "chemistry_score": chemistry_score,
+        "score": final_score,
+        "matched_peaks": matched_peaks_list,
+    }
+
+
+def _local_ref_get(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _safe_local_reference_id(label: str) -> str:
+    safe = "".join(ch.lower() if ch.isalnum() else "_" for ch in label).strip("_")
+    while "__" in safe:
+        safe = safe.replace("__", "_")
+    return safe[:64] or "local_reference"
+
+
+def match_local_reference_candidate(
+    measured_peaks: List[dict],
+    local_reference: Any,
+    tolerance_two_theta: float = 0.5,
+    min_score: float = 0.65,
+) -> dict:
+    """
+    Match measured/fitted peaks against an explicitly supplied local reference.
+
+    The result is request-scoped candidate evidence only.  It never confirms
+    chemical identity or phase purity and does not alter curated reference-set
+    behavior.
+    """
+    reference_label = str(_local_ref_get(local_reference, "reference_label", "") or "").strip()
+    source_file_name = _local_ref_get(local_reference, "source_file_name", None)
+    source_label = str(source_file_name or reference_label or "local_reference")
+    reference_set_id = f"local_reference:{_safe_local_reference_id(source_label)}"
+
+    reference_peaks: List[dict] = []
+    for peak in _local_ref_get(local_reference, "peaks", []) or []:
+        two_theta = float(_local_ref_get(peak, "two_theta"))
+        if not math.isfinite(two_theta):
+            continue
+        reference_peaks.append({
+            "two_theta": two_theta,
+            "relative_intensity": _local_ref_get(peak, "relative_intensity", None),
+            "hkl": _local_ref_get(peak, "hkl", None),
+            "d_spacing": _local_ref_get(peak, "d_spacing", None),
+        })
+
+    if len(reference_peaks) < 3:
+        return {
+            "status": "blocked",
+            "claim_level": "none",
+            "phase_confirmed": False,
+            "phase_purity_confirmed": False,
+            "reference_set_id": reference_set_id,
+            "candidate_count": 0,
+            "ranked_candidates": [],
+            "primary_candidate": None,
+            "backend_available": True,
+            "reason": "Local reference matching requires at least 3 reference peaks.",
+            "limitations": LOCAL_REFERENCE_MATCH_LIMITATIONS,
+        }
+
+    measured_positions = _extract_measured_peak_positions(measured_peaks)
+    if not measured_positions:
+        return {
+            "status": "no_match",
+            "claim_level": "none",
+            "phase_confirmed": False,
+            "phase_purity_confirmed": False,
+            "reference_set_id": reference_set_id,
+            "candidate_count": 0,
+            "ranked_candidates": [],
+            "primary_candidate": None,
+            "backend_available": True,
+            "reason": "No measured peak positions available for local reference matching.",
+            "limitations": LOCAL_REFERENCE_MATCH_LIMITATIONS,
+        }
+
+    elements = [
+        str(element).strip()
+        for element in (_local_ref_get(local_reference, "elements", []) or [])
+        if str(element).strip()
+    ]
+    phase = {
+        "phase_id": f"local_reference_{_safe_local_reference_id(reference_label or source_label)}",
+        "phase_label": reference_label or "Local reference candidate",
+        "formula": _local_ref_get(local_reference, "formula", None) or "Not provided",
+        "structure_family": _local_ref_get(local_reference, "material_family", None) or "local_reference",
+        "elements": elements,
+        "database_ref": f"Request-scoped local reference: {source_label}",
+        "peaks": reference_peaks,
+    }
+
+    candidate = _score_reference_phase(
+        phase=phase,
+        measured_positions=measured_positions,
+        tolerance_two_theta=tolerance_two_theta,
+        known_elem_set=set(),
+    )
+
+    if candidate["score"] >= min_score:
+        status = "candidate_match"
+        claim_level = "reference_supported_candidate"
+        reason = None
+    elif candidate["matched_peak_count"] > 0:
+        status = "no_match"
+        claim_level = "weak_candidate"
+        reason = "Local reference candidate did not meet the configured score threshold."
+    else:
+        status = "no_match"
+        claim_level = "none"
+        reason = "No local reference peaks matched measured peak positions within tolerance."
+
+    return {
+        "status": status,
+        "claim_level": claim_level,
+        "phase_confirmed": False,
+        "phase_purity_confirmed": False,
+        "reference_set_id": reference_set_id,
+        "candidate_count": 1,
+        "ranked_candidates": [candidate],
+        "primary_candidate": candidate,
+        "backend_available": True,
+        "reason": reason,
+        "limitations": LOCAL_REFERENCE_MATCH_LIMITATIONS,
+    }
 
 
 def match_reference_candidates(
@@ -561,8 +796,6 @@ def match_reference_candidates(
     Returns:
         dict compatible with XRDReferenceMatchResult schema.
     """
-    from typing import Optional as _Optional, List as _List
-
     # Case A: missing or unknown reference set
     phases = get_reference_set(reference_set_id)
     if not phases:
@@ -577,11 +810,7 @@ def match_reference_candidates(
             "primary_candidate": None,
             "backend_available": False,
             "reason": f"Reference set '{reference_set_id}' is not available in the backend reference registry.",
-            "limitations": [
-                "Candidate match is based on peak-position agreement.",
-                "Chemical identity requires composition-sensitive evidence.",
-                "Phase purity is not confirmed by XRD matching alone.",
-            ],
+            "limitations": DEFAULT_REFERENCE_MATCH_LIMITATIONS,
         }
 
     # Filter phases by candidate_phase_ids / excluded_phase_ids
@@ -605,19 +834,11 @@ def match_reference_candidates(
             "primary_candidate": None,
             "backend_available": True,
             "reason": "No reference phases available after candidate/exclusion filtering.",
-            "limitations": [
-                "Candidate match is based on peak-position agreement.",
-                "Chemical identity requires composition-sensitive evidence.",
-                "Phase purity is not confirmed by XRD matching alone.",
-            ],
+            "limitations": DEFAULT_REFERENCE_MATCH_LIMITATIONS,
         }
 
     # Extract measured peak positions
-    mp_positions: List[float] = []
-    for mp in measured_peaks:
-        pos = mp.get("center") or mp.get("position") or mp.get("two_theta")
-        if pos is not None:
-            mp_positions.append(float(pos))
+    mp_positions = _extract_measured_peak_positions(measured_peaks)
 
     # Case C: no measured peaks
     if not mp_positions:
@@ -632,11 +853,7 @@ def match_reference_candidates(
             "primary_candidate": None,
             "backend_available": True,
             "reason": "No measured peak positions available for reference matching.",
-            "limitations": [
-                "Candidate match is based on peak-position agreement.",
-                "Chemical identity requires composition-sensitive evidence.",
-                "Phase purity is not confirmed by XRD matching alone.",
-            ],
+            "limitations": DEFAULT_REFERENCE_MATCH_LIMITATIONS,
         }
 
     candidates: List[dict] = []
@@ -750,9 +967,5 @@ def match_reference_candidates(
         "candidate_count": len(candidates),
         "ranked_candidates": candidates,
         "primary_candidate": primary,
-        "limitations": [
-            "Candidate match is based on peak-position agreement.",
-            "Chemical identity requires composition-sensitive evidence.",
-            "Phase purity is not confirmed by XRD matching alone.",
-        ],
+        "limitations": DEFAULT_REFERENCE_MATCH_LIMITATIONS,
     }

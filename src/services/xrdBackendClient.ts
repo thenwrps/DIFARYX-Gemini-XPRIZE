@@ -13,6 +13,7 @@ import type {
   ScientificEvidenceObject,
   XRDBackendDatasetContext,
   XRDBackendGroupedParameters,
+  XRDBackendLocalReferenceRequest,
   XRDProcessingParams,
   XRDProcessPayload,
   XRDProcessResponse,
@@ -159,10 +160,33 @@ export function mapXrdParametersToLegacyParams(
   };
 }
 
+export function mapXrdLocalReferenceToBackend(
+  localReference: XRDProcessPayload['localReference'],
+): XRDBackendLocalReferenceRequest | undefined {
+  if (!localReference?.enabled) return undefined;
+
+  return {
+    enabled: true,
+    source_type: localReference.sourceType,
+    reference_label: localReference.referenceLabel,
+    ...(optionalString(localReference.formula) ? { formula: optionalString(localReference.formula) } : {}),
+    ...(optionalString(localReference.materialFamily) ? { material_family: optionalString(localReference.materialFamily) } : {}),
+    elements: localReference.elements,
+    ...(optionalString(localReference.sourceFileName) ? { source_file_name: optionalString(localReference.sourceFileName) } : {}),
+    peaks: localReference.peaks.map((peak) => ({
+      two_theta: peak.twoTheta,
+      ...(Number.isFinite(peak.relativeIntensity) ? { relative_intensity: peak.relativeIntensity } : {}),
+      ...(optionalString(peak.hkl) ? { hkl: optionalString(peak.hkl) } : {}),
+      ...(Number.isFinite(peak.dSpacing) ? { d_spacing: peak.dSpacing } : {}),
+    })),
+  };
+}
+
 function buildXrdProcessRequestBody(payload: XRDProcessPayload): Record<string, unknown> {
   const datasetContext = mapXrdDatasetContextToBackend(payload.datasetContext);
   const parameters = mapXrdParametersToBackend(payload.parameters);
   const legacyParams = payload.params ?? mapXrdParametersToLegacyParams(payload.parameters);
+  const localReference = mapXrdLocalReferenceToBackend(payload.localReference);
 
   return {
     x: payload.x,
@@ -170,6 +194,7 @@ function buildXrdProcessRequestBody(payload: XRDProcessPayload): Record<string, 
     ...(legacyParams ? { params: legacyParams } : {}),
     ...(datasetContext ? { dataset_context: datasetContext } : {}),
     ...(parameters ? { parameters } : {}),
+    ...(localReference ? { local_reference: localReference } : {}),
   };
 }
 

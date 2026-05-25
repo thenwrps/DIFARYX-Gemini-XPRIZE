@@ -3,6 +3,7 @@ import type {
   XRDLocalReferenceParseStatus,
   XRDLocalReferencePeak,
 } from '../types/xrdLocalReference';
+import type { XRDLocalReferencePayload } from '../types/xrdBackend';
 
 export const XRD_LOCAL_REFERENCES_STORAGE_KEY = 'difaryx.xrdLocalReferences.v1';
 
@@ -251,4 +252,29 @@ export function deleteXrdLocalReferenceDraft(id: string): boolean {
   const next = existing.filter((record) => record.id !== id);
   if (next.length === existing.length) return false;
   return writeAll(next);
+}
+
+export function buildXrdLocalReferencePayloadFromDraft(
+  draft: XRDStoredLocalReferenceRecord,
+): XRDLocalReferencePayload {
+  const parseResult = draft.parseResult;
+  const referenceLabel = parseResult.referenceLabel
+    || draft.sourceFileName.replace(/\.[^.]+$/, '')
+    || 'Saved local reference';
+
+  return {
+    enabled: true,
+    sourceType: draft.uploadedRunId ? 'uploaded_reference' : 'project_local_reference',
+    referenceLabel,
+    ...(parseResult.formula ? { formula: parseResult.formula } : {}),
+    ...(parseResult.materialFamily ? { materialFamily: parseResult.materialFamily } : {}),
+    elements: parseResult.elements,
+    sourceFileName: draft.sourceFileName,
+    peaks: parseResult.peaks.map((peak) => ({
+      twoTheta: peak.twoTheta,
+      ...(Number.isFinite(peak.relativeIntensity) ? { relativeIntensity: peak.relativeIntensity } : {}),
+      ...(peak.hkl ? { hkl: peak.hkl } : {}),
+      ...(Number.isFinite(peak.dSpacing) ? { dSpacing: peak.dSpacing } : {}),
+    })),
+  };
 }

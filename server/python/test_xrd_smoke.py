@@ -24,6 +24,11 @@ import re
 import sys
 import uuid
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 from fastapi.testclient import TestClient
 
 # Ensure server/python is on sys.path
@@ -1583,6 +1588,156 @@ def test_phase7c_phase_confirmed_always_false():
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+def test_phase7d5_local_reference_enabled_returns_v2():
+    """Enabled request-scoped local reference returns candidate-only v2 evidence."""
+    print("\n═══ Test 23: Phase 7D.5 — Local reference enabled returns v2 ═══")
+    x, y = generate_cofe2o4_xrd_pattern()
+
+    payload = {
+        "x": x,
+        "y": y,
+        "theta_min": 10.0,
+        "theta_max": 80.0,
+        "peak_threshold": 0.10,
+        "min_prominence": 0.05,
+        "parameters": {
+            "reference_match": {
+                "enabled": True,
+                "reference_set_id": "spinel_ferrite_sba15_demo_set",
+                "tolerance_two_theta": 0.5,
+                "min_score": 0.65,
+            },
+        },
+        "local_reference": {
+            "enabled": True,
+            "source_type": "uploaded_reference",
+            "reference_label": "CoFe2O4 local reference",
+            "formula": "CoFe2O4",
+            "material_family": "spinel",
+            "elements": ["Co", "Fe", "O"],
+            "source_file_name": "cofe2o4_local_reference.csv",
+            "peaks": [
+                {"two_theta": 18.37, "relative_intensity": 12.0, "hkl": "(111)", "d_spacing": 4.843},
+                {"two_theta": 30.12, "relative_intensity": 30.0, "hkl": "(220)", "d_spacing": 2.966},
+                {"two_theta": 35.48, "relative_intensity": 100.0, "hkl": "(311)", "d_spacing": 2.532},
+                {"two_theta": 43.12, "relative_intensity": 20.0, "hkl": "(400)", "d_spacing": 2.097},
+                {"two_theta": 57.02, "relative_intensity": 30.0, "hkl": "(511)", "d_spacing": 1.614},
+            ],
+        },
+    }
+
+    resp = client.post("/process", json=payload)
+    log_test("Local ref enabled: POST /process returns 200", resp.status_code == 200,
+             f"status={resp.status_code}")
+    if resp.status_code != 200:
+        log_test("Local ref enabled: response body", False, resp.text[:500])
+        return
+
+    data = resp.json()
+    log_test("Local ref enabled: legacy phase_match is preserved", data.get("phase_match") is not None)
+
+    rmv2 = data.get("reference_match_v2")
+    log_test("Local ref enabled: reference_match_v2 is present", rmv2 is not None)
+    if not rmv2:
+        return
+
+    log_test("Local ref enabled: request-scoped reference_set_id",
+             str(rmv2.get("reference_set_id", "")).startswith("local_reference:"),
+             f"reference_set_id={rmv2.get('reference_set_id')}")
+    log_test("Local ref enabled: phase_confirmed is false",
+             rmv2.get("phase_confirmed") is False,
+             f"value={rmv2.get('phase_confirmed')}")
+    log_test("Local ref enabled: phase_purity_confirmed is false",
+             rmv2.get("phase_purity_confirmed") is False,
+             f"value={rmv2.get('phase_purity_confirmed')}")
+
+    primary = rmv2.get("primary_candidate")
+    log_test("Local ref enabled: primary_candidate is present", primary is not None)
+    if primary:
+        matched = primary.get("matched_peaks", [])
+        log_test("Local ref enabled: matched_peaks is non-empty",
+                 isinstance(matched, list) and len(matched) > 0,
+                 f"count={len(matched)}")
+
+    limitations = " ".join(rmv2.get("limitations", []))
+    log_test("Local ref enabled: limitations mention request-scoped candidate evidence",
+             "request-scoped candidate evidence" in limitations,
+             limitations)
+
+
+def test_phase7d5_local_reference_disabled_preserves_curated():
+    """Disabled local_reference must not override active curated matching."""
+    print("\n═══ Test 24: Phase 7D.5 — Disabled local reference preserves curated ═══")
+    x, y = generate_cofe2o4_xrd_pattern()
+
+    payload = {
+        "x": x,
+        "y": y,
+        "theta_min": 10.0,
+        "theta_max": 80.0,
+        "peak_threshold": 0.10,
+        "min_prominence": 0.05,
+        "dataset_context": {
+            "known_elements": ["Co", "Fe", "O"],
+            "reference_set_id": "spinel_ferrite_sba15_demo_set",
+        },
+        "parameters": {
+            "reference_match": {
+                "enabled": True,
+                "reference_set_id": "spinel_ferrite_sba15_demo_set",
+                "tolerance_two_theta": 0.5,
+            },
+        },
+        "local_reference": {
+            "enabled": False,
+            "source_type": "uploaded_reference",
+            "reference_label": "Disabled local reference",
+            "peaks": [
+                {"two_theta": 12.0},
+            ],
+        },
+    }
+
+    resp = client.post("/process", json=payload)
+    log_test("Local ref disabled: POST /process returns 200", resp.status_code == 200,
+             f"status={resp.status_code}")
+    if resp.status_code != 200:
+        return
+
+    rmv2 = resp.json().get("reference_match_v2")
+    log_test("Local ref disabled: reference_match_v2 is present", rmv2 is not None)
+    if not rmv2:
+        return
+    log_test("Local ref disabled: curated reference_set_id preserved",
+             rmv2.get("reference_set_id") == "spinel_ferrite_sba15_demo_set",
+             f"reference_set_id={rmv2.get('reference_set_id')}")
+
+
+def test_phase7d5_local_reference_too_few_peaks_rejected():
+    """Enabled local_reference with fewer than 3 peaks returns 422."""
+    print("\n═══ Test 25: Phase 7D.5 — Local reference fewer than 3 peaks rejected ═══")
+    x, y = generate_cofe2o4_xrd_pattern()
+
+    payload = {
+        "x": x,
+        "y": y,
+        "local_reference": {
+            "enabled": True,
+            "source_type": "uploaded_reference",
+            "reference_label": "Too few peaks",
+            "peaks": [
+                {"two_theta": 30.12},
+                {"two_theta": 35.48},
+            ],
+        },
+    }
+
+    resp = client.post("/process", json=payload)
+    log_test("Local ref too few peaks: returns 422",
+             resp.status_code == 422,
+             f"status={resp.status_code}")
+
+
 if __name__ == "__main__":
     print("╔══════════════════════════════════════════════════════╗")
     print("║  DIFARYX XRD Backend Smoke Test                    ║")
@@ -1620,6 +1775,9 @@ if __name__ == "__main__":
     test_phase7c_no_match_filtering()
     test_phase7c_disabled_returns_none()
     test_phase7c_phase_confirmed_always_false()
+    test_phase7d5_local_reference_enabled_returns_v2()
+    test_phase7d5_local_reference_disabled_preserves_curated()
+    test_phase7d5_local_reference_too_few_peaks_rejected()
 
     # Summary
     print("\n" + "═" * 56)

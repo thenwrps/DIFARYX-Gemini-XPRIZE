@@ -8,6 +8,7 @@ while maintaining strict domain validation.
 
 from __future__ import annotations
 
+import math
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -84,6 +85,58 @@ class DatabaseConfigAPI(BaseModel):
     )
 
 
+class XRDLocalReferenceSourceType(str, Enum):
+    UPLOADED_REFERENCE = "uploaded_reference"
+    PROJECT_LOCAL_REFERENCE = "project_local_reference"
+
+
+class XRDLocalReferencePeakRequest(BaseModel):
+    """Request-scoped local reference peak for candidate matching."""
+    two_theta: float = Field(..., gt=0.0, le=180.0)
+    relative_intensity: Optional[float] = Field(default=None, ge=0.0)
+    hkl: Optional[str] = None
+    d_spacing: Optional[float] = Field(default=None, gt=0.0)
+
+    @field_validator("two_theta", "relative_intensity", "d_spacing")
+    @classmethod
+    def _finite_number(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None and not math.isfinite(value):
+            raise ValueError("Local reference numeric fields must be finite.")
+        return value
+
+
+class XRDLocalReferenceRequest(BaseModel):
+    """Request-scoped uploaded/project-local reference pattern.
+
+    Candidate evidence only.  This model never enables identity or phase-purity
+    claims and is only used when ``enabled`` is explicitly true.
+    """
+    enabled: bool = Field(default=False)
+    source_type: XRDLocalReferenceSourceType = Field(
+        default=XRDLocalReferenceSourceType.UPLOADED_REFERENCE,
+    )
+    reference_label: str = Field(default="")
+    formula: Optional[str] = None
+    material_family: Optional[str] = None
+    elements: List[str] = Field(default_factory=list)
+    source_file_name: Optional[str] = None
+    peaks: List[XRDLocalReferencePeakRequest] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_enabled_reference(self) -> "XRDLocalReferenceRequest":
+        if not self.enabled:
+            return self
+        if not self.reference_label.strip():
+            raise ValueError(
+                "local_reference.reference_label is required when local reference matching is enabled."
+            )
+        if len(self.peaks) < 3:
+            raise ValueError(
+                "local_reference.peaks must include at least 3 peaks when enabled."
+            )
+        return self
+
+
 class XRDProcessRequest(BaseModel):
     """
     Full XRD processing pipeline request.
@@ -137,6 +190,10 @@ class XRDProcessRequest(BaseModel):
     parameters: Optional["XRDParameters"] = Field(
         default=None,
         description="Phase 3: optional grouped XRD parameter contract.",
+    )
+    local_reference: Optional[XRDLocalReferenceRequest] = Field(
+        default=None,
+        description="Phase 7D.5: optional request-scoped local reference candidate matching input.",
     )
 
 
