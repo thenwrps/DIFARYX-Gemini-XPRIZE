@@ -174,6 +174,110 @@ def _build_config(request: XRDProcessRequest) -> XRDPipelineConfig:
     )
 
 
+
+
+# ============================================================================
+# Phase X1: Helper functions for dataset context echo and processing provenance
+# ============================================================================
+
+def _build_dataset_context_echo(request):
+    """Build dataset context echo from request (Phase X1)."""
+    from api.schemas import XRDDatasetContextEcho
+
+    if not request.dataset_context:
+        return None
+
+    ctx = request.dataset_context
+    return XRDDatasetContextEcho(
+        sample_id=ctx.sample_id,
+        sample_name=ctx.sample_name,
+        material_class=ctx.material_class,
+        known_elements=list(ctx.known_elements) if ctx.known_elements else [],
+        declared_phases=list(ctx.declared_phases) if ctx.declared_phases else [],
+        candidate_phase_ids=list(ctx.candidate_phase_ids) if ctx.candidate_phase_ids else [],
+        excluded_phase_ids=list(ctx.excluded_phase_ids) if ctx.excluded_phase_ids else [],
+        reference_source=ctx.reference_source.value if ctx.reference_source else None,
+        reference_set_id=ctx.reference_set_id,
+        identity_source=ctx.identity_source.value if ctx.identity_source else None,
+        identity_confidence=ctx.identity_confidence.value if ctx.identity_confidence else None,
+    )
+
+
+def _build_processing_provenance(request):
+    """Build processing provenance from request (Phase X1)."""
+    from api.schemas import XRDProcessingProvenance
+
+    # Determine processing mode
+    has_grouped = request.parameters is not None
+    has_dataset_ctx = request.dataset_context is not None
+    has_local_ref = request.local_reference is not None and request.local_reference.enabled
+
+    # Determine which parameters source to use
+    if has_grouped:
+        processing_mode = "grouped_parameters"
+        param_contract = "grouped_v1"
+        params = request.parameters
+
+        # Extract reference match enabled
+        ref_match_enabled = params.reference_match.enabled if params.reference_match else False
+        ref_set_id = (params.reference_match.reference_set_id
+                      if params.reference_match and params.reference_match.enabled
+                      else None)
+
+        return XRDProcessingProvenance(
+            parameter_contract_version=param_contract,
+            backend_schema_version="1.0.0",
+            processing_mode=processing_mode,
+            received_grouped_parameters=True,
+            received_dataset_context=has_dataset_ctx,
+            received_local_reference=has_local_ref,
+            local_reference_enabled=has_local_ref,
+            reference_match_enabled=ref_match_enabled,
+            reference_set_id=ref_set_id,
+            radiation_source=params.radiation.source.value if params.radiation else None,
+            wavelength_angstrom=params.radiation.wavelength_angstrom if params.radiation else None,
+            two_theta_min=params.range.two_theta_min if params.range else None,
+            two_theta_max=params.range.two_theta_max if params.range else None,
+            baseline_method=params.baseline.method.value if params.baseline else None,
+            smoothing_method=params.smoothing.method.value if params.smoothing else None,
+            peak_fit_model=params.peak_fitting.model.value if params.peak_fitting else None,
+            peak_detection_min_prominence=params.peak_detection.min_prominence if params.peak_detection else None,
+            max_peak_count=params.peak_detection.max_peak_count if params.peak_detection else None,
+            created_at=datetime.datetime.utcnow().isoformat() + "Z",
+        )
+    else:
+        # Legacy flat parameters
+        processing_mode = "legacy_flat"
+        param_contract = "legacy_flat"
+
+        # Extract legacy fields from request
+        wavelength = getattr(request, 'wavelength', None)
+        theta_min = getattr(request, 'theta_min', None)
+        theta_max = getattr(request, 'theta_max', None)
+
+        return XRDProcessingProvenance(
+            parameter_contract_version=param_contract,
+            backend_schema_version="1.0.0",
+            processing_mode=processing_mode,
+            received_grouped_parameters=False,
+            received_dataset_context=has_dataset_ctx,
+            received_local_reference=has_local_ref,
+            local_reference_enabled=has_local_ref,
+            reference_match_enabled=False,  # Legacy doesn't have explicit reference match toggle
+            reference_set_id=None,
+            radiation_source=None,  # Not available in legacy
+            wavelength_angstrom=wavelength,
+            two_theta_min=theta_min,
+            two_theta_max=theta_max,
+            baseline_method=None,  # Would need to extract from config if needed
+            smoothing_method=None,
+            peak_fit_model=None,
+            peak_detection_min_prominence=None,
+            max_peak_count=None,
+            created_at=datetime.datetime.utcnow().isoformat() + "Z",
+        )
+
+
 # ============================================================================
 # Helper: convert engine results to API response
 # ============================================================================
@@ -185,6 +289,7 @@ def _build_response(
     reference_match_v2_result=None,
     general_sample_assessment=None,
     xrd_claim_boundary=None,
+    request=None,
 ) -> XRDProcessResponse:
     """
     Convert engine ProcessingResult to an API response model.
@@ -255,6 +360,10 @@ def _build_response(
     if reference_match_v2_result is not None:
         ref_match_v2_resp = XRDReferenceMatchResult(**reference_match_v2_result)
 
+    # Phase X1: Build echo and provenance
+    dataset_context_echo = _build_dataset_context_echo(request) if request else None
+    processing_provenance = _build_processing_provenance(request) if request else None
+
     return XRDProcessResponse(
         x=result.x.tolist(),
         y_raw=result.y_raw.tolist(),
@@ -271,6 +380,8 @@ def _build_response(
         sn_ratio=result.sn_ratio,
         baseline_deviation=result.baseline_deviation,
         peak_resolution=result.peak_resolution,
+        dataset_context_echo=dataset_context_echo,
+        processing_provenance=processing_provenance,
     )
 
 
@@ -466,6 +577,7 @@ async def process_xrd(request: XRDProcessRequest):
             reference_match_v2_result,
             general_assessment_model,
             claim_boundary_model,
+            request=request,
         )
 
     except ValueError as exc:

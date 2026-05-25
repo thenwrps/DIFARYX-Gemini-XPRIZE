@@ -394,6 +394,114 @@ class PhaseMatchResponse(BaseModel):
     summary: str
 
 
+
+
+class XRDDatasetContextEcho(BaseModel):
+    """
+    Dataset context echo response (Phase X1).
+
+    Returns normalized dataset context from the request so evidence records
+    become self-contained and downstream handoff doesn't need to re-read
+    workspace state.
+    """
+    sample_id: Optional[str] = None
+    sample_name: Optional[str] = None
+    material_class: Optional[str] = None
+    known_elements: List[str] = Field(default_factory=list)
+    declared_phases: List[str] = Field(default_factory=list)
+    candidate_phase_ids: List[str] = Field(default_factory=list)
+    excluded_phase_ids: List[str] = Field(default_factory=list)
+    reference_source: Optional[str] = None
+    reference_set_id: Optional[str] = None
+    identity_source: Optional[str] = None
+    identity_confidence: Optional[str] = None
+
+
+class XRDProcessingProvenance(BaseModel):
+    """
+    Processing provenance metadata (Phase X1).
+
+    Documents which parameter contract version was used, what was received
+    from the request, and key processing configuration for downstream
+    citation and reproducibility.
+    """
+    parameter_contract_version: str = Field(
+        default="grouped_v1",
+        description="Parameter contract version: legacy_flat | grouped_v1 | mixed",
+    )
+    backend_schema_version: str = Field(
+        default="1.0.0",
+        description="Backend schema version",
+    )
+    processing_mode: str = Field(
+        default="legacy_flat",
+        description="Processing mode: legacy_flat | grouped_parameters | mixed_legacy_grouped",
+    )
+    received_grouped_parameters: bool = Field(
+        default=False,
+        description="Whether request included grouped parameters field",
+    )
+    received_dataset_context: bool = Field(
+        default=False,
+        description="Whether request included dataset_context field",
+    )
+    received_local_reference: bool = Field(
+        default=False,
+        description="Whether request included local_reference field",
+    )
+    local_reference_enabled: bool = Field(
+        default=False,
+        description="Whether local reference matching was enabled",
+    )
+    reference_match_enabled: bool = Field(
+        default=False,
+        description="Whether reference matching was enabled",
+    )
+    reference_set_id: Optional[str] = Field(
+        default=None,
+        description="Active reference set ID",
+    )
+    radiation_source: Optional[str] = Field(
+        default=None,
+        description="Radiation source identifier",
+    )
+    wavelength_angstrom: Optional[float] = Field(
+        default=None,
+        description="Wavelength in angstroms",
+    )
+    two_theta_min: Optional[float] = Field(
+        default=None,
+        description="2theta range minimum",
+    )
+    two_theta_max: Optional[float] = Field(
+        default=None,
+        description="2theta range maximum",
+    )
+    baseline_method: Optional[str] = Field(
+        default=None,
+        description="Baseline correction method",
+    )
+    smoothing_method: Optional[str] = Field(
+        default=None,
+        description="Smoothing method",
+    )
+    peak_fit_model: Optional[str] = Field(
+        default=None,
+        description="Peak fitting model",
+    )
+    peak_detection_min_prominence: Optional[float] = Field(
+        default=None,
+        description="Peak detection minimum prominence threshold",
+    )
+    max_peak_count: Optional[int] = Field(
+        default=None,
+        description="Maximum peak count limit",
+    )
+    created_at: Optional[str] = Field(
+        default=None,
+        description="ISO timestamp of processing",
+    )
+
 class XRDProcessResponse(BaseModel):
     """Full XRD processing pipeline response."""
     x: List[float] = Field(description="2θ angle array.")
@@ -434,6 +542,14 @@ class XRDProcessResponse(BaseModel):
     peak_resolution: str = Field(
         default="screening-grade",
         description="Peak resolution classification: high-resolution | publication-limited | screening-grade.",
+    )
+    dataset_context_echo: Optional[XRDDatasetContextEcho] = Field(
+        default=None,
+        description="Phase X1: Echoed dataset context from request for self-contained evidence records.",
+    )
+    processing_provenance: Optional[XRDProcessingProvenance] = Field(
+        default=None,
+        description="Phase X1: Processing provenance metadata for reproducibility and citation.",
     )
 
 

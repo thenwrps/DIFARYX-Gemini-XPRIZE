@@ -118,6 +118,46 @@ export interface XRDReferenceMatchV2 {
   [key: string]: unknown;
 }
 
+// ── Phase X1: Backend echo types ────────────────────────────────────
+
+export interface XRDDatasetContextEcho {
+  sample_id?: string | null;
+  sample_name?: string | null;
+  material_class?: string | null;
+  known_elements: string[];
+  declared_phases: string[];
+  candidate_phase_ids: string[];
+  excluded_phase_ids: string[];
+  reference_source?: string | null;
+  reference_set_id?: string | null;
+  identity_source?: string | null;
+  identity_confidence?: string | null;
+  [key: string]: unknown;
+}
+
+export interface XRDProcessingProvenance {
+  parameter_contract_version: string;
+  backend_schema_version: string;
+  processing_mode: string;
+  received_grouped_parameters: boolean;
+  received_dataset_context: boolean;
+  received_local_reference: boolean;
+  local_reference_enabled: boolean;
+  reference_match_enabled: boolean;
+  reference_set_id?: string | null;
+  radiation_source?: string | null;
+  wavelength_angstrom?: number | null;
+  two_theta_min?: number | null;
+  two_theta_max?: number | null;
+  baseline_method?: string | null;
+  smoothing_method?: string | null;
+  peak_fit_model?: string | null;
+  peak_detection_min_prominence?: number | null;
+  max_peak_count?: number | null;
+  created_at?: string | null;
+  [key: string]: unknown;
+}
+
 // ── Full processing response ────────────────────────────────────────
 
 export type XRDPeakResolution =
@@ -140,6 +180,8 @@ export interface XRDProcessResponse {
   sn_ratio: number;
   baseline_deviation: number;
   peak_resolution: XRDPeakResolution;
+  dataset_context_echo?: XRDDatasetContextEcho | null;
+  processing_provenance?: XRDProcessingProvenance | null;
   [key: string]: unknown;
 }
 
@@ -330,6 +372,8 @@ export interface XRDNormalizedResult {
   raw: XRDProcessResponse;
   scientificEvidenceObject?: ScientificEvidenceObject;
   referenceMatchV2?: XRDReferenceMatchV2 | null;
+  datasetContextEcho?: XRDDatasetContextEcho | null;
+  processingProvenance?: XRDProcessingProvenance | null;
   detectedPeakCount: number;
   fittedPeakCount: number;
   snRatio: number;

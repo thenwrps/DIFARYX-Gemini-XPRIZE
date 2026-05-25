@@ -13,7 +13,13 @@
  * stay well within localStorage limits.
  */
 
-import type { ScientificEvidenceObject, XRDNormalizedResult, XRDReferenceMatchV2 } from '../types/xrdBackend';
+import type {
+  ScientificEvidenceObject,
+  XRDNormalizedResult,
+  XRDReferenceMatchV2,
+  XRDDatasetContextEcho,
+  XRDProcessingProvenance,
+} from '../types/xrdBackend';
 
 // ── Storage key ─────────────────────────────────────────────────────
 
@@ -61,6 +67,10 @@ export interface XRDBackendEvidenceRecord {
   referenceMatchV2Summary?: XRDReferenceMatchV2EvidenceSummary;
   /** Full JSON-safe skill evidence when it remains small enough for localStorage. */
   scientificEvidenceObject?: ScientificEvidenceObject;
+  /** Phase X1: Echoed dataset context from backend for self-contained evidence. */
+  datasetContextEcho?: XRDDatasetContextEcho | null;
+  /** Phase X1: Processing provenance for reproducibility and citation. */
+  processingProvenance?: XRDProcessingProvenance | null;
 }
 
 export interface XRDSkillEvidenceSummary {
@@ -297,6 +307,8 @@ export function saveXrdBackendEvidenceResult(
     ...(scientificEvidenceSummary ? { scientificEvidenceSummary } : {}),
     ...(referenceMatchV2Summary ? { referenceMatchV2Summary } : {}),
     ...(scientificEvidenceObject ? { scientificEvidenceObject } : {}),
+    ...(result.datasetContextEcho ? { datasetContextEcho: result.datasetContextEcho } : {}),
+    ...(result.processingProvenance ? { processingProvenance: result.processingProvenance } : {}),
   };
 
   const existing = readAll();

@@ -260,6 +260,8 @@ export function normalizeXrdBackendResponse(
   return {
     raw,
     referenceMatchV2: raw.reference_match_v2 ?? null,
+    datasetContextEcho: raw.dataset_context_echo ?? null,
+    processingProvenance: raw.processing_provenance ?? null,
     detectedPeakCount: raw.detected_peaks?.length ?? 0,
     fittedPeakCount: raw.fitted_peaks?.length ?? 0,
     snRatio: raw.sn_ratio ?? 0,
