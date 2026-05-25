@@ -11,6 +11,11 @@ import {
   getLatestExperimentConditionLock,
 } from './experimentConditionLock';
 import type { XRDReferenceMatchV2EvidenceSummary } from './xrdBackendEvidence';
+import type {
+  XRDWorkflowReferenceMatchEvidence,
+  XRDWorkflowScientificEvidence,
+  XRDWorkflowHandoffState,
+} from '../types/xrdWorkflowContract';
 
 export type NotebookTemplateMode = 'research' | 'rd' | 'analytical';
 export type ReportTemplate = 'manuscript' | 'technical_report' | 'analytical_report';
@@ -103,6 +108,7 @@ export interface NotebookEntry {
     phaseSummary: string | null;
     savedAt: string;
     caveat: string;
+    /** @deprecated Legacy compact skill evidence. Use workflowScientificEvidence for new records. */
     scientificEvidenceSummary?: {
       evidenceId: string;
       skillId: string;
@@ -114,6 +120,13 @@ export interface NotebookEntry {
       claimBoundary: 'validation-limited scientific claim';
     };
   };
+  /** Phase X4: Unified XRD workflow handoff state combining X1, X2, X3 evidence. */
+  xrdWorkflowHandoffState?: XRDWorkflowHandoffState;
+  /** Phase X3: Structured scientific evidence for Agent/Notebook/Report handoff. */
+  workflowScientificEvidence?: XRDWorkflowScientificEvidence;
+  /** Phase X2: Structured reference match evidence for Agent/Notebook/Report handoff. */
+  workflowReferenceMatchEvidence?: XRDWorkflowReferenceMatchEvidence;
+  /** @deprecated Phase X5A: Use xrdWorkflowHandoffState or selectXrdWorkflowReferenceMatchEvidence() selector. */
   xrdReferenceMatchV2Summary?: NotebookXrdReferenceMatchV2Summary;
 }
 

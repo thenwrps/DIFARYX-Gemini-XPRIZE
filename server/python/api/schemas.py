@@ -554,10 +554,26 @@ class XRDProcessResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Health check response."""
-    status: str = "ok"
-    engine: str = "xrd"
-    version: str = "1.0.0"
+    """
+    Production-ready health check response (Step 5).
+    
+    Differentiates between liveness (service running) and readiness
+    (dependencies loaded and ready to serve requests).
+    """
+    status: str = Field(
+        default="healthy",
+        description="Liveness status: 'healthy' if service is running"
+    )
+    engine: str = Field(default="xrd", description="Engine identifier")
+    version: str = Field(default="1.1.0", description="API version")
+    schema_version: Optional[str] = Field(
+        default="1.1.0",
+        description="Backend schema version for response compatibility"
+    )
+    readiness: Optional[Dict[str, bool]] = Field(
+        default=None,
+        description="Readiness checks: engine_loaded, reference_registry_loaded"
+    )
 
 
 class ErrorResponse(BaseModel):

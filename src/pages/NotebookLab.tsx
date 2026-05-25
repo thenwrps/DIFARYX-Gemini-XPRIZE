@@ -7,6 +7,7 @@ import { Card } from '../components/ui/Card';
 import { AIInsightPanel } from '../components/ui/AIInsightPanel';
 import { ExperimentModal } from '../components/workspace/ExperimentModal';
 import { useAuth } from '../contexts/AuthContext';
+import { useXrdWorkflowRuntime } from '../context/XrdWorkflowRuntimeContext';
 import { formatChemicalFormula } from '../utils';
 import {
   ProcessingRun,
@@ -58,6 +59,14 @@ import {
   saveProcessingResult,
   type NotebookTemplateMode,
 } from '../data/workflowPipeline';
+import {
+  selectXrdWorkflowScientificEvidence,
+  selectXrdWorkflowReferenceMatchEvidence,
+  extractScientificEvidenceFields,
+  extractReferenceMatchFields,
+  selectXrdQualityMetrics,
+  selectXrdPhaseMatchSummary,
+} from '../data/xrdWorkflowHandoffSelectors';
 import {
   XRD_DEMO_DATASETS,
   getXrdProjectCompatibility,
@@ -854,6 +863,12 @@ function NotebookLabContent({ routeContext }: { routeContext: EvidenceRouteConte
   );
   const [feedback, setFeedback] = useState('');
   const [approvalAction, setApprovalAction] = useState<ApprovalActionPreview | null>(null);
+
+  // Phase X6C: Runtime context orchestration for validation state
+  const {
+    isValidated7E4: runtimeIsValidated,
+    currentEvidence: runtimeEvidence,
+  } = useXrdWorkflowRuntime();
 
   // Bundle gating: only create bundle when appropriate (not for uploaded evidence)
   const evidenceBundle = useMemo(() => {
@@ -1777,6 +1792,12 @@ ${approvalLedgerMarkdown}
                     <span className={`h-6 px-2 flex items-center rounded text-[10px] font-semibold ${hasMatchedNotebookData ? claimStatusColorClass(registryProject.claimStatus) : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>{displayNotebookStatus}</span>
                     <span className="h-6 px-2 flex items-center rounded bg-blue-50 border border-blue-200 text-[10px] font-semibold text-blue-700">{registryProject.reportReadiness}% ready</span>
                     <span className="h-6 px-2 flex items-center rounded bg-cyan-50 border border-cyan-200 text-[10px] font-semibold text-cyan-700">{evidenceSnapshot.availableTechniques.join(', ') || 'Pending'}</span>
+                    {/* Phase X6C: Runtime validation badge from workspace context */}
+                    {runtimeIsValidated && runtimeEvidence && (
+                      <span className="h-6 px-2 flex items-center rounded bg-emerald-50 border border-emerald-600 text-[10px] font-semibold text-emerald-700">
+                        7E.4 Validated
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1.5">
@@ -2228,8 +2249,10 @@ ${approvalLedgerMarkdown}
                 </div>
                 {workflowNotebookEntry?.xrdBackendEvidenceSummary && (() => {
                   const xbe = workflowNotebookEntry.xrdBackendEvidenceSummary;
-                  const formatSn = Number.isFinite(xbe.snRatio) ? (xbe.snRatio as number).toFixed(1) : 'N/A';
-                  const formatBaseline = Number.isFinite(xbe.baselineDeviation) ? (xbe.baselineDeviation as number).toFixed(3) : 'N/A';
+                  const qm = selectXrdQualityMetrics(workflowNotebookEntry) || xbe;
+                  const pm = selectXrdPhaseMatchSummary(workflowNotebookEntry) || xbe;
+                  const formatSn = Number.isFinite(qm.snRatio) ? (qm.snRatio as number).toFixed(1) : 'N/A';
+                  const formatBaseline = Number.isFinite(qm.baselineDeviation) ? (qm.baselineDeviation as number).toFixed(3) : 'N/A';
                   const formatSavedAt = (() => {
                     try {
                       const d = new Date(xbe.savedAt);
@@ -2242,28 +2265,35 @@ ${approvalLedgerMarkdown}
                     <div className="rounded-md border border-border bg-surface px-3 py-2">
                       <div className="text-[10px] font-semibold uppercase tracking-wider text-text-dim mb-1.5">{xbe.label}</div>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3 lg:grid-cols-4">
-                        <div><span className="text-text-dim">Detected peaks:</span> <span className="font-semibold text-text-main">{xbe.detectedPeakCount}</span></div>
-                        <div><span className="text-text-dim">Fitted peaks:</span> <span className="font-semibold text-text-main">{xbe.fittedPeakCount}</span></div>
+                        <div><span className="text-text-dim">Detected peaks:</span> <span className="font-semibold text-text-main">{qm.detectedPeakCount}</span></div>
+                        <div><span className="text-text-dim">Fitted peaks:</span> <span className="font-semibold text-text-main">{qm.fittedPeakCount}</span></div>
                         <div><span className="text-text-dim">S/N ratio:</span> <span className="font-semibold text-text-main">{formatSn}</span></div>
                         <div><span className="text-text-dim">Baseline deviation:</span> <span className="font-semibold text-text-main">{formatBaseline}</span></div>
-                        <div><span className="text-text-dim">Peak resolution:</span> <span className="font-semibold text-text-main">{xbe.peakResolution ?? 'N/A'}</span></div>
-                        <div><span className="text-text-dim">Matched peaks:</span> <span className="font-semibold text-text-main">{xbe.matchedPeakCount}</span></div>
+                        <div><span className="text-text-dim">Peak resolution:</span> <span className="font-semibold text-text-main">{qm.peakResolution ?? 'N/A'}</span></div>
+                        <div><span className="text-text-dim">Matched peaks:</span> <span className="font-semibold text-text-main">{pm?.matchedPeakCount ?? 0}</span></div>
                       </div>
-                      {xbe.primaryPhase && (
+                      {pm?.primaryPhase && (
                         <div className="mt-1.5 text-xs">
                           <span className="text-text-dim">Reference-supported phase indication:</span>{' '}
-                          <span className="font-semibold text-text-main">{xbe.primaryPhase}</span>
+                          <span className="font-semibold text-text-main">{pm.primaryPhase}</span>
                         </div>
                       )}
-                      {xbe.scientificEvidenceSummary && (
-                        <div className="mt-1.5 space-y-0.5 text-xs">
-                          <p className="font-semibold text-text-main">Scientific evidence object received</p>
-                          <p className="text-text-muted">Skill: {xbe.scientificEvidenceSummary.skillLabel}</p>
-                          <p className="break-all text-text-muted">Evidence ID: {xbe.scientificEvidenceSummary.evidenceId}</p>
-                          <p className="break-all text-text-muted">Input reference: SHA-256 {xbe.scientificEvidenceSummary.inputReference}</p>
-                          <p className="text-text-muted">Claim boundary: {xbe.scientificEvidenceSummary.claimBoundary}</p>
-                        </div>
-                      )}
+                      {/* Phase X5C: Pure renderer using centralized selectors */}
+                      {(() => {
+                        const sciEvidence = selectXrdWorkflowScientificEvidence(workflowNotebookEntry || { xrdBackendEvidenceSummary: xbe });
+                        if (!sciEvidence) return null;
+                        const fields = extractScientificEvidenceFields(sciEvidence);
+                        if (!fields) return null;
+                        return (
+                          <div className="mt-1.5 space-y-0.5 text-xs">
+                            <p className="font-semibold text-text-main">Scientific evidence object received</p>
+                            <p className="text-text-muted">Skill: {fields.skillLabel}</p>
+                            <p className="break-all text-text-muted">Evidence ID: {fields.evidenceId}</p>
+                            <p className="break-all text-text-muted">Input reference: SHA-256 {fields.inputReference}</p>
+                            <p className="text-text-muted">Claim boundary: {fields.claimBoundary}</p>
+                          </div>
+                        );
+                      })()}
                       {xbe.phaseSummary && (
                         <p className="mt-1 text-xs text-text-muted">{xbe.phaseSummary}</p>
                       )}
@@ -2274,8 +2304,12 @@ ${approvalLedgerMarkdown}
                     </div>
                   );
                 })()}
-                {workflowNotebookEntry?.xrdReferenceMatchV2Summary && (() => {
-                  const rm = workflowNotebookEntry.xrdReferenceMatchV2Summary;
+                {/* Phase X5A: Use selector helper for unified handoff → individual → legacy fallback */}
+                {(() => {
+                  const refEvidence = selectXrdWorkflowReferenceMatchEvidence(workflowNotebookEntry);
+                  if (!refEvidence) return null;
+                  const rm = extractReferenceMatchFields(refEvidence);
+                  if (!rm) return null;
                   const primary = rm.primaryCandidate;
                   const status = safeNotebookReferenceCandidateText(rm.status) ?? 'candidate evidence';
                   const claimLevel = safeNotebookReferenceCandidateText(rm.claimLevel) ?? 'candidate evidence';

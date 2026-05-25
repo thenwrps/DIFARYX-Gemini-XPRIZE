@@ -6,6 +6,7 @@ const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
+import { XrdWorkflowRuntimeProvider } from "./context/XrdWorkflowRuntimeContext";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -133,145 +134,147 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        <Suspense fallback={<AppRouteLoading />}>
-          <Routes>
-            <Route path="/" element={<Landing />} />
+        <XrdWorkflowRuntimeProvider>
+          <Suspense fallback={<AppRouteLoading />}>
+            <Routes>
+              <Route path="/" element={<Landing />} />
 
-            <Route path="/login" element={<SignIn />} />
-            <Route path="/signin" element={<SignIn />} />
-            <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/login" element={<SignIn />} />
+              <Route path="/signin" element={<SignIn />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
 
-            <Route path="/dashboard" element={protectedRoute(<Dashboard />)} />
-            <Route path="/projects" element={protectedRoute(<Dashboard />)} />
+              <Route path="/dashboard" element={protectedRoute(<Dashboard />)} />
+              <Route path="/projects" element={protectedRoute(<Dashboard />)} />
 
-            <Route
-              path="/project/:projectId"
-              element={protectedRoute(<ProjectDetail />)}
-            />
+              <Route
+                path="/project/:projectId"
+                element={protectedRoute(<ProjectDetail />)}
+              />
 
-            <Route
-              path="/project/:projectId/evidence"
-              element={protectedRoute(<ProjectEvidenceRegistry />)}
-            />
+              <Route
+                path="/project/:projectId/evidence"
+                element={protectedRoute(<ProjectEvidenceRegistry />)}
+              />
 
-            <Route
-              path="/analysis"
-              element={protectedRoute(<AnalysisWorkspaceHome />)}
-            />
+              <Route
+                path="/analysis"
+                element={protectedRoute(<AnalysisWorkspaceHome />)}
+              />
 
-            <Route
-              path="/analysis/new"
-              element={protectedRoute(<AnalysisNew />)}
-            />
+              <Route
+                path="/analysis/new"
+                element={protectedRoute(<AnalysisNew />)}
+              />
 
-            <Route
-              path="/analysis/session/:analysisId"
-              element={protectedRoute(<AnalysisSessionPage />)}
-            />
+              <Route
+                path="/analysis/session/:analysisId"
+                element={protectedRoute(<AnalysisSessionPage />)}
+              />
 
-            <Route
-              path="/analysis/session/:analysisId/save"
-              element={protectedRoute(<AnalysisSessionPage />)}
-            />
+              <Route
+                path="/analysis/session/:analysisId/save"
+                element={protectedRoute(<AnalysisSessionPage />)}
+              />
 
-            <Route
-              path="/analysis/session/:analysisId/attach"
-              element={protectedRoute(<AnalysisSessionPage />)}
-            />
+              <Route
+                path="/analysis/session/:analysisId/attach"
+                element={protectedRoute(<AnalysisSessionPage />)}
+              />
 
-            <Route
-              path="/analysis/session/:analysisId/export"
-              element={protectedRoute(<AnalysisSessionPage />)}
-            />
+              <Route
+                path="/analysis/session/:analysisId/export"
+                element={protectedRoute(<AnalysisSessionPage />)}
+              />
 
-            <Route
-              path="/analysis/session/:analysisId/versions"
-              element={protectedRoute(<AnalysisSessionPage />)}
-            />
+              <Route
+                path="/analysis/session/:analysisId/versions"
+                element={protectedRoute(<AnalysisSessionPage />)}
+              />
 
-            <Route
-              path="/workspace"
-              element={protectedRoute(<WorkspaceLauncher />)}
-            />
+              <Route
+                path="/workspace"
+                element={protectedRoute(<WorkspaceLauncher />)}
+              />
 
-            <Route
-              path="/workspace/multi"
-              element={protectedRoute(<MultiTechWorkspace />)}
-            />
+              <Route
+                path="/workspace/multi"
+                element={protectedRoute(<MultiTechWorkspace />)}
+              />
 
-            {/* Analysis Workspace alias - project-scoped entry that surfaces
-               technique selection and recent workspace history for the project. */}
-            <Route
-              path="/workspace/analysis"
-              element={protectedRoute(<WorkspaceLauncher />)}
-            />
+              {/* Analysis Workspace alias - project-scoped entry that surfaces
+                 technique selection and recent workspace history for the project. */}
+              <Route
+                path="/workspace/analysis"
+                element={protectedRoute(<WorkspaceLauncher />)}
+              />
 
-            <Route
-              path="/workspace/xrd"
-              element={protectedRoute(<XRDWorkspace />)}
-            />
+              <Route
+                path="/workspace/xrd"
+                element={protectedRoute(<XRDWorkspace />)}
+              />
 
-            <Route
-              path="/workspace/xps"
-              element={protectedRoute(<XPSWorkspace />)}
-            />
+              <Route
+                path="/workspace/xps"
+                element={protectedRoute(<XPSWorkspace />)}
+              />
 
-            <Route
-              path="/workspace/ftir"
-              element={protectedRoute(<FTIRWorkspace />)}
-            />
+              <Route
+                path="/workspace/ftir"
+                element={protectedRoute(<FTIRWorkspace />)}
+              />
 
-            <Route
-              path="/workspace/raman"
-              element={protectedRoute(<RamanWorkspace />)}
-            />
+              <Route
+                path="/workspace/raman"
+                element={protectedRoute(<RamanWorkspace />)}
+              />
 
-            <Route
-              path="/workspace/fusion"
-              element={protectedRoute(<FusionWorkspace />)}
-            />
+              <Route
+                path="/workspace/fusion"
+                element={protectedRoute(<FusionWorkspace />)}
+              />
 
-            <Route
-              path="/workspace/:technique"
-              element={protectedRoute(<TechniqueWorkspace />)}
-            />
+              <Route
+                path="/workspace/:technique"
+                element={protectedRoute(<TechniqueWorkspace />)}
+              />
 
-            <Route
-              path="/notebook"
-              element={protectedRoute(<NotebookLab />)}
-            />
+              <Route
+                path="/notebook"
+                element={protectedRoute(<NotebookLab />)}
+              />
 
-            <Route
-              path="/reports"
-              element={protectedRoute(<ReportBuilder />)}
-            />
+              <Route
+                path="/reports"
+                element={protectedRoute(<ReportBuilder />)}
+              />
 
-            <Route
-              path="/report"
-              element={protectedRoute(<ReportBuilder />)}
-            />
+              <Route
+                path="/report"
+                element={protectedRoute(<ReportBuilder />)}
+              />
 
-            <Route
-              path="/history"
-              element={protectedRoute(<HistoryPage />)}
-            />
+              <Route
+                path="/history"
+                element={protectedRoute(<HistoryPage />)}
+              />
 
-            <Route
-              path="/settings"
-              element={protectedRoute(<SettingsPage />)}
-            />
+              <Route
+                path="/settings"
+                element={protectedRoute(<SettingsPage />)}
+              />
 
-            <Route
-              path="/agent"
-              element={protectedRoute(<AgentDemo />)}
-            />
+              <Route
+                path="/agent"
+                element={protectedRoute(<AgentDemo />)}
+              />
 
-            <Route
-              path="/demo/agent"
-              element={protectedRoute(<AgentDemo />)}
-            />
-          </Routes>
-        </Suspense>
+              <Route
+                path="/demo/agent"
+                element={protectedRoute(<AgentDemo />)}
+              />
+            </Routes>
+          </Suspense>
+        </XrdWorkflowRuntimeProvider>
       </Router>
     </AuthProvider>
   );

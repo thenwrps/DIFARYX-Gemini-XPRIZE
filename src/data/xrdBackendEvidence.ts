@@ -20,6 +20,12 @@ import type {
   XRDDatasetContextEcho,
   XRDProcessingProvenance,
 } from '../types/xrdBackend';
+import type {
+  XRDWorkflowReferenceMatchEvidence,
+  XRDWorkflowScientificEvidence,
+  XRDWorkflowHandoffState,
+} from '../types/xrdWorkflowContract';
+import { mapReferenceMatchV2ToWorkflow, mapScientificEvidenceToWorkflow } from '../types/xrdWorkflowContract';
 
 // ── Storage key ─────────────────────────────────────────────────────
 
@@ -61,9 +67,55 @@ export interface XRDBackendEvidenceRecord {
   isPhaseMatched: boolean;
   /** Number of residual points available (full array excluded for size). */
   yResidualCount: number;
-  /** Compact skill handoff metadata persisted even when the full object is too large. */
+  /** Phase X3: Structured scientific evidence for Agent/Notebook/Report handoff. */
+  workflowScientificEvidence?: XRDWorkflowScientificEvidence;
+  /** @deprecated Phase X5A: Use xrdWorkflowHandoffState or selectXrdWorkflowScientificEvidence() selector. */
   scientificEvidenceSummary?: XRDSkillEvidenceSummary;
-  /** Compact reference candidate evidence persisted for later handoff. */
+  /** Phase X2: Structured reference match evidence for Agent/Notebook/Report handoff. */
+  workflowReferenceMatchEvidence?: XRDWorkflowReferenceMatchEvidence;
+  /** @deprecated Phase X5A: Use xrdWorkflowHandoffState or selectXrdWorkflowReferenceMatchEvidence() selector. */
+  referenceMatchV2Summary?: XRDReferenceMatchV2EvidenceSummary;
+  /** Full JSON-safe skill evidence when it remains small enough for localStorage. */
+  scientificEvidenceObject?: ScientificEvidenceObject;
+  /** Phase X1: Echoed dataset context from backend for self-contained evidence. */
+  datasetContextEcho?: XRDDatasetContextEcho | null;
+  /** Phase X1: Processing provenance for reproducibility and citation. */
+  processingProvenance?: XRDProcessingProvenance | null;
+  /** 
+   * Phase X4: Unified XRD workflow handoff state combining X1, X2, and X3 evidence.
+   * THIS IS THE ULTIMATE CANONICAL SOURCE OF TRUTH for XRD backend evidence.
+   * All consumer surfaces must resolve information through this state via the selector layer.
+   */
+  xrdWorkflowHandoffState?: XRDWorkflowHandoffState;
+
+  // ── Legacy / Secondary Properties (Preserved for Fallback/Backward Compatibility) ─────────────────────────────
+  /** @deprecated Use selectXrdQualityMetrics selector instead. */
+  detectedPeakCount?: number;
+  /** @deprecated Use selectXrdQualityMetrics selector instead. */
+  fittedPeakCount?: number;
+  /** @deprecated Use selectXrdQualityMetrics selector instead. */
+  snRatio?: number;
+  /** @deprecated Use selectXrdQualityMetrics selector instead. */
+  baselineDeviation?: number;
+  /** @deprecated Use selectXrdQualityMetrics selector instead. */
+  peakResolution?: XRDNormalizedResult['peakResolution'];
+  /** @deprecated Use selectXrdPhaseMatchSummary selector instead. */
+  primaryPhase?: string | null;
+  /** @deprecated Use selectXrdPhaseMatchSummary selector instead. */
+  matchedPeakCount?: number;
+  /** @deprecated Use selectXrdPhaseMatchSummary selector instead. */
+  phaseSummary?: string | null;
+  /** @deprecated Use selectXrdPhaseMatchSummary selector instead. */
+  isPhaseMatched?: boolean;
+  /** Number of residual points available (full array excluded for size). */
+  yResidualCount: number;
+  /** Phase X3: Structured scientific evidence for Agent/Notebook/Report handoff. */
+  workflowScientificEvidence?: XRDWorkflowScientificEvidence;
+  /** @deprecated Phase X5A: Use xrdWorkflowHandoffState or selectXrdWorkflowScientificEvidence() selector. */
+  scientificEvidenceSummary?: XRDSkillEvidenceSummary;
+  /** Phase X2: Structured reference match evidence for Agent/Notebook/Report handoff. */
+  workflowReferenceMatchEvidence?: XRDWorkflowReferenceMatchEvidence;
+  /** @deprecated Phase X5A: Use xrdWorkflowHandoffState or selectXrdWorkflowReferenceMatchEvidence() selector. */
   referenceMatchV2Summary?: XRDReferenceMatchV2EvidenceSummary;
   /** Full JSON-safe skill evidence when it remains small enough for localStorage. */
   scientificEvidenceObject?: ScientificEvidenceObject;
@@ -270,6 +322,89 @@ export function buildReferenceMatchV2EvidenceSummary(
   };
 }
 
+/**
+ * Phase X4: Build unified XRD workflow handoff state from backend evidence components.
+ * Consolidates X1 (dataset/provenance), X2 (reference match), X3 (scientific evidence).
+ */
+function buildXrdWorkflowHandoffState(
+  projectId: string,
+  uploadedRunId: string | undefined,
+  fileName: string | undefined,
+  timestamp: string,
+  detectedPeakCount: number,
+  fittedPeakCount: number,
+  snRatio: number,
+  baselineDeviation: number,
+  peakResolution: string | null,
+  isPhaseMatched: boolean,
+  primaryPhase: string | null,
+  matchedPeakCount: number,
+  phaseSummary: string | null,
+  datasetContextEcho: XRDDatasetContextEcho | null | undefined,
+  processingProvenance: XRDProcessingProvenance | null | undefined,
+  workflowReferenceMatchEvidence: XRDWorkflowReferenceMatchEvidence | undefined,
+  workflowScientificEvidence: XRDWorkflowScientificEvidence | undefined,
+): XRDWorkflowHandoffState {
+  const handoffId = `xrd-handoff-${timestamp}-${Math.random().toString(36).substring(2, 9)}`;
+  const validationGaps: string[] = [];
+
+  // Aggregate validation gaps from scientific evidence
+  if (workflowScientificEvidence?.validationGaps) {
+    validationGaps.push(...workflowScientificEvidence.validationGaps);
+  }
+
+  // Aggregate validation gaps from reference match evidence
+  if (workflowReferenceMatchEvidence?.limitations) {
+    validationGaps.push(...workflowReferenceMatchEvidence.limitations);
+  }
+
+  // CRITICAL: Align and append strict scientific guardrails if matching occurs
+  if (isPhaseMatched || workflowReferenceMatchEvidence) {
+    const guardrails = [
+      'This is not chemical identity confirmation.',
+      'This is not phase purity confirmation.',
+    ];
+    for (const guardrail of guardrails) {
+      if (!validationGaps.includes(guardrail)) {
+        validationGaps.push(guardrail);
+      }
+    }
+  }
+
+  return {
+    handoffId,
+    technique: 'xrd',
+    createdAt: timestamp,
+    mappedAt: new Date().toISOString(),
+    runId: uploadedRunId || `run-${timestamp}`,
+    projectId,
+    uploadedRunId,
+    fileName,
+    sourceEvidenceRecordId: `${projectId}-${uploadedRunId || fileName || timestamp}`,
+    datasetContextEcho: datasetContextEcho ?? undefined,
+    processingProvenance: processingProvenance ?? undefined,
+    workflowReferenceMatchEvidence,
+    workflowScientificEvidence,
+    qualityMetrics: {
+      detectedPeakCount,
+      fittedPeakCount,
+      snRatio,
+      baselineDeviation,
+      peakResolution,
+    },
+    phaseMatchSummary: isPhaseMatched
+      ? {
+          isPhaseMatched,
+          primaryPhase,
+          matchedPeakCount,
+          phaseSummary,
+        }
+      : undefined,
+    claimBoundary: 'validation-limited',
+    validationGaps,
+  };
+}
+
 // ── Public API ──────────────────────────────────────────────────────
 
 /**
@@ -285,9 +420,72 @@ export function saveXrdBackendEvidenceResult(
 ): XRDBackendEvidenceRecord {
   const effectiveProjectId = projectId?.trim() || '__unassigned__';
   const timestamp = new Date().toISOString();
+
+  // Phase X3: Map scientific evidence object to structured workflow evidence
+  const workflowScientificEvidence = result.scientificEvidenceObject
+    ? mapScientificEvidenceToWorkflow(result.scientificEvidenceObject)
+    : undefined;
+
+  // Legacy: Keep scientificEvidenceSummary for backward compatibility during migration
   const scientificEvidenceSummary = makeScientificEvidenceSummary(result.scientificEvidenceObject);
   const scientificEvidenceObject = cloneSmallJsonSafeEvidenceObject(result.scientificEvidenceObject);
+
+  // Phase X2: Map reference match v2 to structured workflow evidence
+  const workflowReferenceMatchEvidence = result.referenceMatchV2
+    ? mapReferenceMatchV2ToWorkflow(result.referenceMatchV2)
+    : undefined;
+
+  // CRITICAL: Align and append strict scientific guardrails directly inside this saving transaction block if matching occurs
+  if (workflowReferenceMatchEvidence) {
+    const limits = workflowReferenceMatchEvidence.limitations || [];
+    const guardrails = [
+      'This is not chemical identity confirmation.',
+      'This is not phase purity confirmation.',
+    ];
+    for (const guardrail of guardrails) {
+      if (!limits.includes(guardrail)) {
+        limits.push(guardrail);
+      }
+    }
+    workflowReferenceMatchEvidence.limitations = limits;
+  }
+
+  // Legacy: Keep referenceMatchV2Summary for backward compatibility during migration
   const referenceMatchV2Summary = buildReferenceMatchV2EvidenceSummary(result.referenceMatchV2, timestamp);
+  if (referenceMatchV2Summary) {
+    const limits = referenceMatchV2Summary.limitations || [];
+    const guardrails = [
+      'This is not chemical identity confirmation.',
+      'This is not phase purity confirmation.',
+    ];
+    for (const guardrail of guardrails) {
+      if (!limits.includes(guardrail)) {
+        limits.push(guardrail);
+      }
+    }
+    referenceMatchV2Summary.limitations = limits;
+  }
+
+  // Phase X4: Build unified XRD workflow handoff state combining X1, X2, X3
+  const xrdWorkflowHandoffState = buildXrdWorkflowHandoffState(
+    effectiveProjectId,
+    uploadedRunId ?? undefined,
+    fileName,
+    timestamp,
+    result.detectedPeakCount,
+    result.fittedPeakCount,
+    result.snRatio,
+    result.baselineDeviation,
+    result.peakResolution,
+    result.isPhaseMatched,
+    result.primaryPhase,
+    result.matchedPeakCount,
+    result.phaseSummary,
+    result.datasetContextEcho,
+    result.processingProvenance,
+    workflowReferenceMatchEvidence,
+    workflowScientificEvidence,
+  );
 
   const record: XRDBackendEvidenceRecord = {
     projectId: effectiveProjectId,
@@ -304,7 +502,10 @@ export function saveXrdBackendEvidenceResult(
     phaseSummary: result.phaseSummary,
     isPhaseMatched: result.isPhaseMatched,
     yResidualCount: result.yResidual?.length ?? 0,
+    ...(xrdWorkflowHandoffState ? { xrdWorkflowHandoffState } : {}),
+    ...(workflowScientificEvidence ? { workflowScientificEvidence } : {}),
     ...(scientificEvidenceSummary ? { scientificEvidenceSummary } : {}),
+    ...(workflowReferenceMatchEvidence ? { workflowReferenceMatchEvidence } : {}),
     ...(referenceMatchV2Summary ? { referenceMatchV2Summary } : {}),
     ...(scientificEvidenceObject ? { scientificEvidenceObject } : {}),
     ...(result.datasetContextEcho ? { datasetContextEcho: result.datasetContextEcho } : {}),

@@ -26,6 +26,7 @@ import { Graph } from '../components/ui/Graph';
 import { Card } from '../components/ui/Card';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
+import { useXrdWorkflowRuntime, getStageLabel, isXrdBackendEvidenceRecord } from '../context/XrdWorkflowRuntimeContext';
 import { runXrdPhaseIdentificationAgent } from '../agents/xrdAgent';
 import {
   demoProjects,
@@ -60,6 +61,14 @@ import {
   saveProcessingResult,
   type NotebookEntry,
 } from '../data/workflowPipeline';
+import {
+  selectXrdWorkflowScientificEvidence,
+  selectXrdWorkflowReferenceMatchEvidence,
+  extractScientificEvidenceFields,
+  extractReferenceMatchFields,
+  selectXrdQualityMetrics,
+  selectXrdPhaseMatchSummary,
+} from '../data/xrdWorkflowHandoffSelectors';
 import { LeftSidebar } from '../components/agent-demo/LeftSidebar';
 import { MainHeader } from '../components/agent-demo/MainHeader';
 import { CenterColumn } from '../components/agent-demo/CenterColumn';
@@ -1098,6 +1107,7 @@ function buildNotebookReferenceCandidateEvidence(
 import { formatChemicalFormula } from '../utils';
 import { buildAgentContext, type AgentContext, type WorkspaceParameters } from '../utils/agentContext';
 import { readLatestXrdBackendEvidenceResult, type XRDBackendEvidenceRecord } from '../data/xrdBackendEvidence';
+import type { XRDWorkflowReferenceMatchEvidence } from '../types/xrdWorkflowContract';
 import {
   getProjectTechniques,
   getProjectParameterGroups,
@@ -1623,6 +1633,14 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
   const runningGuardRef = useRef(false);
   const runTokenRef = useRef(0);
 
+  // Phase X6C: Runtime context orchestration for processing state and evidence
+  const {
+    currentEvidence: runtimeEvidence,
+    isProcessing: runtimeIsProcessing,
+    activeStage: runtimeActiveStage,
+    isValidated7E4: runtimeIsValidated,
+  } = useXrdWorkflowRuntime();
+
   // Add error boundary
   const [hasError, setHasError] = useState(false);
 
@@ -1784,8 +1802,8 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     },
     [agentState.context, selectedDataset, selectedProject.id],
   );
-  // Read persisted XRD backend evidence for Agent reasoning enrichment.
-  // Uses closure access so finalizeRun can consume it without signature changes.
+  // Phase X6C: Read persisted XRD backend evidence + runtime evidence for Agent reasoning enrichment.
+  // Prioritize runtime evidence when available, fallback to localStorage.
   const [xrdBackendEvidence, setXrdBackendEvidence] = useState<XRDBackendEvidenceRecord | null>(null);
 
   React.useEffect(() => {
@@ -1794,6 +1812,13 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       return;
     }
 
+    // Phase X6C: Use runtime evidence if available (live workspace updates)
+    if (isXrdBackendEvidenceRecord(runtimeEvidence)) {
+      setXrdBackendEvidence(runtimeEvidence);
+      return;
+    }
+
+    // Fallback: Read from localStorage when runtime evidence not available
     return runWhenIdle(() => {
       try {
         setXrdBackendEvidence(readLatestXrdBackendEvidenceResult(selectedProject.id, undefined));
@@ -1801,7 +1826,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         setXrdBackendEvidence(null);
       }
     });
-  }, [agentState.context, selectedProject.id]);
+  }, [agentState.context, selectedProject.id, runtimeEvidence]);
 
   const peakMarkers = useMemo(
     () =>
@@ -1933,25 +1958,41 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     // ── Enrich with persisted XRD backend evidence (additive, non-breaking) ──
     if (context === 'XRD' && xrdBackendEvidence) {
       const be = xrdBackendEvidence;
-      const backendBasis = [
-        `Backend-supported XRD evidence: ${be.detectedPeakCount} peaks detected, ${be.fittedPeakCount} fitted, S/N ratio ${Number.isFinite(be.snRatio) ? be.snRatio.toFixed(1) : 'N/A'}, baseline deviation ${Number.isFinite(be.baselineDeviation) ? be.baselineDeviation.toFixed(3) : 'N/A'}`,
-        `Peak resolution: ${be.peakResolution || 'N/A'}`,
-      ];
-      if (be.isPhaseMatched && be.primaryPhase) {
+      const qm = selectXrdQualityMetrics(be);
+      const pm = selectXrdPhaseMatchSummary(be);
+      const backendBasis: string[] = [];
+      if (qm) {
         backendBasis.push(
-          `Reference-supported phase indication: ${be.primaryPhase} (${be.matchedPeakCount} reference peaks matched)`,
+          `Backend-supported XRD evidence: ${qm.detectedPeakCount} peaks detected, ${qm.fittedPeakCount} fitted, S/N ratio ${Number.isFinite(qm.snRatio) ? qm.snRatio.toFixed(1) : 'N/A'}, baseline deviation ${Number.isFinite(qm.baselineDeviation) ? qm.baselineDeviation.toFixed(3) : 'N/A'}`,
+          `Peak resolution: ${qm.peakResolution || 'N/A'}`,
         );
       }
-      if (be.phaseSummary) {
-        backendBasis.push(`Phase summary: ${be.phaseSummary}`);
+      if (pm) {
+        if (pm.isPhaseMatched && pm.primaryPhase) {
+          backendBasis.push(
+            `Reference-supported phase indication: ${pm.primaryPhase} (${pm.matchedPeakCount} reference peaks matched)`,
+          );
+        }
+        if (pm.phaseSummary) {
+          backendBasis.push(`Phase summary: ${pm.phaseSummary}`);
+        }
       }
-      if (be.scientificEvidenceSummary) {
-        backendBasis.push(
-          `Scientific evidence object received from ${be.scientificEvidenceSummary.skillLabel}; evidence ID ${be.scientificEvidenceSummary.evidenceId}; input reference SHA-256 ${be.scientificEvidenceSummary.inputReference}; claim boundary: ${be.scientificEvidenceSummary.claimBoundary}.`,
-        );
+      // Phase X5C: Pure renderer using centralized selectors
+      const scientificEvidence = selectXrdWorkflowScientificEvidence(be);
+      if (scientificEvidence) {
+        const fields = extractScientificEvidenceFields(scientificEvidence);
+        if (fields) {
+          backendBasis.push(
+            `Scientific evidence object received from ${fields.skillLabel}; evidence ID ${fields.evidenceId}; input reference SHA-256 ${fields.inputReference}; claim boundary: ${fields.claimBoundary}.`,
+          );
+        }
       }
-      if (be.referenceMatchV2Summary) {
-        const candidateEvidence = buildReferenceCandidateAgentEvidence(be.referenceMatchV2Summary);
+      // Phase X5C: Use selector + extractor, no inline adapter logic
+      const refEvidenceSelected = selectXrdWorkflowReferenceMatchEvidence(be);
+      const refEvidenceFields = extractReferenceMatchFields(refEvidenceSelected);
+
+      if (refEvidenceFields) {
+        const candidateEvidence = buildReferenceCandidateAgentEvidence(refEvidenceFields as any);
         backendBasis.push(...candidateEvidence.evidenceLines);
         decision.limitations = [
           ...decision.limitations,
@@ -1980,7 +2021,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       decision.basis = [...decision.basis, ...backendBasis];
 
       // Add bounded limitation when phase match is available
-      if (be.isPhaseMatched && be.primaryPhase) {
+      if (pm?.isPhaseMatched && pm?.primaryPhase) {
         decision.limitations = [
           ...decision.limitations,
           'Phase purity requires reference validation and/or complementary evidence',
@@ -2368,29 +2409,50 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     const refinement = refineDiscussionFromProcessing(workflowProcessingResult, templateMode);
     saveAgentDiscussionRefinement(refinement);
     const notebookEntry = createNotebookEntryFromRefinement(refinement, templateMode);
-    const xrdReferenceMatchV2Summary = xrdBackendEvidence?.referenceMatchV2Summary
-      ? buildNotebookReferenceCandidateEvidence(xrdBackendEvidence.referenceMatchV2Summary)
+    // Phase X5C: Use selector + extractor, no inline adapter
+    const refEvidenceSelected = selectXrdWorkflowReferenceMatchEvidence(xrdBackendEvidence);
+    const refEvidenceFields = extractReferenceMatchFields(refEvidenceSelected);
+
+    const xrdReferenceMatchV2Summary = refEvidenceFields
+      ? buildNotebookReferenceCandidateEvidence(refEvidenceFields as any)
       : undefined;
 
     const entryToSave = xrdBackendEvidence
-      ? {
-          ...notebookEntry,
-          xrdBackendEvidenceSummary: {
-            label: 'Backend-supported XRD evidence',
-            detectedPeakCount: xrdBackendEvidence.detectedPeakCount,
-            fittedPeakCount: xrdBackendEvidence.fittedPeakCount,
-            snRatio: xrdBackendEvidence.snRatio,
-            baselineDeviation: xrdBackendEvidence.baselineDeviation,
-            peakResolution: xrdBackendEvidence.peakResolution ?? null,
-            primaryPhase: xrdBackendEvidence.primaryPhase ?? null,
-            matchedPeakCount: xrdBackendEvidence.matchedPeakCount,
-            phaseSummary: xrdBackendEvidence.phaseSummary ?? null,
-            savedAt: xrdBackendEvidence.timestamp,
-            caveat: 'Phase purity requires reference validation and/or complementary evidence.',
-            scientificEvidenceSummary: xrdBackendEvidence.scientificEvidenceSummary,
-          },
-          ...(xrdReferenceMatchV2Summary ? { xrdReferenceMatchV2Summary } : {}),
-        }
+      ? (() => {
+          const qm = selectXrdQualityMetrics(xrdBackendEvidence);
+          const pm = selectXrdPhaseMatchSummary(xrdBackendEvidence);
+          const sci = selectXrdWorkflowScientificEvidence(xrdBackendEvidence);
+          return {
+            ...notebookEntry,
+            xrdBackendEvidenceSummary: {
+              label: 'Backend-supported XRD evidence',
+              detectedPeakCount: qm?.detectedPeakCount ?? 0,
+              fittedPeakCount: qm?.fittedPeakCount ?? 0,
+              snRatio: qm?.snRatio ?? 0,
+              baselineDeviation: qm?.baselineDeviation ?? 0,
+              peakResolution: qm?.peakResolution ?? null,
+              primaryPhase: pm?.primaryPhase ?? null,
+              matchedPeakCount: pm?.matchedPeakCount ?? 0,
+              phaseSummary: pm?.phaseSummary ?? null,
+              savedAt: xrdBackendEvidence.timestamp,
+              caveat: 'Phase purity requires reference validation and/or complementary evidence.',
+              scientificEvidenceSummary: sci ? {
+                evidenceId: sci.evidenceId,
+                skillId: sci.skillId,
+                skillLabel: sci.skillLabel,
+                technique: sci.technique,
+                inputReference: sci.inputReference,
+                schemaVersion: sci.schemaVersion,
+                createdAt: sci.createdAt,
+                claimBoundary: 'validation-limited scientific claim',
+              } : undefined,
+            },
+            ...(xrdBackendEvidence.xrdWorkflowHandoffState ? { xrdWorkflowHandoffState: xrdBackendEvidence.xrdWorkflowHandoffState } : {}),
+            ...(xrdBackendEvidence.workflowScientificEvidence ? { workflowScientificEvidence: xrdBackendEvidence.workflowScientificEvidence } : {}),
+            ...(xrdBackendEvidence.workflowReferenceMatchEvidence ? { workflowReferenceMatchEvidence: xrdBackendEvidence.workflowReferenceMatchEvidence } : {}),
+            ...(xrdReferenceMatchV2Summary ? { xrdReferenceMatchV2Summary } : {}),
+          };
+        })()
       : notebookEntry;
 
     saveNotebookEntry(entryToSave);
@@ -2651,6 +2713,22 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         .cockpit-scroll::-webkit-scrollbar{width:4px} .cockpit-scroll::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px}
       `}</style>
 
+      {/* Phase X6C: Runtime processing status banner */}
+      {runtimeIsProcessing && runtimeActiveStage && (
+        <div className="shrink-0 border-b border-cyan-300 bg-cyan-50 px-4 py-2 text-[11px] text-cyan-900">
+          <div className="flex items-center gap-2">
+            <Loader2 size={12} className="animate-spin text-cyan-600" />
+            <span className="font-semibold">Workspace processing active:</span>
+            <span>{getStageLabel(runtimeActiveStage)}</span>
+            {runtimeIsValidated && (
+              <span className="ml-2 rounded border border-emerald-600 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                7E.4 Validated
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Invalid project fallback banner */}
       {(() => {
         const requested = searchParams.get('project');
@@ -2741,24 +2819,31 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
           </div>
 
           {/* Backend XRD Evidence indicator */}
-          {xrdBackendEvidence && (
-            <div
-              className="h-7 px-2 flex items-center gap-1 bg-violet-50 border border-violet-200 rounded text-[10px] font-semibold text-violet-700"
-              title={`Backend XRD evidence: ${xrdBackendEvidence.detectedPeakCount} peaks, S/N ${Number.isFinite(xrdBackendEvidence.snRatio) ? xrdBackendEvidence.snRatio.toFixed(1) : 'N/A'}, ${xrdBackendEvidence.primaryPhase ? `phase: ${xrdBackendEvidence.primaryPhase}` : 'no phase match'}`}
-            >
-              <Database size={10} />
-              <span>Backend XRD evidence loaded</span>
-            </div>
-          )}
+          {xrdBackendEvidence && (() => {
+            const qm = selectXrdQualityMetrics(xrdBackendEvidence);
+            const pm = selectXrdPhaseMatchSummary(xrdBackendEvidence);
+            return (
+              <div
+                className="h-7 px-2 flex items-center gap-1 bg-violet-50 border border-violet-200 rounded text-[10px] font-semibold text-violet-700"
+                title={`Backend XRD evidence: ${qm?.detectedPeakCount ?? 0} peaks, S/N ${Number.isFinite(qm?.snRatio) ? qm!.snRatio.toFixed(1) : 'N/A'}, ${pm?.primaryPhase ? `phase: ${pm.primaryPhase}` : 'no phase match'}`}
+              >
+                <Database size={10} />
+                <span>Backend XRD evidence loaded</span>
+              </div>
+            );
+          })()}
 
-          {xrdBackendEvidence?.referenceMatchV2Summary && (() => {
-            const summary = xrdBackendEvidence.referenceMatchV2Summary;
-            const primaryCandidate = summary.primaryCandidate;
+          {/* Phase X5C: Use selector + extractor, no inline adapter */}
+          {(() => {
+            const refEvidence = selectXrdWorkflowReferenceMatchEvidence(xrdBackendEvidence);
+            const refFields = extractReferenceMatchFields(refEvidence);
+            if (!refFields) return null;
+            const primaryCandidate = refFields.primaryCandidate;
             const candidateLabel = primaryCandidate?.phaseLabel ?? primaryCandidate?.formula ?? 'Reference candidate';
             return (
               <div
                 className="h-7 px-2 flex items-center gap-1 bg-blue-50 border border-blue-200 rounded text-[10px] font-semibold text-blue-700"
-                title={`Reference candidate evidence loaded: ${candidateLabel}; claim level ${summary.claimLevel}; candidate-level agreement only.`}
+                title={`Reference candidate evidence loaded: ${candidateLabel}; claim level ${refFields.claimLevel ?? 'candidate'}; candidate-level agreement only.`}
               >
                 <Database size={10} />
                 <span>Reference candidate evidence loaded</span>

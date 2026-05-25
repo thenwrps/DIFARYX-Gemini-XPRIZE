@@ -5,6 +5,7 @@ import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { useAuth } from '../contexts/AuthContext';
+import { useXrdWorkflowRuntime } from '../context/XrdWorkflowRuntimeContext';
 import { getProject, getWorkspaceRoute } from '../data/demoProjects';
 import {
   claimStatusColorClass,
@@ -28,6 +29,14 @@ import {
   type NotebookEntry,
   type NotebookTemplateMode,
 } from '../data/workflowPipeline';
+import {
+  selectXrdWorkflowScientificEvidence,
+  selectXrdWorkflowReferenceMatchEvidence,
+  extractScientificEvidenceFields,
+  extractReferenceMatchFields,
+  selectXrdQualityMetrics,
+  selectXrdPhaseMatchSummary,
+} from '../data/xrdWorkflowHandoffSelectors';
 import { exportDemoArtifact, type DemoExportFormat, type DemoExportSection } from '../utils/demoExport';
 import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
 import { createUploadedEvidenceRegistryProject } from '../utils/uploadedEvidenceProjectContext';
@@ -192,7 +201,7 @@ function buildReportSections(
   registryProject: ReturnType<typeof getRegistryProject>,
   reportSection: ReturnType<typeof createReportSectionFromNotebookEntry>,
   xrdBackendEvidenceSummary?: NotebookEntry['xrdBackendEvidenceSummary'],
-  xrdReferenceMatchV2Summary?: NotebookEntry['xrdReferenceMatchV2Summary'],
+  notebookEntry?: NotebookEntry,
 ): DemoExportSection[] {
   const availableTechniques = snapshot.availableTechniques.join(', ') || 'No technique evidence linked';
   const pendingTechniques = snapshot.pendingTechniques.join(', ') || 'None';
@@ -239,37 +248,52 @@ function buildReportSections(
           heading: 'Skill-derived Backend XRD Evidence',
           lines: (() => {
             const xbe = xrdBackendEvidenceSummary;
-            const snDisplay = Number.isFinite(xbe.snRatio) ? xbe.snRatio.toFixed(1) : 'N/A';
-            const baselineDisplay = Number.isFinite(xbe.baselineDeviation) ? xbe.baselineDeviation.toFixed(3) : 'N/A';
+            const qm = selectXrdQualityMetrics(notebookEntry) || xbe;
+            const pm = selectXrdPhaseMatchSummary(notebookEntry) || xbe;
+            const snDisplay = Number.isFinite(qm.snRatio) ? qm.snRatio.toFixed(1) : 'N/A';
+            const baselineDisplay = Number.isFinite(qm.baselineDeviation) ? qm.baselineDeviation.toFixed(3) : 'N/A';
             const savedDate = new Date(xbe.savedAt);
             const savedDisplay = Number.isNaN(savedDate.getTime()) ? xbe.savedAt || 'N/A' : savedDate.toISOString();
 
             return [
-              `Detected peak count: ${xbe.detectedPeakCount}.`,
-              `Fitted peak count: ${xbe.fittedPeakCount}.`,
+              `Detected peak count: ${qm.detectedPeakCount}.`,
+              `Fitted peak count: ${qm.fittedPeakCount}.`,
               `Signal-to-noise ratio: ${snDisplay}.`,
               `Baseline deviation: ${baselineDisplay}.`,
-              `Peak resolution: ${xbe.peakResolution ?? 'N/A'}.`,
-              `Reference-supported phase indication: ${xbe.primaryPhase ?? 'N/A'}.`,
-              `Matched peak count: ${xbe.matchedPeakCount}.`,
-              `Phase summary: ${xbe.phaseSummary ?? 'N/A'}.`,
+              `Peak resolution: ${qm.peakResolution ?? 'N/A'}.`,
+              `Reference-supported phase indication: ${pm?.primaryPhase ?? 'N/A'}.`,
+              `Matched peak count: ${pm?.matchedPeakCount ?? 0}.`,
+              `Phase summary: ${pm?.phaseSummary ?? 'N/A'}.`,
               `Evidence saved: ${savedDisplay}.`,
-              ...(xbe.scientificEvidenceSummary
-                ? [
-                    'Scientific evidence object received.',
-                    `Skill: ${xbe.scientificEvidenceSummary.skillLabel}.`,
-                    `Evidence ID: ${xbe.scientificEvidenceSummary.evidenceId}.`,
-                    `Input reference: SHA-256 ${xbe.scientificEvidenceSummary.inputReference}.`,
-                    `Claim boundary: ${xbe.scientificEvidenceSummary.claimBoundary}.`,
-                  ]
-                : []),
+              ...(() => {
+                // Phase X5C: Pure renderer using centralized selectors
+                const sciEvidence = selectXrdWorkflowScientificEvidence(notebookEntry || { xrdBackendEvidenceSummary: xbe });
+                if (!sciEvidence) return [];
+                const fields = extractScientificEvidenceFields(sciEvidence);
+                if (!fields) return [];
+                return [
+                  'Scientific evidence object received.',
+                  `Skill: ${fields.skillLabel}.`,
+                  `Evidence ID: ${fields.evidenceId}.`,
+                  `Input reference: SHA-256 ${fields.inputReference}.`,
+                  `Claim boundary: ${fields.claimBoundary}.`,
+                ];
+              })(),
               xbe.caveat || 'Phase purity requires reference validation and/or complementary evidence.',
             ];
           })(),
         },
       ]
     : [];
-  const xrdReferenceCandidateSection = buildXrdReferenceCandidateReportSection(xrdReferenceMatchV2Summary);
+  // Phase X5A: Use selector helper for unified handoff → individual → legacy fallback
+  const refEvidence = selectXrdWorkflowReferenceMatchEvidence(notebookEntry);
+  const refEvidenceSummary = refEvidence
+    ? {
+        label: 'Reference candidate evidence' as const,
+        ...extractReferenceMatchFields(refEvidence),
+      }
+    : undefined;
+  const xrdReferenceCandidateSection = buildXrdReferenceCandidateReportSection(refEvidenceSummary);
 
   return [
     {
@@ -624,6 +648,12 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
   const [feedback, setFeedback] = useState('');
   const [approvalAction, setApprovalAction] = useState<ApprovalActionPreview | null>(null);
 
+  // Phase X6C: Runtime context orchestration for claim boundary and validation state
+  const {
+    isValidated7E4: runtimeIsValidated,
+    currentEvidence: runtimeEvidence,
+  } = useXrdWorkflowRuntime();
+
   // Bundle gating: only create bundle when appropriate (not for uploaded evidence)
   const evidenceBundle = useMemo(() => {
     if (isUploadedContext) {
@@ -688,7 +718,7 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
       registryProject,
       workflowReportSection,
       workflowNotebookEntry?.xrdBackendEvidenceSummary,
-      workflowNotebookEntry?.xrdReferenceMatchV2Summary,
+      workflowNotebookEntry,
     ),
     [
       evidenceSnapshot,
@@ -696,7 +726,7 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
       registryProject,
       workflowReportSection,
       workflowNotebookEntry?.xrdBackendEvidenceSummary,
-      workflowNotebookEntry?.xrdReferenceMatchV2Summary,
+      workflowNotebookEntry,
     ],
   );
   const reportTemplate = NOTEBOOK_TEMPLATES[templateMode];
@@ -904,6 +934,17 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
                 {reportSections.find((section) => section.heading === 'Validation Boundary')?.lines[0] ?? registryProject.notebook.validationBoundary}
               </p>
             </div>
+            {/* Phase X6C: Runtime validation status banner */}
+            {runtimeIsValidated && runtimeEvidence && (
+              <div className="mt-3 rounded-md border border-emerald-600 bg-emerald-50 px-3 py-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-800">
+                  <ShieldCheck size={14} /> Runtime Validation Active
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-emerald-900">
+                  7E.4 peak extraction validation approved. Evidence meets workspace approval requirements for bounded scientific claims.
+                </p>
+              </div>
+            )}
             {evidenceBundle && (
               <div className="mt-3">
                 <ApprovalLedgerPanel projectId={currentProject.id} bundleId={evidenceBundle.bundleId} limit={4} compact />

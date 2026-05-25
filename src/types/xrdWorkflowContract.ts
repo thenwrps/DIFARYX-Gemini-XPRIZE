@@ -17,7 +17,13 @@
 
 import type { XRDParameters } from './xrdParameters';
 import type { XRDDatasetContext } from './xrdDatasetContext';
-import type { XRDReferenceMatchV2, XRDNormalizedResult, ScientificEvidenceObject } from './xrdBackend';
+import type {
+  XRDReferenceMatchV2,
+  XRDNormalizedResult,
+  ScientificEvidenceObject,
+  XRDDatasetContextEcho,
+  XRDProcessingProvenance,
+} from './xrdBackend';
 import type { XRDStoredLocalReferenceRecord } from '../data/xrdLocalReferences';
 
 // ============================================================================
@@ -54,7 +60,7 @@ export interface XRDWorkflowRunContext {
 /**
  * Unified XRD dataset context.
  * Maps from: XRDDatasetContext (frontend), XRDBackendDatasetContext (backend payload).
- * 
+ *
  * Source of truth: Frontend workspace state.
  * Handoff: Passed to backend, persisted in evidence records, forwarded to Agent/Notebook.
  */
@@ -96,7 +102,7 @@ export interface XRDWorkflowDatasetContext {
 /**
  * Unified XRD processing parameters.
  * Maps from: XRDParameters (frontend), XRDBackendGroupedParameters (backend payload).
- * 
+ *
  * Source of truth: Frontend workspace state.
  * Handoff: Passed to backend, persisted in evidence records for provenance.
  */
@@ -169,7 +175,7 @@ export interface XRDWorkflowProcessingParameters {
 /**
  * Unified reference matching context.
  * Combines curated reference set selection and local reference approval state.
- * 
+ *
  * Source of truth: Frontend workspace + local reference storage.
  * Handoff: Reference set ID to backend, local reference peaks if approved.
  */
@@ -187,7 +193,7 @@ export interface XRDWorkflowReferenceContext {
 /**
  * Unified local reference context.
  * Maps from: XRDStoredLocalReferenceRecord (frontend storage), XRDLocalReferencePayload (backend payload).
- * 
+ *
  * Source of truth: Frontend localStorage (approval workflow).
  * Handoff: Approved local references sent to backend for request-scoped matching.
  */
@@ -230,7 +236,7 @@ export interface XRDWorkflowLocalReferenceContext {
 /**
  * Unified backend evidence shape.
  * Maps from: XRDNormalizedResult (frontend normalization), XRDBackendEvidenceRecord (storage).
- * 
+ *
  * Source of truth: Backend processing result.
  * Handoff: Stored in localStorage, consumed by Agent/Notebook/Report.
  */
@@ -268,31 +274,50 @@ export interface XRDWorkflowBackendEvidence {
 /**
  * Unified reference match v2 evidence.
  * Maps from: XRDReferenceMatchV2 (backend), XRDReferenceMatchV2EvidenceSummary (storage).
- * 
+ *
  * Source of truth: Backend reference matching service.
  * Handoff: Compact summary to Agent/Notebook, full object excluded for size.
  */
 export interface XRDWorkflowReferenceMatchEvidence {
+  source: 'curated_reference' | 'local_reference' | 'unknown';
   status: string;
   claimLevel: string;
+  backendAvailable: boolean;
+  reason?: string;
   referenceSetId?: string;
   candidateCount: number;
   primaryCandidate?: {
     phaseId: string;
     phaseLabel: string;
     formula?: string;
+    structureFamily?: string;
+    databaseRef?: string;
     matchedPeakCount: number;
+    referencePeakCount?: number;
     coverageRatio: number;
+    meanDeltaTwoTheta?: number | null;
+    positionScore?: number;
+    coverageScore?: number;
+    chemistryScore?: number;
     score: number;
   };
+  matchedPeaksPreview?: Array<{
+    measuredTwoTheta: number;
+    referenceTwoTheta: number;
+    deltaTwoTheta: number;
+    hkl?: string | null;
+    referenceRelativeIntensity?: number | null;
+  }>;
+  phaseConfirmed: false;
+  phasePurityConfirmed: false;
   limitations: string[];
-  backendAvailable: boolean;
+  mappedAt: string;
 }
 
 /**
  * Unified scientific evidence object.
  * Maps from: ScientificEvidenceObject (backend), XRDSkillEvidenceSummary (storage).
- * 
+ *
  * Source of truth: Backend skill handoff.
  * Handoff: Compact summary to Agent/Notebook for reasoning, full object excluded for size.
  */
@@ -309,6 +334,7 @@ export interface XRDWorkflowScientificEvidence {
   validationGaps: string[];
   agentReadySummary: string;
   createdAt: string;
+  mappedAt: string;
 }
 
 // ============================================================================
@@ -318,7 +344,7 @@ export interface XRDWorkflowScientificEvidence {
 /**
  * Unified claim boundary configuration.
  * Maps from: XRDBoundaryParameters (frontend), boundary fields in backend result.
- * 
+ *
  * Source of truth: Frontend boundary panel + backend enforcement.
  * Handoff: Limitations included in Agent/Notebook reasoning.
  */
@@ -348,52 +374,51 @@ export interface XRDWorkflowClaimBoundary {
 /**
  * Unified handoff state for Agent, Notebook, and Report.
  * Consolidates all evidence and provenance needed for downstream reasoning.
- * 
+ *
  * Source of truth: Aggregated from workflow run context + backend evidence.
  * Handoff: Passed to Agent demo, Notebook template, Report builder.
+ *
+ * Phase X4: Combines X1 (dataset/provenance echo), X2 (reference match), X3 (scientific evidence).
  */
 export interface XRDWorkflowHandoffState {
+  /** Handoff metadata */
+  handoffId: string;
+  technique: 'xrd';
+  createdAt: string;
+  mappedAt: string;
   /** Run identification */
   runId: string;
   projectId: string;
   uploadedRunId?: string;
   fileName?: string;
-  timestamp: string;
-  /** Dataset provenance */
-  sampleId?: string;
-  sampleName?: string;
-  materialClass?: string;
-  knownElements: string[];
-  declaredPhases: string[];
-  /** Processing provenance (compact) */
-  processingProvenance: {
-    radiationSource: string;
-    wavelength: number;
-    twoThetaRange: string;
-    baselineMethod: string;
-    smoothingMethod: string;
-    peakFitModel: string;
-    referenceMatchEnabled: boolean;
-    referenceSetId?: string;
-  };
-  /** Evidence summary */
-  evidenceSummary: {
+  sourceEvidenceRecordId?: string;
+  /** Phase X1: Dataset context echo */
+  datasetContextEcho?: XRDDatasetContextEcho;
+  /** Phase X1: Processing provenance */
+  processingProvenance?: XRDProcessingProvenance;
+  /** Phase X2: Structured reference match evidence */
+  workflowReferenceMatchEvidence?: XRDWorkflowReferenceMatchEvidence;
+  /** Phase X3: Structured scientific evidence */
+  workflowScientificEvidence?: XRDWorkflowScientificEvidence;
+  /** Quality metrics summary */
+  qualityMetrics: {
     detectedPeakCount: number;
     fittedPeakCount: number;
     snRatio: number;
-    peakResolution: string;
-    referenceMatchStatus?: string;
-    primaryCandidatePhase?: string;
-    matchedPeakCount?: number;
+    baselineDeviation: number;
+    peakResolution: string | null;
   };
-  /** Scientific observations */
-  observations: string[];
-  /** Claim boundaries */
-  boundaries: string[];
-  /** Validation gaps */
+  /** Phase matching summary */
+  phaseMatchSummary?: {
+    isPhaseMatched: boolean;
+    primaryPhase: string | null;
+    matchedPeakCount: number;
+    phaseSummary: string | null;
+  };
+  /** Claim boundary mode */
+  claimBoundary: 'validation-limited' | 'research-grade' | 'exploratory';
+  /** Validation gaps aggregated from all evidence sources */
   validationGaps: string[];
-  /** Agent-ready summary */
-  agentSummary: string;
 }
 
 // ============================================================================
@@ -525,21 +550,72 @@ export function mapReferenceMatchV2ToWorkflow(
   refMatch: XRDReferenceMatchV2
 ): XRDWorkflowReferenceMatchEvidence {
   const primaryCandidate = refMatch.primary_candidate || refMatch.ranked_candidates?.[0];
+
+  // Detect source from reference_set_id
+  const referenceSetId = refMatch.reference_set_id || undefined;
+  let source: 'curated_reference' | 'local_reference' | 'unknown' = 'unknown';
+  if (referenceSetId) {
+    if (referenceSetId.startsWith('local_reference:')) {
+      source = 'local_reference';
+    } else {
+      source = 'curated_reference';
+    }
+  }
+
+  // Extract matched peaks preview (limit to 5)
+  const matchedPeaksPreview = primaryCandidate?.matched_peaks
+    ?.map((peak) => {
+      const measuredTwoTheta = peak.measured_two_theta;
+      const referenceTwoTheta = peak.reference_two_theta;
+      const deltaTwoTheta = peak.delta_two_theta;
+
+      if (
+        typeof measuredTwoTheta !== 'number' ||
+        typeof referenceTwoTheta !== 'number' ||
+        typeof deltaTwoTheta !== 'number'
+      ) {
+        return null;
+      }
+
+      return {
+        measuredTwoTheta,
+        referenceTwoTheta,
+        deltaTwoTheta,
+        hkl: peak.hkl ?? null,
+        referenceRelativeIntensity: peak.reference_relative_intensity ?? null,
+      };
+    })
+    .filter((peak): peak is NonNullable<typeof peak> => peak !== null)
+    .slice(0, 5);
+
   return {
+    source,
     status: refMatch.status || 'unavailable',
     claimLevel: refMatch.claim_level || 'none',
-    referenceSetId: refMatch.reference_set_id || undefined,
+    backendAvailable: refMatch.backend_available !== false,
+    reason: refMatch.reason || undefined,
+    referenceSetId,
     candidateCount: refMatch.candidate_count || 0,
     primaryCandidate: primaryCandidate ? {
       phaseId: primaryCandidate.phase_id || 'unknown',
       phaseLabel: primaryCandidate.phase_label || 'Unknown phase',
       formula: primaryCandidate.formula || undefined,
+      structureFamily: primaryCandidate.structure_family || undefined,
+      databaseRef: primaryCandidate.database_ref || undefined,
       matchedPeakCount: primaryCandidate.matched_peak_count || 0,
+      referencePeakCount: primaryCandidate.reference_peak_count || undefined,
       coverageRatio: primaryCandidate.coverage_ratio || 0,
+      meanDeltaTwoTheta: primaryCandidate.mean_delta_two_theta ?? undefined,
+      positionScore: primaryCandidate.position_score || undefined,
+      coverageScore: primaryCandidate.coverage_score || undefined,
+      chemistryScore: primaryCandidate.chemistry_score || undefined,
       score: primaryCandidate.score || 0,
     } : undefined,
+    matchedPeaksPreview: matchedPeaksPreview && matchedPeaksPreview.length > 0 ? matchedPeaksPreview : undefined,
+    phaseConfirmed: false,
+    phasePurityConfirmed: false,
     limitations: refMatch.limitations || [],
-    backendAvailable: refMatch.backend_available !== false,
+    mappedAt: new Date().toISOString(),
   };
 }
 
@@ -562,13 +638,14 @@ export function mapScientificEvidenceToWorkflow(
     validationGaps: evidence.validation_gaps,
     agentReadySummary: evidence.agent_ready_summary,
     createdAt: evidence.created_at,
+    mappedAt: new Date().toISOString(),
   };
 }
 
 /**
  * Maps stored local reference record to unified workflow local reference context.
  * Note: XRDStoredLocalReferenceRecord has a nested parseResult structure.
- * 
+ *
  * TODO (Phase X1): Complete mapping once XRDStoredLocalReferenceRecord structure is finalized.
  * Currently sourceType is not stored in parseResult but should be added for full provenance.
  */

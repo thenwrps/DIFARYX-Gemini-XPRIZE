@@ -26,10 +26,11 @@ import datetime
 import hashlib
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
+from contextvars import ContextVar
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -70,7 +71,78 @@ from xrd_engine.services.general_sample_assessment import (
 )
 from api.evidence_router import router as evidence_router
 
-logger = logging.getLogger("difaryx.xrd.gateway")
+# ============================================================================
+# Production-Ready Configuration (Step 5)
+# ============================================================================
+
+# Schema version for all responses
+BACKEND_SCHEMA_VERSION = "1.1.0"
+
+# Request safety limits
+MAX_DATA_POINTS = 10000
+MIN_DATA_POINTS = 10
+
+# Context variable for request tracking
+request_id_var: ContextVar[str] = ContextVar("request_id", default="")
+
+# ============================================================================
+# Structured JSON Logging (Step 5)
+# ============================================================================
+
+class StructuredLogger:
+    """Structured JSON logger for production observability."""
+    
+    def __init__(self, name: str):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.INFO)
+        
+        # JSON formatter
+        if not self.logger.handlers:
+            handler = logging.StreamHandler(sys.stdout)
+            handler.setFormatter(logging.Formatter(
+                '{"timestamp": "%(asctime)s", "level": "%(levelname)s", '
+                '"logger": "%(name)s", "message": "%(message)s", %(extra)s}'
+            ))
+            self.logger.addHandler(handler)
+    
+    def _get_request_id(self) -> str:
+        """Get current request ID from context."""
+        return request_id_var.get()
+    
+    def _format_extra(self, **kwargs) -> str:
+        """Format extra fields as JSON."""
+        request_id = self._get_request_id()
+        if request_id:
+            kwargs["request_id"] = request_id
+        
+        # Convert to JSON string without outer braces
+        if kwargs:
+            pairs = [f'"{k}": {json.dumps(v)}' for k, v in kwargs.items()]
+            return ", ".join(pairs)
+        return '"context": "none"'
+    
+    def info(self, msg: str, **kwargs):
+        """Log info with structured context."""
+        extra_str = self._format_extra(**kwargs)
+        # Use old-style formatting to inject extra into LogRecord
+        self.logger.info(msg, extra={"extra": extra_str})
+    
+    def warning(self, msg: str, **kwargs):
+        """Log warning with structured context."""
+        extra_str = self._format_extra(**kwargs)
+        self.logger.warning(msg, extra={"extra": extra_str})
+    
+    def error(self, msg: str, **kwargs):
+        """Log error with structured context."""
+        extra_str = self._format_extra(**kwargs)
+        self.logger.error(msg, extra={"extra": extra_str})
+    
+    def exception(self, msg: str, **kwargs):
+        """Log exception with structured context."""
+        extra_str = self._format_extra(**kwargs)
+        self.logger.exception(msg, extra={"extra": extra_str})
+
+logger = StructuredLogger("difaryx.xrd.gateway")
 
 
 # ============================================================================
@@ -78,12 +150,38 @@ logger = logging.getLogger("difaryx.xrd.gateway")
 # ============================================================================
 
 
+# Engine readiness state
+_engine_loaded = False
+_reference_registry_loaded = False
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle events."""
-    logger.info("DIFARYX XRD Gateway starting up...")
+    global _engine_loaded, _reference_registry_loaded
+    
+    logger.info("DIFARYX XRD Gateway starting up", version=BACKEND_SCHEMA_VERSION)
+    
+    # Check engine initialization
+    try:
+        # Test engine instantiation
+        from xrd_engine.domain.models.xrd_params import XRDPipelineConfig
+        config = XRDPipelineConfig()
+        _ = XRDSignalProcessor(config)
+        _engine_loaded = True
+        logger.info("XRD processing engine loaded successfully")
+    except Exception as e:
+        logger.error("Failed to load XRD processing engine", error=str(e))
+    
+    # Check reference registry
+    try:
+        from xrd_engine.services.reference_db_service import match_peaks
+        _reference_registry_loaded = True
+        logger.info("Reference registry loaded successfully")
+    except Exception as e:
+        logger.error("Failed to load reference registry", error=str(e))
+    
     yield
-    logger.info("DIFARYX XRD Gateway shutting down.")
+    logger.info("DIFARYX XRD Gateway shutting down")
 
 
 # ============================================================================
@@ -97,11 +195,45 @@ app = FastAPI(
         "peak detection, non-linear peak fitting, and crystallographic "
         "reference database matching."
     ),
-    version="1.0.0",
+    version=BACKEND_SCHEMA_VERSION,
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# ============================================================================
+# Middleware: Request ID tracking (Step 5)
+# ============================================================================
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Generate and inject request_id for every transaction."""
+    req_id = str(uuid.uuid4())
+    request_id_var.set(req_id)
+    
+    logger.info(
+        f"Request started: {request.method} {request.url.path}",
+        method=request.method,
+        path=request.url.path,
+        client=str(request.client.host) if request.client else "unknown"
+    )
+    
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start_time
+    
+    logger.info(
+        f"Request completed: {request.method} {request.url.path}",
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        duration_ms=round(duration * 1000, 2)
+    )
+    
+    # Inject request ID into response headers
+    response.headers["X-Request-ID"] = req_id
+    return response
+
 
 # CORS — allow frontend dev server and production origins
 app.add_middleware(
@@ -117,18 +249,140 @@ app.include_router(evidence_router)
 
 
 # ============================================================================
-# Health check
+# Request Validation Utilities (Step 5)
+# ============================================================================
+
+def validate_signal_arrays(x: List[float], y: List[float]) -> None:
+    """
+    Validate XRD signal arrays for production safety.
+    
+    Raises:
+        HTTPException(400): Invalid array structure or dimensions
+        HTTPException(422): Mathematically non-compliant signal
+    """
+    # Check presence
+    if x is None or y is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Both 'x' (2θ array) and 'y' (intensity array) are required."
+        )
+    
+    # Check types
+    if not isinstance(x, list) or not isinstance(y, list):
+        raise HTTPException(
+            status_code=400,
+            detail="Arrays must be lists of numeric values."
+        )
+    
+    # Check length match
+    if len(x) != len(y):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Array length mismatch: x has {len(x)} elements, "
+                f"y has {len(y)} elements."
+            ),
+        )
+    
+    # Check minimum points
+    if len(x) < MIN_DATA_POINTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Insufficient data points. Minimum {MIN_DATA_POINTS} required, "
+                f"got {len(x)}."
+            ),
+        )
+    
+    # Step 5: Enforce maximum points safety limit
+    if len(x) > MAX_DATA_POINTS:
+        logger.warning(
+            f"Signal exceeds maximum point limit",
+            received_points=len(x),
+            max_points=MAX_DATA_POINTS
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Signal exceeds maximum point limit. Maximum {MAX_DATA_POINTS} points allowed, "
+                f"got {len(x)} points. Please downsample the signal before processing."
+            ),
+        )
+    
+    # Check for NaN/Inf values
+    try:
+        x_arr = np.array(x, dtype=float)
+        y_arr = np.array(y, dtype=float)
+        
+        if not np.all(np.isfinite(x_arr)):
+            raise HTTPException(
+                status_code=422,
+                detail="2-theta array contains NaN or Inf values."
+            )
+        
+        if not np.all(np.isfinite(y_arr)):
+            raise HTTPException(
+                status_code=422,
+                detail="Intensity array contains NaN or Inf values."
+            )
+        
+        # Check for monotonicity in x (2-theta should be increasing)
+        if not np.all(np.diff(x_arr) > 0):
+            logger.warning("2-theta array is not strictly monotonically increasing")
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "2-theta array must be strictly monotonically increasing. "
+                    "Signal appears corrupted or misordered."
+                ),
+            )
+        
+    except (ValueError, TypeError) as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Array contains non-numeric values: {str(e)}"
+        )
+
+
+# ============================================================================
+# Health check (Step 5: Production-ready with readiness checks)
 # ============================================================================
 
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
     """
-    Service health check.
-
-    Returns engine status, identifier, and version.
+    Production-ready health check endpoint.
+    
+    Differentiates between liveness (service is running) and readiness
+    (service dependencies are loaded and ready to serve requests).
+    
+    Returns:
+        HealthResponse with status, schema_version, and readiness checks.
     """
-    return HealthResponse(status="ok", engine="xrd", version="1.0.0")
+    # Liveness: service is running
+    status = "healthy"
+    
+    # Readiness: check if engines are loaded
+    readiness = {
+        "engine_loaded": _engine_loaded,
+        "reference_registry_loaded": _reference_registry_loaded,
+    }
+    
+    logger.info(
+        "Health check executed",
+        status=status,
+        engine_loaded=_engine_loaded,
+        registry_loaded=_reference_registry_loaded
+    )
+    
+    return HealthResponse(
+        status=status,
+        engine="xrd",
+        version=BACKEND_SCHEMA_VERSION,
+        schema_version=BACKEND_SCHEMA_VERSION,
+        readiness=readiness,
+    )
 
 
 # ============================================================================
@@ -226,7 +480,7 @@ def _build_processing_provenance(request):
 
         return XRDProcessingProvenance(
             parameter_contract_version=param_contract,
-            backend_schema_version="1.0.0",
+            backend_schema_version=BACKEND_SCHEMA_VERSION,
             processing_mode=processing_mode,
             received_grouped_parameters=True,
             received_dataset_context=has_dataset_ctx,
@@ -257,7 +511,7 @@ def _build_processing_provenance(request):
 
         return XRDProcessingProvenance(
             parameter_contract_version=param_contract,
-            backend_schema_version="1.0.0",
+            backend_schema_version=BACKEND_SCHEMA_VERSION,
             processing_mode=processing_mode,
             received_grouped_parameters=False,
             received_dataset_context=has_dataset_ctx,
@@ -418,42 +672,37 @@ async def process_xrd(request: XRDProcessRequest):
     Data can be provided as `x` and `y` arrays in the JSON body,
     or uploaded separately via the `/process/upload` endpoint.
     """
-    # Validate data presence
-    if request.x is None or request.y is None:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Both 'x' (2θ array) and 'y' (intensity array) are required "
-                "when using the JSON endpoint. For CSV upload, use /process/upload."
-            ),
-        )
-
-    if len(request.x) != len(request.y):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Array length mismatch: x has {len(request.x)} elements, "
-                f"y has {len(request.y)} elements."
-            ),
-        )
-
-    if len(request.x) < 10:
-        raise HTTPException(
-            status_code=400,
-            detail="Insufficient data points. Minimum 10 required for processing.",
-        )
+    # Step 5: Log request arrival
+    logger.info(
+        "Processing XRD signal",
+        stage="request_received",
+        data_points=len(request.x) if request.x else 0
+    )
+    
+    # Step 5: Use centralized validation with production guardrails
+    validate_signal_arrays(request.x, request.y)
 
     try:
         # Build domain config
         t0 = time.perf_counter()
+        logger.info("Building pipeline configuration", stage="config_build")
         config = _build_config(request)
 
         # Run processor
+        logger.info("Starting XRD signal processing", stage="processing_start")
         processor = XRDSignalProcessor(config)
         result = processor.run(request.x, request.y)
         t_process = time.perf_counter()
+        logger.info(
+            "Signal processing completed",
+            stage="processing_complete",
+            detected_peaks=len(result.detected_peaks),
+            fitted_peaks=len(result.fitted_peaks),
+            duration_ms=round((t_process - t0) * 1000, 2)
+        )
 
         # Run phase matching against fitted peaks
+        logger.info("Starting phase matching", stage="phase_match_start")
         phase_match_result = None
         if result.fitted_peaks:
             phase_match_result = match_peaks(
@@ -461,6 +710,11 @@ async def process_xrd(request: XRDProcessRequest):
                 db_type=config.database.reference_db,
             )
         t_match = time.perf_counter()
+        logger.info(
+            "Phase matching completed",
+            stage="phase_match_complete",
+            duration_ms=round((t_match - t_process) * 1000, 2)
+        )
 
         # Phase 4: v2 reference-match candidate evidence (additive)
         reference_match_v2_result = None
@@ -535,7 +789,7 @@ async def process_xrd(request: XRDProcessRequest):
                     min_score=ref_params.min_score,
                 )
         except Exception as exc:
-            logger.warning("Phase 4 reference_match_v2 failed (non-fatal): %s", exc)
+            logger.warning("Phase 4 reference_match_v2 failed (non-fatal)", error=str(exc), stage="ref_v2_warning")
             reference_match_v2_result = None
 
         t_ref_v2 = time.perf_counter()
@@ -561,17 +815,20 @@ async def process_xrd(request: XRDProcessRequest):
         n_det = len(result.detected_peaks)
         n_fit = len(result.fitted_peaks)
         logger.info(
-            "XRD pipeline: %d points → %d detected, %d fitted | "
-            "process=%.3fs, match=%.3fs, ref_v2=%.3fs, assess=%.3fs, total=%.3fs",
-            n_points, n_det, n_fit,
-            t_process - t0,
-            t_match - t_process,
-            t_ref_v2 - t_match,
-            t_assess - t_ref_v2,
-            t_assess - t0,
+            "XRD pipeline summary",
+            stage="assessment_complete",
+            data_points=n_points,
+            detected_peaks=n_det,
+            fitted_peaks=n_fit,
+            process_ms=round((t_process - t0) * 1000, 2),
+            match_ms=round((t_match - t_process) * 1000, 2),
+            ref_v2_ms=round((t_ref_v2 - t_match) * 1000, 2),
+            assess_ms=round((t_assess - t_ref_v2) * 1000, 2),
+            total_ms=round((t_assess - t0) * 1000, 2)
         )
 
-        return _build_response(
+        # Step 5: Inject schema version into response via processing provenance
+        response = _build_response(
             result,
             phase_match_result,
             reference_match_v2_result,
@@ -579,11 +836,27 @@ async def process_xrd(request: XRDProcessRequest):
             claim_boundary_model,
             request=request,
         )
+        
+        # Override backend_schema_version in provenance
+        if response.processing_provenance:
+            response.processing_provenance.backend_schema_version = BACKEND_SCHEMA_VERSION
+        
+        logger.info(
+            "Request completed successfully",
+            stage="complete",
+            total_duration_ms=round((t_assess - t0) * 1000, 2)
+        )
+        
+        return response
 
+    except HTTPException:
+        # Re-raise HTTP exceptions (already properly formatted)
+        raise
     except ValueError as exc:
+        logger.error("Validation error during processing", error=str(exc), stage="error")
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("Unexpected error during XRD processing.")
+        logger.exception("Unexpected error during XRD processing", stage="fatal_error")
         raise HTTPException(
             status_code=500,
             detail=f"Internal processing error: {exc}",
@@ -1014,7 +1287,7 @@ async def process_xrd_skill(request: XRDProcessRequest):
     # Build the evidence object
     evidence = ScientificEvidenceObject(
         evidence_id=str(uuid.uuid4()),
-        schema_version="1.0.0",
+        schema_version=BACKEND_SCHEMA_VERSION,
         skill_id="xrd-science-skill",
         skill_label="XRD Science Skill",
         technique="XRD",
