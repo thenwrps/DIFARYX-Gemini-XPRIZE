@@ -120,6 +120,12 @@ function compactParseResult(parseResult: XRDLocalReferenceParseResult): XRDLocal
     ...(parseResult.referenceLabel ? { referenceLabel: parseResult.referenceLabel } : {}),
     ...(parseResult.formula ? { formula: parseResult.formula } : {}),
     ...(parseResult.materialFamily ? { materialFamily: parseResult.materialFamily } : {}),
+    ...(parseResult.structureName ? { structureName: parseResult.structureName } : {}),
+    ...(parseResult.formulaFromCif ? { formulaFromCif: parseResult.formulaFromCif } : {}),
+    ...(parseResult.spaceGroup ? { spaceGroup: parseResult.spaceGroup } : {}),
+    ...(parseResult.crystalSystem ? { crystalSystem: parseResult.crystalSystem } : {}),
+    ...(parseResult.cellParameters ? { cellParameters: parseResult.cellParameters } : {}),
+    ...(parseResult.cifMetadata ? { cifMetadata: parseResult.cifMetadata } : {}),
     elements: parseResult.elements.slice(0, 16),
     peaks,
     validation: {

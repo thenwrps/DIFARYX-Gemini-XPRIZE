@@ -2972,6 +2972,35 @@ function formatXrdReferenceFileSize(bytes: number | undefined) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function formatXrdCifCellParameters(parseResult: XRDLocalReferenceParseResult) {
+  const cell = parseResult.cellParameters;
+  if (!cell) return 'Not available';
+  const lengths = [
+    cell.a !== undefined ? `a=${formatReferenceMatchNumber(cell.a, 4)}` : null,
+    cell.b !== undefined ? `b=${formatReferenceMatchNumber(cell.b, 4)}` : null,
+    cell.c !== undefined ? `c=${formatReferenceMatchNumber(cell.c, 4)}` : null,
+  ].filter(Boolean);
+  const angles = [
+    cell.alpha !== undefined ? `alpha=${formatReferenceMatchNumber(cell.alpha, 2)}` : null,
+    cell.beta !== undefined ? `beta=${formatReferenceMatchNumber(cell.beta, 2)}` : null,
+    cell.gamma !== undefined ? `gamma=${formatReferenceMatchNumber(cell.gamma, 2)}` : null,
+  ].filter(Boolean);
+  return [...lengths, ...angles].join(', ') || 'Not available';
+}
+
+function formatXrdCifConversionMode(mode: string | undefined) {
+  switch (mode) {
+    case 'metadata_only':
+      return 'Metadata only';
+    case 'estimated_peak_preview':
+      return 'Estimated peak preview';
+    case 'not_supported_yet':
+      return 'Not supported yet';
+    default:
+      return 'Not available';
+  }
+}
+
 function getXrdLocalReferenceDraftsForContext(projectId?: string, uploadedRunId?: string) {
   const drafts = listXrdLocalReferenceDrafts(projectId);
   if (uploadedRunId) {
@@ -3534,10 +3563,10 @@ function XRDParametersPanel({
             <div>
               <p className="text-[10px] font-bold text-blue-950">Upload local reference pattern</p>
               <p className="mt-0.5 text-[10px] leading-relaxed text-blue-900">
-                Currently preview-supported: exported text peak lists / text patterns ({XRD_LOCAL_REFERENCE_PREVIEW_SUPPORTED_FORMATS.join(', ')}).
+                Currently preview-supported: exported text peak lists / text patterns ({XRD_LOCAL_REFERENCE_PREVIEW_SUPPORTED_FORMATS.join(', ')}) and CIF metadata previews (.cif).
               </p>
               <p className="mt-0.5 text-[10px] leading-relaxed text-blue-900">
-                Planned converters: instrument-native files ({XRD_LOCAL_REFERENCE_PLANNED_CONVERTER_FORMATS.join(', ')}), CIF structures, and database/reference-card exports.
+                Planned converters: instrument-native files ({XRD_LOCAL_REFERENCE_PLANNED_CONVERTER_FORMATS.filter((format) => format !== '.cif').join(', ')}), full CIF structure-to-pattern simulation, and database/reference-card exports.
               </p>
               <p className="mt-0.5 text-[10px] leading-relaxed text-blue-900">
                 Damaged, binary, or incomplete files are checked and reported before use.
@@ -3605,6 +3634,35 @@ function XRDParametersPanel({
             <p className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-text-muted">
               {localReferenceSaveStatus}
             </p>
+          )}
+          {localReferenceParsePreview.cifMetadata && (
+            <div className="mt-2 rounded border border-indigo-200 bg-indigo-50 px-2 py-1.5">
+              <p className="text-[9px] font-bold uppercase tracking-wide text-indigo-900">CIF metadata preview</p>
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                <Metric label="Detected format" value="CIF structure file" />
+                <Metric label="Conversion status" value={formatXrdCifConversionMode(localReferenceParsePreview.cifMetadata.conversionMode)} />
+                <Metric label="Structure name" value={localReferenceParsePreview.structureName || 'Not available'} />
+                <Metric label="Formula" value={localReferenceParsePreview.formulaFromCif || 'Not available'} />
+                <Metric label="Space group" value={localReferenceParsePreview.spaceGroup || 'Not available'} />
+                <Metric label="Crystal system" value={localReferenceParsePreview.crystalSystem || 'Not available'} />
+                <Metric label="Cell parameters" value={formatXrdCifCellParameters(localReferenceParsePreview)} />
+                <Metric
+                  label="Atom sites"
+                  value={localReferenceParsePreview.cifMetadata.atomSiteCount !== undefined
+                    ? String(localReferenceParsePreview.cifMetadata.atomSiteCount)
+                    : 'Not available'}
+                />
+              </div>
+              <p className="mt-2 rounded border border-indigo-100 bg-white/70 px-2 py-1 text-[10px] leading-relaxed text-indigo-900">
+                CIF structure detected. Full diffraction simulation is planned; this file is not used for backend matching unless explicit peak data are available.
+              </p>
+              <ul className="mt-1 space-y-0.5 text-[10px] leading-relaxed text-indigo-900">
+                <li>- CIF import is reference-source metadata only in this phase.</li>
+                <li>- CIF-derived peaks are not chemical identity confirmation.</li>
+                <li>- Phase purity is not confirmed.</li>
+                <li>- Full structure-to-pattern simulation requires crystallographic validation.</li>
+              </ul>
+            </div>
           )}
           {(localReferenceParsePreview.validation.errors.length > 0 || localReferenceParsePreview.validation.warnings.length > 0) && (
             <div className="mt-2 grid grid-cols-1 gap-1">
@@ -3700,6 +3758,17 @@ function XRDParametersPanel({
                   This saved draft is review-only because it is not eligible for backend matching.
                 </p>
               )}
+              {latestLocalReferenceDraft.parseResult.cifMetadata && (
+                <div className="mt-2 rounded border border-indigo-200 bg-indigo-50 px-2 py-1.5">
+                  <p className="text-[9px] font-bold uppercase tracking-wide text-indigo-900">Saved CIF metadata</p>
+                  <div className="mt-1 grid grid-cols-2 gap-1">
+                    <Metric label="Formula" value={latestLocalReferenceDraft.parseResult.formulaFromCif || 'Not available'} />
+                    <Metric label="Space group" value={latestLocalReferenceDraft.parseResult.spaceGroup || 'Not available'} />
+                    <Metric label="Conversion" value={formatXrdCifConversionMode(latestLocalReferenceDraft.parseResult.cifMetadata.conversionMode)} />
+                    <Metric label="Cell" value={formatXrdCifCellParameters(latestLocalReferenceDraft.parseResult)} />
+                  </div>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => handleDeleteLocalReferenceDraft(latestLocalReferenceDraft.id)}
@@ -3770,6 +3839,8 @@ function XRDParametersPanel({
             <li>Saved local references are used for backend matching only when explicitly enabled and eligible.</li>
             <li>Unsupported, corrupted, or converter-required imports are not sent to backend matching.</li>
             <li>Current backend matching uses active curated reference sets unless the saved local-reference toggle is enabled.</li>
+            <li>CIF import is reference-source metadata only in this phase.</li>
+            <li>Full structure-to-pattern simulation requires crystallographic validation.</li>
             <li>Previewed/saved reference peaks are not chemical identity confirmation.</li>
             <li>Phase purity is not confirmed.</li>
           </ul>

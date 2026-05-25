@@ -1,4 +1,6 @@
 import type {
+  XRDCifMetadata,
+  XRDLocalReferenceCellParameters,
   XRDLocalReferenceParseResult,
   XRDLocalReferencePeak,
   XRDReferenceFileKind,
@@ -19,6 +21,21 @@ const TWO_THETA_COLUMNS = new Set(['two_theta', '2theta', '2_theta', 'twotheta',
 const RELATIVE_INTENSITY_COLUMNS = new Set(['relative_intensity', 'rel_intensity', 'rel-intensity', 'relativeintensity', 'intensity']);
 const HKL_COLUMNS = new Set(['hkl', 'miller_index', 'miller_indices']);
 const D_SPACING_COLUMNS = new Set(['d_spacing', 'd-spacing', 'dspacing', 'd']);
+const CIF_MARKERS = [
+  'data_',
+  '_cell_length_a',
+  '_cell_length_b',
+  '_cell_length_c',
+  '_cell_angle_alpha',
+  '_space_group_name_h-m_alt',
+  '_symmetry_space_group_name_h-m',
+  '_atom_site_',
+];
+const CIF_FORMULA_TAGS = ['_chemical_formula_sum', '_chemical_formula_structural'];
+const CIF_STRUCTURE_NAME_TAGS = ['_chemical_name_common', '_chemical_name_mineral', '_chemical_name_systematic', '_pd_phase_name'];
+const CIF_SPACE_GROUP_TAGS = ['_space_group_name_h-m_alt', '_symmetry_space_group_name_h-m'];
+const CIF_CRYSTAL_SYSTEM_TAGS = ['_space_group_crystal_system', '_symmetry_cell_setting'];
+const CU_K_ALPHA_WAVELENGTH_ANGSTROM = 1.5406;
 
 type ColumnKey = 'twoTheta' | 'relativeIntensity' | 'hkl' | 'dSpacing';
 type ColumnIndexes = Partial<Record<ColumnKey, number>>;
@@ -62,6 +79,7 @@ function detectReferenceFile(text: string, sourceFileName: string): FileDetectio
   const extension = getExtension(sourceFileName);
   const textBinaryLikelihood = getTextBinaryLikelihood(text);
   const lowerText = text.slice(0, 4096).toLowerCase();
+  const hasCifMarker = CIF_MARKERS.some((marker) => lowerText.includes(marker));
 
   if (textBinaryLikelihood === 'likely_binary') {
     return {
@@ -73,7 +91,7 @@ function detectReferenceFile(text: string, sourceFileName: string): FileDetectio
   }
 
   if (isTextSourceFileType(extension)) {
-    const fileKind: XRDReferenceFileKind = lowerText.includes('_pd_phase_name') || lowerText.includes('data_')
+    const fileKind: XRDReferenceFileKind = hasCifMarker
       ? 'crystallographic_cif'
       : extension === '.xy' || extension === '.dat'
         ? 'exported_text_pattern'
@@ -82,7 +100,7 @@ function detectReferenceFile(text: string, sourceFileName: string): FileDetectio
       extension,
       sourceFileType: extension,
       fileKind,
-      detectedFormat: extension,
+      detectedFormat: fileKind === 'crystallographic_cif' ? 'CIF structure file' : extension,
       textBinaryLikelihood,
     };
   }
@@ -90,8 +108,8 @@ function detectReferenceFile(text: string, sourceFileName: string): FileDetectio
   if (INSTRUMENT_NATIVE_EXTENSIONS.has(extension ?? '')) {
     return { extension, fileKind: 'instrument_native', detectedFormat: extension, textBinaryLikelihood };
   }
-  if (CIF_EXTENSIONS.has(extension ?? '') || lowerText.includes('_cell_length') || lowerText.includes('_pd_phase_name')) {
-    return { extension, fileKind: 'crystallographic_cif', detectedFormat: extension ?? 'cif-like text', textBinaryLikelihood };
+  if (CIF_EXTENSIONS.has(extension ?? '') || hasCifMarker) {
+    return { extension, fileKind: 'crystallographic_cif', detectedFormat: 'CIF structure file', textBinaryLikelihood };
   }
   if (REFERENCE_CARD_EXTENSIONS.has(extension ?? '') || lowerText.includes('jcpds') || lowerText.includes('pdf-4')) {
     return { extension, fileKind: 'reference_database_card', detectedFormat: extension ?? 'reference-card text', textBinaryLikelihood };
@@ -161,6 +179,188 @@ function getStringValue(value: string | undefined) {
   return cleaned || undefined;
 }
 
+function cleanCifValue(value: string | undefined) {
+  const cleaned = getStringValue(value)
+    ?.replace(/^;|;$/g, '')
+    .trim();
+  if (!cleaned || cleaned === '?' || cleaned === '.') return undefined;
+  return cleaned;
+}
+
+function parseCifNumber(value: string | undefined) {
+  const cleaned = cleanCifValue(value)?.replace(/\([^)]+\)$/, '');
+  if (!cleaned) return undefined;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function tokenizeCifLine(line: string) {
+  const tokens: string[] = [];
+  const tokenPattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = tokenPattern.exec(line)) !== null) {
+    tokens.push(match[1] ?? match[2] ?? match[3]);
+  }
+  return tokens;
+}
+
+function getCifLines(text: string) {
+  return text
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+}
+
+function extractCifTagValue(lines: string[], tags: string[]) {
+  const tagSet = new Set(tags.map((tag) => tag.toLowerCase()));
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const lowerLine = line.toLowerCase();
+    const matchedTag = tags.find((tag) => lowerLine === tag.toLowerCase() || lowerLine.startsWith(`${tag.toLowerCase()} `));
+    if (!matchedTag || !tagSet.has(matchedTag.toLowerCase())) continue;
+
+    const tokens = tokenizeCifLine(line);
+    if (tokens.length > 1) {
+      return cleanCifValue(tokens.slice(1).join(' '));
+    }
+
+    const nextLine = lines[index + 1];
+    if (nextLine && !nextLine.startsWith('_') && nextLine.toLowerCase() !== 'loop_') {
+      return cleanCifValue(nextLine);
+    }
+  }
+
+  return undefined;
+}
+
+function extractCifDataBlockName(lines: string[]) {
+  const dataLine = lines.find((line) => line.toLowerCase().startsWith('data_'));
+  const blockName = dataLine?.slice(5).trim();
+  return blockName || undefined;
+}
+
+function extractElementsFromFormula(formula: string | undefined) {
+  if (!formula) return [];
+  const matches = formula.match(/[A-Z][a-z]?/g) ?? [];
+  return Array.from(new Set(matches));
+}
+
+function extractCifCellParameters(lines: string[]): XRDLocalReferenceCellParameters | undefined {
+  const cellParameters: XRDLocalReferenceCellParameters = {
+    a: parseCifNumber(extractCifTagValue(lines, ['_cell_length_a'])),
+    b: parseCifNumber(extractCifTagValue(lines, ['_cell_length_b'])),
+    c: parseCifNumber(extractCifTagValue(lines, ['_cell_length_c'])),
+    alpha: parseCifNumber(extractCifTagValue(lines, ['_cell_angle_alpha'])),
+    beta: parseCifNumber(extractCifTagValue(lines, ['_cell_angle_beta'])),
+    gamma: parseCifNumber(extractCifTagValue(lines, ['_cell_angle_gamma'])),
+  };
+
+  return Object.values(cellParameters).some((value) => value !== undefined) ? cellParameters : undefined;
+}
+
+interface CifLoop {
+  tags: string[];
+  rows: string[][];
+}
+
+function parseCifLoops(lines: string[]): CifLoop[] {
+  const loops: CifLoop[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].toLowerCase() !== 'loop_') continue;
+
+    const tags: string[] = [];
+    const rows: string[][] = [];
+    index += 1;
+
+    while (index < lines.length && lines[index].startsWith('_')) {
+      tags.push(tokenizeCifLine(lines[index])[0]?.toLowerCase() ?? lines[index].toLowerCase());
+      index += 1;
+    }
+
+    while (index < lines.length) {
+      const lowerLine = lines[index].toLowerCase();
+      if (lowerLine === 'loop_' || lowerLine.startsWith('data_') || lines[index].startsWith('_')) {
+        index -= 1;
+        break;
+      }
+
+      const tokens = tokenizeCifLine(lines[index]).map(cleanCifValue).filter((token): token is string => Boolean(token));
+      if (tokens.length >= tags.length && tags.length > 0) {
+        rows.push(tokens.slice(0, tags.length));
+      }
+      index += 1;
+    }
+
+    if (tags.length > 0) {
+      loops.push({ tags, rows });
+    }
+  }
+
+  return loops;
+}
+
+function getCifLoopTagIndex(loop: CifLoop, tag: string) {
+  return loop.tags.findIndex((candidate) => candidate === tag.toLowerCase());
+}
+
+function twoThetaFromDSpacing(dSpacing: number | undefined) {
+  if (typeof dSpacing !== 'number' || !Number.isFinite(dSpacing) || dSpacing <= 0) return undefined;
+  const ratio = CU_K_ALPHA_WAVELENGTH_ANGSTROM / (2 * dSpacing);
+  if (ratio <= 0 || ratio > 1) return undefined;
+  return (2 * Math.asin(ratio) * 180) / Math.PI;
+}
+
+function parseCifPeakLoops(loops: CifLoop[]) {
+  const peaks: XRDLocalReferencePeak[] = [];
+  let ignoredRowCount = 0;
+  let usedDSpacingConversion = false;
+
+  loops.forEach((loop) => {
+    const twoThetaIndex = getCifLoopTagIndex(loop, '_pd_peak_2theta');
+    const intensityIndex = getCifLoopTagIndex(loop, '_pd_peak_intensity');
+    const dSpacingIndex = getCifLoopTagIndex(loop, '_refln_d_spacing');
+    const hIndex = getCifLoopTagIndex(loop, '_refln_index_h');
+    const kIndex = getCifLoopTagIndex(loop, '_refln_index_k');
+    const lIndex = getCifLoopTagIndex(loop, '_refln_index_l');
+    const hasPeakColumns = twoThetaIndex >= 0 || dSpacingIndex >= 0;
+    if (!hasPeakColumns) return;
+
+    loop.rows.forEach((row) => {
+      const dSpacing = parseCifNumber(row[dSpacingIndex]);
+      const twoTheta = parseCifNumber(row[twoThetaIndex]) ?? twoThetaFromDSpacing(dSpacing);
+      if (!Number.isFinite(twoTheta)) {
+        ignoredRowCount += 1;
+        return;
+      }
+
+      if (twoThetaIndex < 0 && dSpacing !== undefined) {
+        usedDSpacingConversion = true;
+      }
+
+      const h = cleanCifValue(row[hIndex]);
+      const k = cleanCifValue(row[kIndex]);
+      const l = cleanCifValue(row[lIndex]);
+      const hkl = h && k && l ? `(${h}${k}${l})` : undefined;
+      peaks.push({
+        twoTheta: twoTheta as number,
+        ...(Number.isFinite(parseCifNumber(row[intensityIndex])) ? { relativeIntensity: parseCifNumber(row[intensityIndex]) } : {}),
+        ...(hkl ? { hkl } : {}),
+        ...(dSpacing !== undefined ? { dSpacing } : {}),
+      });
+    });
+  });
+
+  return { peaks, ignoredRowCount, usedDSpacingConversion };
+}
+
+function getCifAtomSiteCount(loops: CifLoop[]) {
+  const atomSiteLoop = loops.find((loop) => loop.tags.some((tag) => tag.startsWith('_atom_site_')));
+  return atomSiteLoop?.rows.length;
+}
+
 function parsePeak(tokens: string[], indexes: ColumnIndexes): XRDLocalReferencePeak | null {
   const twoTheta = parseFiniteNumber(tokens[indexes.twoTheta ?? 0]);
   if (twoTheta === undefined) return null;
@@ -180,11 +380,15 @@ function parsePeak(tokens: string[], indexes: ColumnIndexes): XRDLocalReferenceP
   };
 }
 
-function buildValidation(peaks: XRDLocalReferencePeak[], errors: string[], additionalWarnings: string[]) {
+function buildValidation(
+  peaks: XRDLocalReferencePeak[],
+  errors: string[],
+  additionalWarnings: string[],
+  hasRequiredMetadata = false,
+) {
   const hasTwoTheta = peaks.length > 0;
   const hasAtLeastThreePeaks = peaks.length >= 3;
   const hasRelativeIntensity = peaks.some((peak) => Number.isFinite(peak.relativeIntensity));
-  const hasRequiredMetadata = false;
   const warnings: string[] = [];
 
   if (!hasRelativeIntensity) warnings.push('Missing relative intensity values.');
@@ -231,13 +435,23 @@ function buildResult(args: {
   errors: string[];
   capabilityNotes: string[];
   referenceLabel?: string;
+  hasRequiredMetadata?: boolean;
+  structureName?: string;
+  formulaFromCif?: string;
+  formula?: string;
+  materialFamily?: string;
+  spaceGroup?: string;
+  crystalSystem?: string;
+  cellParameters?: XRDLocalReferenceCellParameters;
+  cifMetadata?: XRDCifMetadata;
+  elements?: string[];
 }): XRDLocalReferenceParseResult {
   const isEligibleForBackendMatching = (
     (args.status === 'parsed_preview' || args.status === 'partial_preview' || args.status === 'repaired_preview')
     && args.peaks.length >= 3
     && args.errors.length === 0
   );
-  const validation = buildValidation(args.peaks, args.errors, args.warnings);
+  const validation = buildValidation(args.peaks, args.errors, args.warnings, args.hasRequiredMetadata);
   const diagnostics: XRDReferenceImportDiagnostics = {
     fileKind: args.detection.fileKind,
     ...(args.detection.detectedFormat ? { detectedFormat: args.detection.detectedFormat } : {}),
@@ -257,7 +471,15 @@ function buildResult(args: {
     parsedAt: new Date().toISOString(),
     status: args.status,
     referenceLabel: args.referenceLabel ?? (args.sourceFileName.replace(/\.[^.]+$/, '') || undefined),
-    elements: [],
+    ...(args.formula ? { formula: args.formula } : {}),
+    ...(args.materialFamily ? { materialFamily: args.materialFamily } : {}),
+    ...(args.structureName ? { structureName: args.structureName } : {}),
+    ...(args.formulaFromCif ? { formulaFromCif: args.formulaFromCif } : {}),
+    ...(args.spaceGroup ? { spaceGroup: args.spaceGroup } : {}),
+    ...(args.crystalSystem ? { crystalSystem: args.crystalSystem } : {}),
+    ...(args.cellParameters ? { cellParameters: args.cellParameters } : {}),
+    ...(args.cifMetadata ? { cifMetadata: args.cifMetadata } : {}),
+    elements: args.elements ?? [],
     peaks: args.peaks,
     validation,
     fileKind: args.detection.fileKind,
@@ -310,6 +532,90 @@ function buildUnsupportedResult(
   });
 }
 
+export function parseXrdCifReferenceText(
+  text: string,
+  sourceFileName: string,
+  options: ParseOptions = {},
+): XRDLocalReferenceParseResult {
+  const detection = detectReferenceFile(text, sourceFileName);
+  const lines = getCifLines(text);
+  const loops = parseCifLoops(lines);
+  const structureName = extractCifTagValue(lines, CIF_STRUCTURE_NAME_TAGS);
+  const formulaFromCif = extractCifTagValue(lines, CIF_FORMULA_TAGS);
+  const spaceGroup = extractCifTagValue(lines, CIF_SPACE_GROUP_TAGS);
+  const crystalSystem = extractCifTagValue(lines, CIF_CRYSTAL_SYSTEM_TAGS);
+  const cellParameters = extractCifCellParameters(lines);
+  const atomSiteCount = getCifAtomSiteCount(loops);
+  const peakLoopResult = parseCifPeakLoops(loops);
+  const hasExplicitPeakPreview = peakLoopResult.peaks.length > 0;
+  const hasRequiredMetadata = Boolean(formulaFromCif || structureName || cellParameters || spaceGroup);
+  const conversionMode: XRDCifMetadata['conversionMode'] = hasExplicitPeakPreview
+    ? 'estimated_peak_preview'
+    : 'metadata_only';
+  const cifMetadata: XRDCifMetadata = {
+    ...(extractCifDataBlockName(lines) ? { dataBlockName: extractCifDataBlockName(lines) } : {}),
+    ...(atomSiteCount !== undefined ? { atomSiteCount } : {}),
+    hasCellParameters: Boolean(cellParameters),
+    hasSpaceGroup: Boolean(spaceGroup),
+    hasAtomSites: typeof atomSiteCount === 'number' && atomSiteCount > 0,
+    conversionMode,
+  };
+  const warnings = [
+    'CIF import is reference-source metadata only in this phase.',
+    hasExplicitPeakPreview
+      ? 'Explicit CIF peak or reflection rows were parsed cautiously for preview.'
+      : 'CIF structure detected. Full diffraction simulation is planned; this file is not used for backend matching unless explicit peak data are available.',
+    'CIF-derived peaks are not chemical identity confirmation.',
+    'Phase purity is not confirmed.',
+    'Full structure-to-pattern simulation requires crystallographic validation.',
+  ];
+  if (peakLoopResult.usedDSpacingConversion) {
+    warnings.push('Some CIF preview positions were estimated from d-spacing using Cu K alpha wavelength.');
+  }
+  if (peakLoopResult.ignoredRowCount > 0) {
+    warnings.push(`${peakLoopResult.ignoredRowCount} CIF peak/reflection row${peakLoopResult.ignoredRowCount === 1 ? '' : 's'} could not be parsed and were ignored.`);
+  }
+
+  const status: XRDReferenceImportStatus = hasExplicitPeakPreview
+    ? peakLoopResult.ignoredRowCount > 0
+      ? 'partial_preview'
+      : 'parsed_preview'
+    : 'requires_converter';
+  const errors = lines.length === 0 ? ['Unsupported or empty CIF file.'] : [];
+
+  return buildResult({
+    sourceFileName,
+    fileSizeBytes: options.fileSizeBytes,
+    detection: {
+      ...detection,
+      fileKind: 'crystallographic_cif',
+      detectedFormat: 'CIF structure file',
+    },
+    status: errors.length > 0 ? 'parse_error' : status,
+    peaks: peakLoopResult.peaks,
+    parsedRowCount: peakLoopResult.peaks.length,
+    ignoredRowCount: peakLoopResult.ignoredRowCount,
+    warnings,
+    errors,
+    capabilityNotes: [
+      hasExplicitPeakPreview
+        ? 'CIF explicit peak preview may be saved and used only by explicit opt-in when backend eligible.'
+        : 'CIF metadata preview requires a future converter before backend matching.',
+    ],
+    referenceLabel: structureName ?? extractCifDataBlockName(lines) ?? sourceFileName.replace(/\.[^.]+$/, ''),
+    hasRequiredMetadata,
+    structureName,
+    formulaFromCif,
+    formula: formulaFromCif,
+    materialFamily: 'CIF reference metadata',
+    spaceGroup,
+    crystalSystem,
+    cellParameters,
+    cifMetadata,
+    elements: extractElementsFromFormula(formulaFromCif),
+  });
+}
+
 export function parseXrdLocalReferenceText(
   text: string,
   sourceFileName: string,
@@ -317,7 +623,11 @@ export function parseXrdLocalReferenceText(
 ): XRDLocalReferenceParseResult {
   const detection = detectReferenceFile(text, sourceFileName);
 
-  if (!detection.sourceFileType || detection.fileKind === 'crystallographic_cif' || detection.textBinaryLikelihood === 'likely_binary') {
+  if (detection.fileKind === 'crystallographic_cif' && detection.textBinaryLikelihood !== 'likely_binary') {
+    return parseXrdCifReferenceText(text, sourceFileName, options);
+  }
+
+  if (!detection.sourceFileType || detection.textBinaryLikelihood === 'likely_binary') {
     return buildUnsupportedResult(text, sourceFileName, options);
   }
 

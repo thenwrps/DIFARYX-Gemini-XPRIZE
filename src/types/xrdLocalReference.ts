@@ -79,6 +79,24 @@ export interface XRDLocalReferenceValidation {
   errors: string[];
 }
 
+export interface XRDLocalReferenceCellParameters {
+  a?: number;
+  b?: number;
+  c?: number;
+  alpha?: number;
+  beta?: number;
+  gamma?: number;
+}
+
+export interface XRDCifMetadata {
+  dataBlockName?: string;
+  atomSiteCount?: number;
+  hasCellParameters: boolean;
+  hasSpaceGroup: boolean;
+  hasAtomSites: boolean;
+  conversionMode: "metadata_only" | "estimated_peak_preview" | "not_supported_yet";
+}
+
 export interface XRDLocalReferenceParseResult {
   sourceFileName: string;
   sourceFileType?: ".csv" | ".txt" | ".xy" | ".dat";
@@ -87,6 +105,12 @@ export interface XRDLocalReferenceParseResult {
   referenceLabel?: string;
   formula?: string;
   materialFamily?: string;
+  structureName?: string;
+  formulaFromCif?: string;
+  spaceGroup?: string;
+  crystalSystem?: string;
+  cellParameters?: XRDLocalReferenceCellParameters;
+  cifMetadata?: XRDCifMetadata;
   elements: string[];
   peaks: XRDLocalReferencePeak[];
   validation: XRDLocalReferenceValidation;
