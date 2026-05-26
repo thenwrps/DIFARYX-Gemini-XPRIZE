@@ -99,3 +99,7 @@ PATCH_11B_AUTH_MODE_SEPARATION.md
 QA_REPORT_PATCH_10_7_XRD_PARAMETERS.md
 REAL_READY_LOCAL_WORKFLOW_COMPLETE.md
 DIFARYX_completed_work_summary.xlsx
+.windsurf/
+temp_notes/
+task.md
+walkthrough.md
