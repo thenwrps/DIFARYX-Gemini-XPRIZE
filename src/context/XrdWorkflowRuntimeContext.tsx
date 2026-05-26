@@ -18,6 +18,9 @@ import {
   extractScientificEvidenceFields,
   extractReferenceMatchFields,
 } from '../data/xrdWorkflowHandoffSelectors';
+import type { XrdWorkflowSession, XrdWorkflowEvent } from '../types/xrdWorkflowSession';
+import { xrdSessionReducer } from '../store/xrdSessionReducer';
+import { buildXrdWorkflowSession } from '../utils/xrdSessionAdapter';
 
 // ── Runtime State Types ─────────────────────────────────────────────────
 
@@ -187,6 +190,9 @@ export interface XrdWorkflowRuntimeState {
    * UI layers should render this as an alert banner and then dismiss it.
    */
   sessionResetNotification: string | null;
+
+  /** Canonical workflow session (Shadow Layer) */
+  currentSession: XrdWorkflowSession | null;
 }
 
 /**
@@ -211,6 +217,9 @@ export interface XrdWorkflowRuntimeActions {
 
   /** Dismiss the session reset notification banner */
   dismissSessionResetNotification: () => void;
+
+  /** Dispatch state machine event */
+  dispatchWorkflowEvent: (event: XrdWorkflowEvent) => void;
 }
 
 /**
@@ -264,6 +273,91 @@ export function XrdWorkflowRuntimeProvider({ children }: XrdWorkflowRuntimeProvi
     hydrated.resetNotification,
   );
 
+  // Canonical Session State (Shadow Layer)
+  const [currentSession, setCurrentSession] = useState<XrdWorkflowSession | null>(null);
+
+  // Synchronize currentSession on mount or when currentEvidence hydrates
+  useEffect(() => {
+    if (currentEvidence) {
+      setCurrentSession((prev) => {
+        if (
+          prev &&
+          prev.evidence?.phaseMatch?.isPhaseMatched === currentEvidence.isPhaseMatched &&
+          prev.evidence?.scientificEvidence?.evidenceId === currentEvidence.workflowScientificEvidence?.evidenceId
+        ) {
+          return prev;
+        }
+        return buildXrdWorkflowSession({
+          sessionId: prev?.sessionId,
+          isProcessing,
+          activeStage,
+          isValidated7E4,
+          evidenceRecord: currentEvidence,
+        });
+      });
+    } else {
+      setCurrentSession(null);
+    }
+  }, [currentEvidence]);
+
+  // ── State Transition Dispatcher with Controlled Shadow Sync ──────────
+  const dispatchWorkflowEvent = useCallback((event: XrdWorkflowEvent) => {
+    setCurrentSession((prevSession) => {
+      // 1. Build initial session if not present
+      const activeSession = prevSession || buildXrdWorkflowSession({
+        isProcessing,
+        activeStage,
+        isValidated7E4,
+        evidenceRecord: currentEvidence,
+      });
+
+      // 2. Reduce next state
+      const nextSession = xrdSessionReducer(activeSession, event);
+
+      // 3. Strict Transition Priority Check:
+      // If reducer rejected transition (returned identical state), do not update legacy flags
+      if (nextSession === activeSession) {
+        return prevSession;
+      }
+
+      // 4. Controlled Shadow Sync: Update legacy flags from nextSession.runtime
+      const nextRuntime = nextSession.runtime;
+      
+      const nextIsProcessing = nextRuntime.status === 'processing';
+      if (nextIsProcessing !== isProcessing) {
+        setIsProcessing(nextIsProcessing);
+      }
+
+      let nextLegacyStage: XrdWorkflowStage = null;
+      if (nextRuntime.activeStage) {
+        switch (nextRuntime.activeStage) {
+          case 'baseline': nextLegacyStage = 'baseline'; break;
+          case 'smoothing': nextLegacyStage = 'smooth'; break;
+          case 'peak_detection': nextLegacyStage = 'peak_detect'; break;
+          case 'fitting': nextLegacyStage = 'fit_peaks'; break;
+          case 'reference_matching': nextLegacyStage = 'match_ref'; break;
+          case 'handoff': nextLegacyStage = 'boundary'; break;
+        }
+      }
+      if (nextLegacyStage !== activeStage) {
+        setActiveStageState(nextLegacyStage);
+      }
+
+      const nextIsValidated7E4 = nextSession.validation?.isValidated7E4 ?? false;
+      if (nextIsValidated7E4 !== isValidated7E4) {
+        setIsValidated7E4(nextIsValidated7E4);
+      }
+
+      if (event.type === 'FORCE_RESET_SESSION') {
+        setCurrentEvidence(null);
+        setSessionResetNotification(null);
+        clearSessionPacket();
+      }
+
+      return nextSession;
+    });
+  }, [currentEvidence, isProcessing, activeStage, isValidated7E4]);
+
   // ── Session sync: persist lightweight pointer on state changes ───────
   useEffect(() => {
     if (!currentEvidence) {
@@ -288,29 +382,75 @@ export function XrdWorkflowRuntimeProvider({ children }: XrdWorkflowRuntimeProvi
 
   // Actions
   const updateRuntimeEvidence = useCallback((evidence: XrdRuntimeEvidence) => {
+    if (evidence) {
+      dispatchWorkflowEvent({ type: 'COMPLETE_PROCESSING' });
+    }
     setCurrentEvidence(evidence);
-  }, []);
+    setCurrentSession((prev) => {
+      const base = buildXrdWorkflowSession({
+        sessionId: prev?.sessionId,
+        isProcessing: false,
+        activeStage: null,
+        isValidated7E4,
+        evidenceRecord: evidence,
+      });
+      return {
+        ...base,
+        runtime: {
+          ...base.runtime,
+          status: prev && prev.runtime.status === 'processing' ? 'completed' : base.runtime.status,
+          activeStage: prev?.runtime.activeStage,
+        }
+      };
+    });
+  }, [dispatchWorkflowEvent, isValidated7E4]);
 
   const setActiveStage = useCallback((stage: XrdWorkflowStage) => {
-    setActiveStageState(stage);
-  }, []);
-
-  const set7E4ValidationStatus = useCallback((status: boolean) => {
-    setIsValidated7E4(status);
-  }, []);
+    let nextStage: 'baseline' | 'smoothing' | 'peak_detection' | 'fitting' | 'reference_matching' | 'handoff' | undefined;
+    if (stage) {
+      switch (stage) {
+        case 'baseline': nextStage = 'baseline'; break;
+        case 'smooth': nextStage = 'smoothing'; break;
+        case 'peak_detect': nextStage = 'peak_detection'; break;
+        case 'fit_peaks': nextStage = 'fitting'; break;
+        case 'match_ref': nextStage = 'reference_matching'; break;
+        case 'boundary': nextStage = 'handoff'; break;
+      }
+    }
+    if (nextStage) {
+      dispatchWorkflowEvent({ type: 'UPDATE_STAGE', payload: { stage: nextStage } });
+    } else {
+      setActiveStageState(null);
+    }
+  }, [dispatchWorkflowEvent]);
 
   const setProcessingStatus = useCallback((processing: boolean) => {
-    setIsProcessing(processing);
-  }, []);
+    if (processing) {
+      let currentStage: 'baseline' | 'smoothing' | 'peak_detection' | 'fitting' | 'reference_matching' | 'handoff' = 'baseline';
+      if (activeStage) {
+        switch (activeStage) {
+          case 'baseline': currentStage = 'baseline'; break;
+          case 'smooth': currentStage = 'smoothing'; break;
+          case 'peak_detect': currentStage = 'peak_detection'; break;
+          case 'fit_peaks': currentStage = 'fitting'; break;
+          case 'match_ref': currentStage = 'reference_matching'; break;
+          case 'boundary': currentStage = 'handoff'; break;
+        }
+      }
+      dispatchWorkflowEvent({ type: 'START_PROCESSING', payload: { stage: currentStage } });
+    } else {
+      setIsProcessing(false);
+    }
+  }, [activeStage, dispatchWorkflowEvent]);
+
+  const set7E4ValidationStatus = useCallback((status: boolean) => {
+    dispatchWorkflowEvent({ type: 'SET_VALIDATION', payload: { isValidated7E4: status } });
+  }, [dispatchWorkflowEvent]);
 
   const resetRuntimeState = useCallback(() => {
-    setCurrentEvidence(null);
-    setActiveStageState(null);
-    setIsValidated7E4(false);
-    setIsProcessing(false);
-    setSessionResetNotification(null);
-    clearSessionPacket();
-  }, []);
+    const newSessionId = `xrd-session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    dispatchWorkflowEvent({ type: 'FORCE_RESET_SESSION', payload: { newSessionId } });
+  }, [dispatchWorkflowEvent]);
 
   const dismissSessionResetNotification = useCallback(() => {
     setSessionResetNotification(null);
@@ -325,6 +465,7 @@ export function XrdWorkflowRuntimeProvider({ children }: XrdWorkflowRuntimeProvi
     sampleId,
     materialClass,
     sessionResetNotification,
+    currentSession,
     // Actions
     updateRuntimeEvidence,
     setActiveStage,
@@ -332,6 +473,7 @@ export function XrdWorkflowRuntimeProvider({ children }: XrdWorkflowRuntimeProvi
     setProcessingStatus,
     resetRuntimeState,
     dismissSessionResetNotification,
+    dispatchWorkflowEvent,
   };
 
   return (

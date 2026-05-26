@@ -91,3 +91,12 @@ export interface XrdWorkflowContractMetadata {
   source: 'legacy' | 'workflow' | 'session';
   migratedFromLegacy?: boolean;
 }
+
+export type XrdWorkflowEvent =
+  | { type: 'START_PROCESSING'; payload: { stage: 'baseline' | 'smoothing' | 'peak_detection' | 'fitting' | 'reference_matching' | 'handoff' } }
+  | { type: 'UPDATE_STAGE'; payload: { stage: 'baseline' | 'smoothing' | 'peak_detection' | 'fitting' | 'reference_matching' | 'handoff' } }
+  | { type: 'COMPLETE_PROCESSING'; payload?: { completedAt?: string } }
+  | { type: 'FAIL_PROCESSING'; payload: { errorMessage: string } }
+  | { type: 'FORCE_RESET_SESSION'; payload: { newSessionId: string } }
+  | { type: 'SET_VALIDATION'; payload: { isValidated7E4: boolean } };
+
