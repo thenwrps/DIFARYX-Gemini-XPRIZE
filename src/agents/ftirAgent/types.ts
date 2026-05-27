@@ -80,7 +80,7 @@ export interface FtirFunctionalGroupCandidate {
 
 export interface FtirProcessingParams {
   // Baseline correction
-  baselineMethod?: 'Polynomial' | 'Rubberband' | 'Linear';
+  baselineMethod?: 'Polynomial' | 'Rubberband' | 'Linear' | 'ALS' | 'Rolling Ball';
   polynomialOrder?: number;     // 2-5 (for Polynomial method)
   baselineIterations?: number;  // 10-50 (for Rubberband method)
   

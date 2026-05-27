@@ -21,6 +21,7 @@ import type {
   RamanModeReference,
 } from './types';
 import type { RamanDataset } from '../../data/ramanDemoData';
+import { applyBaseline, applySmoothing, removeCosmicRays, identifyFunctionalGroups } from '../../hooks/useX7UniversalHook';
 
 // ============================================================================
 // Raman Mode Reference Database
@@ -97,47 +98,21 @@ const RAMAN_MODE_DATABASE: RamanModeReference[] = [
 
 function correctBaseline(
   dataPoints: RamanPoint[],
-  method: 'Polynomial' | 'Rubberband' | 'Linear'
+  method: 'Polynomial' | 'Rubberband' | 'Linear' | 'ALS' | 'Rolling Ball'
 ): { corrected: RamanPoint[]; baseline: number[] } {
-  const n = dataPoints.length;
-  const baseline: number[] = new Array(n);
-  
-  const minY = Math.min(...dataPoints.map(p => p.y));
-  for (let i = 0; i < n; i++) {
-    const progress = i / (n - 1);
-    baseline[i] = minY + (dataPoints[0].y - minY) * (1 - progress) * 0.3;
-  }
-  
-  const corrected = dataPoints.map((p, i) => ({
-    x: p.x,
-    y: Math.max(0, p.y - baseline[i]),
-  }));
-  
+  const corrected = applyBaseline(dataPoints, method as any);
+  const baseline = dataPoints.map((p, i) => p.y - corrected[i].y);
   return { corrected, baseline };
 }
+
 
 function smoothData(
   dataPoints: RamanPoint[],
   windowSize: number
 ): RamanPoint[] {
-  const halfWindow = Math.floor(windowSize / 2);
-  const smoothed: RamanPoint[] = [];
-  
-  for (let i = 0; i < dataPoints.length; i++) {
-    const start = Math.max(0, i - halfWindow);
-    const end = Math.min(dataPoints.length, i + halfWindow + 1);
-    const window = dataPoints.slice(start, end);
-    
-    const avg = window.reduce((sum, p) => sum + p.y, 0) / window.length;
-    
-    smoothed.push({
-      x: dataPoints[i].x,
-      y: avg,
-    });
-  }
-  
-  return smoothed;
+  return applySmoothing(dataPoints, 'Savitzky-Golay');
 }
+
 
 function detectPeaks(
   dataPoints: RamanPoint[],
@@ -533,10 +508,14 @@ export function runRamanProcessing(
   const peakMinDistance = params?.peakMinDistance ?? 25;
   const peakMinHeight = params?.peakMinHeight ?? 0.10;
   
-  const dataPoints: RamanPoint[] = dataset.signal.ramanShift.map((rs, i) => ({
+  let dataPoints: RamanPoint[] = dataset.signal.ramanShift.map((rs, i) => ({
     x: rs,
     y: dataset.signal.intensity[i],
   }));
+
+  // Cosmic Ray Removal using Median Filter
+  dataPoints = removeCosmicRays(dataPoints);
+  executionLog.push({ step: 'Cosmic Ray Removal', message: 'Median filter cosmic ray removal applied' });
   
   const { corrected: baselineCorrected, baseline } = correctBaseline(
     dataPoints,
@@ -548,6 +527,17 @@ export function runRamanProcessing(
   executionLog.push({ step: 'Smoothing', message: `Window size=${smoothingWindowSize}` });
   
   const peaks = detectPeaks(smoothed, peakProminence, peakMinDistance, peakMinHeight);
+
+  // Apply Scientific Dictionary mapping
+  const dictAssignments = identifyFunctionalGroups(peaks, 'RAMAN');
+  for (const peak of peaks) {
+    const match = dictAssignments.find(a => Math.abs(a.position - peak.ramanShift) < 1e-3);
+    if (match) {
+      peak.assignment = match.assignment;
+      peak.label = `${match.assignment} (${match.confidence}%)`;
+    }
+  }
+
   executionLog.push({ step: 'Peak Detection', message: `${peaks.length} peaks detected` });
   
   const matches = assignModes(peaks, RAMAN_MODE_DATABASE);

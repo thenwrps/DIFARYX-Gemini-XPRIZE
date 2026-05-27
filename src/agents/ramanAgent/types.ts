@@ -90,7 +90,7 @@ export interface RamanInterpretation {
 
 export interface RamanProcessingParams {
   // Baseline correction
-  baselineMethod?: 'Polynomial' | 'Rubberband' | 'Linear';
+  baselineMethod?: 'Polynomial' | 'Rubberband' | 'Linear' | 'ALS' | 'Rolling Ball';
   polynomialOrder?: number;
   baselineIterations?: number;
   

@@ -22,6 +22,7 @@ import type {
   StateAggregation,
 } from './types';
 import type { FtirDataset } from '../../data/ftirDemoData';
+import { applyBaseline, applySmoothing, applyNormalization, identifyFunctionalGroups } from '../../hooks/useX7UniversalHook';
 
 // ============================================================================
 // FTIR Functional Group Reference Database
@@ -111,43 +112,12 @@ const FTIR_REFERENCE_DATABASE: FtirReferenceRange[] = [
  */
 function correctBaseline(
   dataPoints: FtirPoint[],
-  method: 'Polynomial' | 'Rubberband' | 'Linear',
+  method: 'Polynomial' | 'Rubberband' | 'Linear' | 'ALS' | 'Rolling Ball',
   polynomialOrder: number,
   iterations: number
 ): { corrected: FtirPoint[]; baseline: number[] } {
-  const n = dataPoints.length;
-  const baseline: number[] = new Array(n);
-  
-  if (method === 'Linear') {
-    // Linear baseline: straight line from start to end
-    const start = dataPoints[0].y;
-    const end = dataPoints[n - 1].y;
-    const slope = (end - start) / (n - 1);
-    
-    for (let i = 0; i < n; i++) {
-      baseline[i] = start + slope * i;
-    }
-  } else if (method === 'Polynomial') {
-    // Simplified polynomial baseline (use min values as baseline points)
-    const minY = Math.min(...dataPoints.map(p => p.y));
-    for (let i = 0; i < n; i++) {
-      const progress = i / (n - 1);
-      baseline[i] = minY + (dataPoints[0].y - minY) * (1 - progress) * 0.3;
-    }
-  } else {
-    // Rubberband (simplified: use convex hull approximation)
-    const minY = Math.min(...dataPoints.map(p => p.y));
-    for (let i = 0; i < n; i++) {
-      baseline[i] = minY + 0.02;
-    }
-  }
-  
-  // Subtract baseline
-  const corrected = dataPoints.map((p, i) => ({
-    x: p.x,
-    y: Math.max(0, p.y - baseline[i]),
-  }));
-  
+  const corrected = applyBaseline(dataPoints, method as any);
+  const baseline = dataPoints.map((p, i) => p.y - corrected[i].y);
   return { corrected, baseline };
 }
 
@@ -161,25 +131,9 @@ function smoothData(
   windowSize: number,
   polynomialOrder: number
 ): FtirPoint[] {
-  const halfWindow = Math.floor(windowSize / 2);
-  const smoothed: FtirPoint[] = [];
-  
-  for (let i = 0; i < dataPoints.length; i++) {
-    const start = Math.max(0, i - halfWindow);
-    const end = Math.min(dataPoints.length, i + halfWindow + 1);
-    const window = dataPoints.slice(start, end);
-    
-    // Simple moving average (Savitzky-Golay would require more complex implementation)
-    const avg = window.reduce((sum, p) => sum + p.y, 0) / window.length;
-    
-    smoothed.push({
-      x: dataPoints[i].x,
-      y: avg,
-    });
-  }
-  
-  return smoothed;
+  return applySmoothing(dataPoints, method);
 }
+
 
 /**
  * Step 3: Band Detection
@@ -1004,14 +958,29 @@ export function runFtirProcessing(
     smoothingPolynomialOrder
   );
   executionLog.push({ step: 'Smoothing', message: `${smoothingMethod} (window=${smoothingWindowSize})` });
+
+  // Apply Normalization
+  const normalized = applyNormalization(smoothed, 'Min-max');
+  executionLog.push({ step: 'Normalization', message: 'Min-max normalization applied' });
   
   // Step 3: Band Detection
   const bands = detectBands(
-    smoothed,
+    normalized,
     bandProminence,
     bandMinDistance,
     bandMinHeight
   );
+  
+  // Apply Scientific Dictionary mapping
+  const dictAssignments = identifyFunctionalGroups(bands, 'FTIR');
+  for (const band of bands) {
+    const match = dictAssignments.find(a => Math.abs(a.position - band.wavenumber) < 1e-3);
+    if (match) {
+      band.assignment = match.assignment;
+      band.label = `${match.assignment} (${match.confidence}%)`;
+    }
+  }
+
   executionLog.push({ step: 'Band Detection', message: `${bands.length} bands detected` });
   
   // Step 4: Band Assignment
@@ -1052,9 +1021,10 @@ export function runFtirProcessing(
   
   return {
     signal: {
-      wavenumber: smoothed.map(p => p.x),
-      absorbance: smoothed.map(p => p.y),
+      wavenumber: normalized.map(p => p.x),
+      absorbance: normalized.map(p => p.y),
     },
+
     baseline: baseline,
     bands: bands,
     matches: matches,

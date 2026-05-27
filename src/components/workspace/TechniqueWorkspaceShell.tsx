@@ -1572,13 +1572,16 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         const extractedFeatures: TechniqueFeature[] = result.peaks.map((peak, index) => ({
           id: `raman-peak-${index}`,
           technique: 'Raman' as const,
-          label: `Peak at ${peak.ramanShift.toFixed(1)} cm⁻¹`,
+          label: peak.assignment
+            ? `${peak.assignment} (${peak.ramanShift.toFixed(0)} cm⁻¹)`
+            : `Peak at ${peak.ramanShift.toFixed(1)} cm⁻¹`,
           position: peak.ramanShift,
           intensity: peak.intensity,
           relativeIntensity: peak.intensity,
           prominence: peak.prominence,
           context: peak.assignment || 'Unassigned',
         }));
+
 
         const updateSuccess = updateUploadedRunProcessingResults(routeContext.uploadedRunId, {
           extractedFeatures,
@@ -1763,13 +1766,16 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         const extractedFeatures: TechniqueFeature[] = result.bands.map((band, index) => ({
           id: `ftir-band-${index}`,
           technique: 'FTIR' as const,
-          label: `Band at ${band.wavenumber.toFixed(0)} cm⁻¹`,
+          label: band.assignment
+            ? `${band.assignment} (${band.wavenumber.toFixed(0)} cm⁻¹)`
+            : `Band at ${band.wavenumber.toFixed(0)} cm⁻¹`,
           position: band.wavenumber,
           intensity: band.intensity,
           relativeIntensity: (band.intensity / Math.max(...result.bands.map(b => b.intensity))) * 100,
           prominence: band.intensity,
           context: band.assignment || 'Unassigned',
         }));
+
 
         const updateSuccess = updateUploadedRunProcessingResults(routeContext.uploadedRunId, {
           extractedFeatures,

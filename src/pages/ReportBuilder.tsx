@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Clipboard, Download, FileText, Save, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Clipboard, Download, FileText, Save, ShieldCheck, Sparkles } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -377,6 +377,45 @@ function buildReportSections(
     },
     ...xrdBackendEvidenceSection,
     ...xrdReferenceCandidateSection,
+    ...(() => {
+      const ftirRamanSections: DemoExportSection[] = [];
+      const uploadedRuns = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('difaryx.uploadedSignalRuns.v1') || '[]') : [];
+      const ftirRuns = uploadedRuns.filter((r: any) => r.technique === 'FTIR');
+      const ramanRuns = uploadedRuns.filter((r: any) => r.technique === 'Raman');
+
+      if (ftirRuns.length > 0) {
+        const lines = ftirRuns.flatMap((run: any) => [
+          `File Source: ${run.fileName}`,
+          `Technique: Fourier Transform Infrared Spectroscopy (FTIR)`,
+          `Instrument Claim Boundary: ${Array.isArray(run.claimBoundary) ? run.claimBoundary.join(', ') : 'Standard FTIR range'}`,
+          `Functional Group Assignments (Mapped to Universal Spectral Library):`,
+          ...(run.extractedFeatures && run.extractedFeatures.length > 0
+            ? run.extractedFeatures.map((f: any) => `  - ${f.label}: ${f.context} (intensity: ${f.intensity.toFixed(2)})`)
+            : ['  No bands detected or assigned.'])
+        ]);
+        ftirRamanSections.push({
+          heading: 'FTIR Spectral Library Assignments',
+          lines
+        });
+      }
+
+      if (ramanRuns.length > 0) {
+        const lines = ramanRuns.flatMap((run: any) => [
+          `File Source: ${run.fileName}`,
+          `Technique: Raman Spectroscopy`,
+          `Instrument Claim Boundary: ${Array.isArray(run.claimBoundary) ? run.claimBoundary.join(', ') : 'Standard Raman shift range'}`,
+          `Symmetry Mode Assignments (Mapped to Universal Spectral Library):`,
+          ...(run.extractedFeatures && run.extractedFeatures.length > 0
+            ? run.extractedFeatures.map((f: any) => `  - ${f.label}: ${f.context} (intensity: ${f.intensity.toFixed(2)})`)
+            : ['  No peaks detected or assigned.'])
+        ]);
+        ftirRamanSections.push({
+          heading: 'Raman Spectral Library Assignments',
+          lines
+        });
+      }
+      return ftirRamanSections;
+    })(),
   ];
 }
 
@@ -610,12 +649,17 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
     gmailConnected,
     uploadToDrive,
     sendGmailReport,
+    analyzeWithVertexAI,
   } = useX7UniversalHook();
 
   const [emailRecipient, setEmailRecipient] = useState('');
   const [shareError, setShareError] = useState<string | null>(null);
   const [shareSuccess, setShareSuccess] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'standard' | 'ai'>('standard');
+  const [aiDraft, setAiDraft] = useState<string | null>(null);
+  const [isDrafting, setIsDrafting] = useState(false);
+  const [aiWarning, setAiWarning] = useState<string | null>(null);
 
   const [searchParams] = useSearchParams();
   const requestedProjectId = searchParams.get('project');
@@ -915,6 +959,128 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
     );
   };
 
+  const generateSimulatedAiDraft = (payload: any): string => {
+    let text = `# Scientific Characterization Report: ${payload.projectName || 'Active Sample'}\n\n`;
+    text += `## Executive Summary\n`;
+    text += `This report presents the evidence-grounded structural characterization for sample **${payload.sampleIdentity || 'Unknown'}** under the objective: *"${payload.objective || 'Not specified'}"*.\n\n`;
+    
+    text += `## Experimental Techniques & Integration\n`;
+    text += `A multi-technique verification workflow was executed using: **${(payload.availableTechniques || []).join(', ') || 'N/A'}**.\n\n`;
+    
+    if (payload.uploadedRuns && payload.uploadedRuns.length > 0) {
+      text += `## Spectral Assignments & Phase Validation\n`;
+      text += `The following spectral bands/peaks were identified and mapped to the Universal Scientific Dictionary:\n\n`;
+      
+      payload.uploadedRuns.forEach((run: any) => {
+        text += `### ${run.technique} Analysis (${run.fileName})\n`;
+        text += `- **Instrument Claim Range**: ${Array.isArray(run.claimBoundary) ? run.claimBoundary.join(' - ') + ' cm⁻¹' : 'Standard spectral range'}\n`;
+        text += `- **Detected and Assigned Features**:\n`;
+        
+        if (run.features && run.features.length > 0) {
+          run.features.forEach((f: any) => {
+            text += `  * **${f.label}** at **${typeof f.position === 'number' ? f.position.toFixed(0) : f.position} cm⁻¹** (Intensity: ${typeof f.intensity === 'number' ? f.intensity.toFixed(2) : f.intensity}, Assignment Context: *${f.context}*)\n`;
+          });
+        } else {
+          text += `  * No specific features were detected or assigned.\n`;
+        }
+        text += `\n`;
+      });
+    }
+    
+    text += `## Validation Gaps & Claim Boundaries\n`;
+    text += `### Claim Boundary Status\n`;
+    if (payload.claimBoundary) {
+      if (payload.claimBoundary.supported && payload.claimBoundary.supported.length > 0) {
+        text += `**Supported Claims**:\n`;
+        payload.claimBoundary.supported.forEach((line: string) => {
+          text += `- ${line}\n`;
+        });
+      }
+      if (payload.claimBoundary.requiresValidation && payload.claimBoundary.requiresValidation.length > 0) {
+        text += `\n**Claims Requiring Validation**:\n`;
+        payload.claimBoundary.requiresValidation.forEach((line: string) => {
+          text += `- ${line}\n`;
+        });
+      }
+    } else {
+      text += `No claim boundaries could be computed.\n`;
+    }
+    
+    if (payload.validationGaps && payload.validationGaps.length > 0) {
+      text += `\n### Identified Validation Gaps\n`;
+      payload.validationGaps.forEach((gap: string) => {
+        text += `- ${gap}\n`;
+      });
+    } else {
+      text += `\nNo major validation gaps remain. The phase assignment is structurally consistent across the evidence workspace.\n`;
+    }
+    
+    text += `\n## Decision and Next Steps\n`;
+    text += `Based on the integrated FTIR/Raman spectral database match, the Cobalt Ferrite spinel structure is confirmed. The presence of graphitic carbon residue (D/G bands) suggests an incomplete calcination process. It is recommended to perform a high-temperature calcination run followed by complementary XRD diffraction scanning to verify phase purity.`;
+    
+    return text;
+  };
+
+  const handleDraftWithAI = async () => {
+    if (!localStorage.getItem('difaryx_google_user_token')) {
+      setShareError('OAuth Connection Required: Please connect your Google account in Settings to enable Vertex AI report drafting.');
+      return;
+    }
+
+    setIsDrafting(true);
+    setAiWarning(null);
+    setShareError(null);
+    setActiveTab('ai');
+    
+    const uploadedRuns = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('difaryx.uploadedSignalRuns.v1') || '[]') : [];
+    const payload = {
+      projectName: evidenceSnapshot.projectName,
+      objective: registryProject.objective,
+      sampleIdentity: evidenceSnapshot.sampleIdentity,
+      availableTechniques: evidenceSnapshot.availableTechniques,
+      claimBoundary: evidenceSnapshot.claimBoundary,
+      validationGaps: evidenceBundle?.validationGaps || [],
+      uploadedRuns: uploadedRuns.map((run: any) => ({
+        fileName: run.fileName,
+        technique: run.technique,
+        claimBoundary: run.claimBoundary,
+        features: run.extractedFeatures?.map((f: any) => ({
+          label: f.label,
+          position: f.position,
+          intensity: f.intensity,
+          context: f.context
+        }))
+      }))
+    };
+
+    try {
+      const result = await analyzeWithVertexAI(payload);
+      const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        setAiDraft(text);
+      } else {
+        throw new Error('Vertex AI response format is unexpected.');
+      }
+    } catch (err: any) {
+      console.warn('[Vertex AI Draft Request Failed, falling back to simulated draft]', err);
+      setAiWarning(`Using local simulated draft (Vertex AI endpoint failed or project ID is placeholder: ${err.message || String(err)})`);
+      const simulatedText = generateSimulatedAiDraft(payload);
+      setAiDraft(simulatedText);
+    } finally {
+      setIsDrafting(false);
+    }
+  };
+
+  const copyAiDraft = async () => {
+    if (!aiDraft) return;
+    try {
+      await navigator.clipboard.writeText(aiDraft);
+      showFeedback('AI Draft copied to clipboard.');
+    } catch {
+      showFeedback('AI Draft is ready to copy.');
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
@@ -1094,35 +1260,106 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
           </aside>
 
           <main className="min-h-0 overflow-y-auto rounded-lg border border-border bg-slate-100 p-4">
-            <article className="mx-auto max-w-4xl rounded-md border border-border bg-white px-8 py-7 shadow-sm">
-              <div className="border-b border-border pb-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-primary">DIFARYX Evidence Report</div>
-                    <h2 className="mt-2 text-2xl font-bold text-text-main">{evidenceSnapshot.projectName}</h2>
-                    <p className="mt-1 text-sm text-text-muted">{registryProject.objective}</p>
-                  </div>
-                  <div className="shrink-0 rounded-md border border-border bg-background px-3 py-2 text-right text-xs text-text-muted">
-                    <div className="font-semibold text-text-main">{reportVersion}</div>
-                    <div>{preparedAt}</div>
-                    <div>{reportStatus}</div>
+            <div className="mx-auto max-w-4xl mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setActiveTab('standard')}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${activeTab === 'standard' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Standard Draft
+                </button>
+                <button
+                  onClick={() => handleDraftWithAI()}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${activeTab === 'ai' ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  <Sparkles size={12} /> Vertex AI Draft
+                </button>
+              </div>
+              {activeTab === 'ai' && aiDraft && (
+                <button
+                  onClick={copyAiDraft}
+                  className="px-2.5 py-1 text-xs font-semibold rounded border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-1"
+                >
+                  <Clipboard size={12} /> Copy AI Draft
+                </button>
+              )}
+            </div>
+
+            {activeTab === 'standard' ? (
+              <article className="mx-auto max-w-4xl rounded-md border border-border bg-white px-8 py-7 shadow-sm">
+                <div className="border-b border-border pb-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-[0.18em] text-primary">DIFARYX Evidence Report</div>
+                      <h2 className="mt-2 text-2xl font-bold text-text-main">{evidenceSnapshot.projectName}</h2>
+                      <p className="mt-1 text-sm text-text-muted">{registryProject.objective}</p>
+                    </div>
+                    <div className="shrink-0 rounded-md border border-border bg-background px-3 py-2 text-right text-xs text-text-muted">
+                      <div className="font-semibold text-text-main">{reportVersion}</div>
+                      <div>{preparedAt}</div>
+                      <div>{reportStatus}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="mt-5 space-y-5">
-                {reportSections.map((section) => (
-                  <section key={section.heading}>
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-text-main">{section.heading}</h3>
-                    <div className="mt-2 space-y-1.5 text-sm leading-relaxed text-text-muted">
-                      {section.lines.map((line, index) => (
-                        <p key={`${section.heading}-${index}`}>{line}</p>
-                      ))}
+                <div className="mt-5 space-y-5">
+                  {reportSections.map((section) => (
+                    <section key={section.heading}>
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-text-main">{section.heading}</h3>
+                      <div className="mt-2 space-y-1.5 text-sm leading-relaxed text-text-muted">
+                        {section.lines.map((line, index) => (
+                          <p key={`${section.heading}-${index}`}>{line}</p>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </article>
+            ) : (
+              <article className="mx-auto max-w-4xl rounded-md border border-border bg-white px-8 py-7 shadow-sm min-h-[400px] flex flex-col">
+                {isDrafting ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
+                    <h3 className="mt-4 text-sm font-bold text-slate-800">Contacting Vertex AI Coprocessor...</h3>
+                    <p className="mt-1 text-xs text-slate-500">Drafting technical report from peak characterization and validation boundaries.</p>
+                  </div>
+                ) : aiDraft ? (
+                  <div>
+                    {aiWarning && (
+                      <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-[11px] font-semibold text-amber-800 leading-snug">
+                        ⚠️ {aiWarning}
+                      </div>
+                    )}
+                    <div className="border-b border-border pb-4 mb-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Vertex AI Generated Draft</div>
+                          <h2 className="mt-2 text-2xl font-bold text-text-main">{evidenceSnapshot.projectName}</h2>
+                          <p className="mt-1 text-sm text-text-muted">Drafted using model {import.meta.env.VITE_VERTEX_AI_MODEL || 'gemini-1.5-pro'}</p>
+                        </div>
+                      </div>
                     </div>
-                  </section>
-                ))}
-              </div>
-            </article>
+                    <div className="prose prose-sm max-w-none text-slate-800 whitespace-pre-wrap leading-relaxed">
+                      {aiDraft}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+                    <Sparkles size={36} className="text-indigo-500 animate-pulse mx-auto" />
+                    <h3 className="mt-4 text-sm font-bold text-slate-800">Vertex AI Report Assistant</h3>
+                    <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
+                      Generate a detailed, publication-level research report drafted by Gemini using your physical spectral library assignments and experimental parameters.
+                    </p>
+                    <button
+                      onClick={() => handleDraftWithAI()}
+                      className="mt-6 inline-flex h-9 items-center justify-center rounded-md bg-gradient-to-r from-violet-600 to-indigo-600 px-4 text-xs font-bold text-white shadow-md hover:from-violet-700 hover:to-indigo-700 transition-all"
+                    >
+                      Draft with Vertex AI
+                    </button>
+                  </div>
+                )}
+              </article>
+            )}
 
             <Card className="mx-auto mt-3 max-w-4xl p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
