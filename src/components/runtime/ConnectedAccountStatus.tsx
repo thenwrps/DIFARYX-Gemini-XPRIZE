@@ -13,6 +13,7 @@ interface ConnectedAccountStatusProps {
 }
 
 function badgeClass(status: ReturnType<typeof getCapabilityStatus>) {
+  if (status === 'connected_active') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   if (status === 'approval_required') return 'border-amber-200 bg-amber-50 text-amber-700';
   if (status === 'connected_read_only') return 'border-blue-200 bg-blue-50 text-blue-700';
   if (status === 'connected_demo') return 'border-slate-200 bg-slate-50 text-slate-700';
@@ -71,10 +72,16 @@ export function ConnectedAccountStatus({
         ))}
       </div>
 
-      <div className="mt-3 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-semibold text-amber-800">
-        <Lock size={13} />
-        <span>External writes disabled</span>
-      </div>
+      {state.status === 'connected_active' ? (
+        <div className="mt-3 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs font-semibold text-emerald-800">
+          <span>✓ Connected / Active (OAuth Scopes verified)</span>
+        </div>
+      ) : (
+        <div className="mt-3 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-semibold text-amber-800">
+          <Lock size={13} />
+          <span>External writes disabled</span>
+        </div>
+      )}
     </div>
   );
 }

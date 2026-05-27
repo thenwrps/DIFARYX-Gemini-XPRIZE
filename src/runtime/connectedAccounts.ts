@@ -6,6 +6,7 @@ export type ConnectedAccountStatus =
   | 'not_connected'
   | 'connected_demo'
   | 'connected_read_only'
+  | 'connected_active'
   | 'approval_required';
 
 export type ConnectedCapability =
@@ -115,6 +116,7 @@ export function getConnectedAccountBadgeLabel(
 ): string {
   const status = typeof value === 'string' ? value : value.status;
 
+  if (status === 'connected_active') return 'Connected / Active';
   if (status === 'connected_demo') return 'Local demo mode';
   if (status === 'connected_read_only') return 'Read-only placeholder';
   if (status === 'approval_required') return 'Approval required';
