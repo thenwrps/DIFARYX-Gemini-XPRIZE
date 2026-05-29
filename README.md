@@ -205,7 +205,3 @@ git diff --check
 - The public-beta upload workflow is local-browser scoped.
 - Scientific outputs are evidence-limited and require validation before stronger claims.
 - INANZ, if discussed separately, is a separate product and is not a DIFARYX module.
-
-## Submission Copy
-
-Concise Google AI Challenge / Google Cloud Rapid Agent Hackathon copy is available in `docs/google-submission-copy.md`.
