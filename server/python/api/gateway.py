@@ -70,6 +70,7 @@ from xrd_engine.services.general_sample_assessment import (
     compute_claim_boundary,
 )
 from api.evidence_router import router as evidence_router
+from api.analysis_router import router as analysis_router
 
 # ============================================================================
 # Production-Ready Configuration (Step 5)
@@ -238,7 +239,10 @@ async def request_id_middleware(request: Request, call_next):
 # CORS — allow frontend dev server and production origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten in production
+    allow_origins=[
+        "http://localhost:5174",  # Frontend React dev server (Vite)
+        "*",  # Allow all origins (tighten in production)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -246,6 +250,9 @@ app.add_middleware(
 
 # Register the Evidence Registry router
 app.include_router(evidence_router)
+
+# Register the Multi-Technique Analysis Upload router
+app.include_router(analysis_router)
 
 
 # ============================================================================

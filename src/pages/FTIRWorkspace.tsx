@@ -499,11 +499,18 @@ export default function FTIRWorkspace() {
               onChange={(e) => handleIndustryChange(e.target.value)}
               className="w-full h-9 rounded border border-border bg-background px-3 text-xs font-semibold text-text-main focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="All">All Industries (Standard)</option>
-              <option value="Pharma">Pharmaceuticals & APIs (โหมดตรวจสอบสูตรยา)</option>
-              <option value="Polymers">Polymers & Petrochemicals (โหมดพลาสติกสิ่งแวดล้อม)</option>
-              <option value="Advanced Energy">Advanced Energy & Semiconductors (โหมดวัสดุศาสตร์นาโน)</option>
-              <option value="Minerals/Catalysts">Minerals & Catalysts (โหมดแร่ธาตุและตัวเร่งปฏิกิริยา)</option>
+              <option value="All">All Compounds & Analytical Fields (Standard)</option>
+              <option value="Active Pharmaceutical Ingredients (APIs)">Active Pharmaceutical Ingredients (APIs)</option>
+              <option value="Organic Chemistry">Organic Chemistry</option>
+              <option value="Polymers & Macromolecules">Polymers & Macromolecules</option>
+              <option value="Polymer Science">Polymer Science</option>
+              <option value="Energy Storage">Energy Storage</option>
+              <option value="Semiconductors">Semiconductors</option>
+              <option value="Solid State Physics">Solid State Physics</option>
+              <option value="Zeolites">Zeolites</option>
+              <option value="Catalysts">Catalysts</option>
+              <option value="Minerals">Minerals</option>
+              <option value="Inorganic Chemistry">Inorganic Chemistry</option>
             </select>
           </Card>
 

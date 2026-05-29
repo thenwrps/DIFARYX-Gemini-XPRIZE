@@ -23,6 +23,8 @@ import type {
   ReasoningEngineOptions,
   MaterialSystem,
 } from './types';
+import type { MaterialRuleSet } from './knowledgeBase/index';
+import { resolveMaterialRuleSet, getAllMaterialIds, getAllRuleSets } from './knowledgeBase/index';
 import { runCrossValidation } from './crossValidation';
 import { runGapAnalysis } from './gapAnalysis';
 import { generateDecision } from './decisionIntelligence';

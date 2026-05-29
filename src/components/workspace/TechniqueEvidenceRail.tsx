@@ -31,6 +31,8 @@ interface TechniqueEvidenceRailProps {
   notebookPath: string;
   reportPath: string;
   exportPath: string;
+  onStepClick?: (stepId: string) => void;
+  selectedStepId?: string | null;
 }
 
 function statusBadgeClass(status: string) {
@@ -136,6 +138,8 @@ function ProcessingPipelineTab({
   notebookPath,
   reportPath,
   exportPath,
+  onStepClick,
+  selectedStepId,
 }: Pick<
   TechniqueEvidenceRailProps,
   | 'config'
@@ -148,6 +152,8 @@ function ProcessingPipelineTab({
   | 'notebookPath'
   | 'reportPath'
   | 'exportPath'
+  | 'onStepClick'
+  | 'selectedStepId'
 >) {
   return (
     <div className="space-y-2">
@@ -166,12 +172,23 @@ function ProcessingPipelineTab({
         </button>
       </div>
 
-      <div className="rounded border border-border bg-background">
+      <div className="rounded border border-border bg-background overflow-hidden">
         {config.pipeline.map((step, index) => {
           const state = pipelineStates[step.id] ?? 'pending';
+          const isSelected = selectedStepId === step.id;
           return (
-            <div key={step.id} className="flex items-center gap-2 border-b border-border/60 px-2 py-1.5 last:border-b-0">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-700">
+            <div
+              key={step.id}
+              onClick={() => onStepClick?.(step.id)}
+              className={`flex items-center gap-2 border-b border-border/60 px-2 py-2 last:border-b-0 cursor-pointer transition-all duration-200 ${
+                isSelected
+                  ? 'bg-primary/10 border-l-4 border-l-primary pl-1.5 font-bold'
+                  : 'hover:bg-surface-hover/75'
+              }`}
+            >
+              <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-colors ${
+                isSelected ? 'bg-primary text-white' : 'bg-slate-100 text-slate-700'
+              }`}>
                 {index + 1}
               </span>
               <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-text-main">{step.label}</span>

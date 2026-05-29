@@ -6,6 +6,7 @@ interface ParameterControlFieldProps {
   onChange: (control: TechniqueParameterControl, value: TechniqueParameterValue) => void;
   onToggleCheckbox: (control: TechniqueParameterControl, option: string) => void;
   disabled?: boolean;
+  highlighted?: boolean;
 }
 
 export function ParameterControlField({
@@ -14,13 +15,21 @@ export function ParameterControlField({
   onChange,
   onToggleCheckbox,
   disabled = false,
+  highlighted = false,
 }: ParameterControlFieldProps) {
   const baseInputClass = `mt-1 h-8 w-full rounded border border-border bg-white px-2 text-xs font-semibold text-text-main focus:border-primary focus:outline-none ${
     disabled ? 'opacity-50 cursor-not-allowed' : ''
   }`;
 
   return (
-    <label className="block rounded border border-border bg-background px-2 py-1.5">
+    <label
+      id={`param-control-${control.id}`}
+      className={`block rounded border px-2 py-1.5 transition-all duration-300 ${
+        highlighted
+          ? 'border-primary bg-primary/[0.04] ring-1 ring-primary/30 shadow-sm'
+          : 'border-border bg-background'
+      }`}
+    >
       <span className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide text-text-muted">
         {control.label}
         {control.unit && <span className="normal-case tracking-normal">{control.unit}</span>}

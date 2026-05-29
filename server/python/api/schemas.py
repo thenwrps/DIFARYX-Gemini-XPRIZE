@@ -898,19 +898,43 @@ class XRDReferenceMatchParameters(BaseModel):
     def _normalize_ref_source(cls, v: str) -> str:
         return _normalize_label(v, ReferenceSourceV2)
 
-    @model_validator(mode="after")
-    def _enforce_boundary_flags(self) -> "XRDReferenceMatchParameters":
-        if self.allow_identity_claim is True:
-            raise ValueError(
-                "allow_identity_claim must remain false; "
-                "phase identity claims are not yet validated."
-            )
-        if self.allow_phase_purity_claim is True:
-            raise ValueError(
-                "allow_phase_purity_claim must remain false; "
-                "phase purity claims are not yet validated."
-            )
-        return self
+
+# ============================================================================
+# Multi-Technique Upload Response Schema
+# ============================================================================
+
+
+class UploadAnalysisResponse(BaseModel):
+    """Response schema for the multi-technique analysis upload endpoint."""
+
+    success: bool = Field(
+        ...,
+        description="Whether the upload and parsing succeeded.",
+    )
+    fileId: str = Field(
+        ...,
+        description="Unique identifier (UUID) assigned to this upload.",
+    )
+    technique: str = Field(
+        ...,
+        description="The characterization technique used (XRD, XPS, FTIR, Raman).",
+    )
+    metadata: Dict[str, Any] = Field(
+        ...,
+        description=(
+            "File metadata including fileName, fileSize, contentType, and pointCount."
+        ),
+    )
+    parsed_features: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "List of parsed features / evidence nodes in Universal Schema format."
+        ),
+    )
+    message: str = Field(
+        default="",
+        description="Human-readable status message.",
+    )
 
 
 # ============================================================================

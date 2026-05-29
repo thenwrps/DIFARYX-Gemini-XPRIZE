@@ -1404,7 +1404,7 @@ function AgentUserWorkspaceEmptyState({ email }: { email?: string }) {
             <p className="mt-2 text-sm text-text-muted">Upload evidence or create a project before running the user agent workspace.</p>
             <div className="mt-6 flex flex-wrap justify-center gap-2">
               <Link
-                to="/analysis?source=user_uploaded&next=agent"
+                to="/workspace?action=upload&source=user_uploaded&next=agent"
                 className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
               >
                 Upload evidence

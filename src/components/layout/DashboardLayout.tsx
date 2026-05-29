@@ -104,7 +104,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     {
       label: 'Workspace',
       icon: FlaskConical,
-      path: `/workspace/${uploadedTechnique}?mode=quick&${uploadedEvidenceSearch}`,
+      path: `/workspace?${uploadedEvidenceSearch}`,
       match: ['/workspace', '/analysis'],
     },
     { label: 'Agent Workspace', icon: Bot, path: `/demo/agent?${uploadedEvidenceSearch}`, match: ['/demo/agent'] },

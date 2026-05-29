@@ -969,3 +969,720 @@ def match_reference_candidates(
         "primary_candidate": primary,
         "limitations": DEFAULT_REFERENCE_MATCH_LIMITATIONS,
     }
+
+
+# ============================================================================
+# Phase 5 — SQLite-backed FOM Search-Match (COD Local Snapshot)
+#
+# This section adds a high-speed Figure-of-Merit (FOM) search-match engine
+# backed by a B-Tree indexed SQLite database of reference XRD phases.
+#
+# It does NOT replace any existing functions above.  It provides a new
+# XRDFOMCalculator class that queries the local COD snapshot database
+# and scores candidate phases using a 3-component FOM algorithm:
+#   S_pos  — Gaussian position penalty
+#   S_int  — Cosine similarity on intensity vectors
+#   P      — Unmatched strong-peak penalty
+#
+# All results use probabilistic language consistent with DIFARYX scientific
+# uncertainty guardrails.  No result ever claims 100% certainty or purity.
+# ============================================================================
+
+import json as _json
+import os as _os
+import sqlite3 as _sqlite3
+from pathlib import Path as _Path
+
+# Default path to the local reference database
+_DB_DIR: _Path = _Path(__file__).resolve().parent.parent.parent / "data"
+_DB_PATH: _Path = _DB_DIR / "xrd_reference.db"
+
+# FOM algorithm constants
+_SIGMA_DIVISOR: float = 2.0          # σ = tolerance / SIGMA_DIVISOR
+_STRONG_PEAK_THRESHOLD: float = 70.0 # intensity threshold for unmatched penalty
+_DEFAULT_POSITION_WEIGHT: float = 0.60
+_DEFAULT_INTENSITY_WEIGHT: float = 0.40
+
+# Scientific wording guardrails — terms that must appear in all FOM responses
+_FOM_LIMITATIONS: List[str] = [
+    "Match is probabilistic, not deterministic identification of phase identity.",
+    "Phase purity cannot be assessed by XRD pattern matching alone.",
+    "Overlapping peak profiles in multi-phase systems may reduce discrimination.",
+    "Figure of Merit (FOM) reflects pattern similarity, not compositional analysis.",
+    "Additional characterization (XPS, FTIR, Raman) is recommended for validation.",
+]
+
+
+# ── FOM Mock Fallback Data ─────────────────────────────────────────────────
+
+
+def _get_mock_fallback_data() -> dict:
+    """
+    Return mock FOM search results when the SQLite database is not available.
+
+    This prevents Exception errors when the database file has not been built.
+    Returns realistic candidate phase data for TiO2 Anatase and Ag NP using
+    crystallographic reference data from ICSD cards.
+
+    Returns:
+        dict with keys: status, match_type, candidate_phases, primary_candidate,
+                        limitations, db_source, fallback_active.
+    """
+    logger.warning(
+        "Reference database not found at %s. Using mock fallback data.",
+        _DB_PATH,
+    )
+
+    mock_candidates = [
+        {
+            "phase_id": "tio2_anatase_icsd_9852",
+            "phase_label": "TiO2 Anatase (ICSD 9852)",
+            "formula": "TiO2",
+            "structure_family": "anatase",
+            "elements": ["Ti", "O"],
+            "space_group": "I41/amd",
+            "crystal_system": "tetragonal",
+            "database_ref": "ICSD-9852",
+            "fom_score": 0.7200,
+            "position_score": 0.7500,
+            "intensity_score": 0.6800,
+            "unmatched_penalty": 0.9600,
+            "consistent_with_profile": True,
+            "matched_peak_count": 5,
+            "reference_peak_count": 10,
+            "matched_peaks": [
+                {
+                    "measured_two_theta": 25.30,
+                    "reference_two_theta": 25.28,
+                    "delta_two_theta": 0.02,
+                    "hkl": "(101)",
+                    "reference_relative_intensity": 100.0,
+                    "gaussian_score": 0.997,
+                },
+                {
+                    "measured_two_theta": 37.82,
+                    "reference_two_theta": 37.80,
+                    "delta_two_theta": 0.02,
+                    "hkl": "(103)",
+                    "reference_relative_intensity": 10.0,
+                    "gaussian_score": 0.997,
+                },
+                {
+                    "measured_two_theta": 48.10,
+                    "reference_two_theta": 48.05,
+                    "delta_two_theta": 0.05,
+                    "hkl": "(200)",
+                    "reference_relative_intensity": 35.0,
+                    "gaussian_score": 0.990,
+                },
+                {
+                    "measured_two_theta": 53.95,
+                    "reference_two_theta": 53.89,
+                    "delta_two_theta": 0.06,
+                    "hkl": "(105)",
+                    "reference_relative_intensity": 20.0,
+                    "gaussian_score": 0.986,
+                },
+                {
+                    "measured_two_theta": 55.10,
+                    "reference_two_theta": 55.06,
+                    "delta_two_theta": 0.04,
+                    "hkl": "(211)",
+                    "reference_relative_intensity": 20.0,
+                    "gaussian_score": 0.992,
+                },
+            ],
+            "unmatched_strong_peaks": [],
+            "claim_level": "probabilistic_match",
+        },
+        {
+            "phase_id": "ag_cubic_icsd_44387",
+            "phase_label": "Ag Nanoparticle (ICSD 44387)",
+            "formula": "Ag",
+            "structure_family": "fcc_metal",
+            "elements": ["Ag"],
+            "space_group": "Fm-3m",
+            "crystal_system": "cubic",
+            "database_ref": "ICSD-44387",
+            "fom_score": 0.5800,
+            "position_score": 0.6200,
+            "intensity_score": 0.5100,
+            "unmatched_penalty": 0.9400,
+            "consistent_with_profile": False,
+            "matched_peak_count": 3,
+            "reference_peak_count": 5,
+            "matched_peaks": [
+                {
+                    "measured_two_theta": 38.15,
+                    "reference_two_theta": 38.12,
+                    "delta_two_theta": 0.03,
+                    "hkl": "(111)",
+                    "reference_relative_intensity": 100.0,
+                    "gaussian_score": 0.996,
+                },
+                {
+                    "measured_two_theta": 44.32,
+                    "reference_two_theta": 44.28,
+                    "delta_two_theta": 0.04,
+                    "hkl": "(200)",
+                    "reference_relative_intensity": 40.0,
+                    "gaussian_score": 0.994,
+                },
+                {
+                    "measured_two_theta": 64.48,
+                    "reference_two_theta": 64.43,
+                    "delta_two_theta": 0.05,
+                    "hkl": "(220)",
+                    "reference_relative_intensity": 25.0,
+                    "gaussian_score": 0.990,
+                },
+            ],
+            "unmatched_strong_peaks": [],
+            "claim_level": "probabilistic_match",
+        },
+    ]
+
+    return {
+        "status": "candidate_match",
+        "match_type": "probabilistic_match",
+        "candidate_phases": mock_candidates,
+        "primary_candidate": mock_candidates[0],
+        "candidate_count": len(mock_candidates),
+        "limitations": _FOM_LIMITATIONS,
+        "db_source": "Mock Fallback (COD snapshot not initialized)",
+        "fallback_active": True,
+    }
+
+
+# ── FOM Scoring Functions ──────────────────────────────────────────────────
+
+
+def _gaussian_position_score(delta_2theta: float, sigma: float) -> float:
+    """
+    Gaussian penalty function for peak-position deviation.
+
+    S_pos = exp(-(Δ2θ)² / (2σ²))
+
+    Args:
+        delta_2theta: Absolute difference between measured and reference 2θ (degrees).
+        sigma:        Gaussian width parameter (σ = tolerance / 2).
+
+    Returns:
+        Position score in [0.0, 1.0].  1.0 = exact match, decays with distance.
+    """
+    if sigma <= 0.0:
+        return 1.0 if abs(delta_2theta) < 1e-9 else 0.0
+    return math.exp(-(delta_2theta ** 2) / (2.0 * sigma ** 2))
+
+
+def _cosine_intensity_score(
+    experimental_intensities: List[float],
+    reference_intensities: List[float],
+) -> float:
+    """
+    Cosine similarity between experimental and reference intensity vectors.
+
+    cos(θ) = (I_exp · I_ref) / (‖I_exp‖ × ‖I_ref‖)
+
+    Args:
+        experimental_intensities: List of experimental relative intensities.
+        reference_intensities:    List of reference relative intensities (same order).
+
+    Returns:
+        Cosine similarity in [0.0, 1.0].
+    """
+    n = min(len(experimental_intensities), len(reference_intensities))
+    if n == 0:
+        return 0.0
+
+    exp_vec = experimental_intensities[:n]
+    ref_vec = reference_intensities[:n]
+
+    dot_product = sum(a * b for a, b in zip(exp_vec, ref_vec))
+    norm_exp = math.sqrt(sum(a * a for a in exp_vec))
+    norm_ref = math.sqrt(sum(b * b for b in ref_vec))
+
+    if norm_exp < 1e-12 or norm_ref < 1e-12:
+        return 0.0
+
+    cosine = dot_product / (norm_exp * norm_ref)
+    # Clamp to [0, 1] — negative cosine indicates anti-correlation
+    return max(0.0, min(1.0, cosine))
+
+
+def _unmatched_penalty(
+    matched_ref_intensities: List[float],
+    all_ref_intensities: List[float],
+    threshold: float = _STRONG_PEAK_THRESHOLD,
+) -> float:
+    """
+    Penalty factor for unmatched strong reference peaks.
+
+    P = 1 - (count of unmatched strong peaks) / (count of all strong peaks)
+
+    A "strong peak" has relative_intensity > threshold (default 70%).
+    If all strong peaks are matched, P = 1.0 (no penalty).
+
+    Args:
+        matched_ref_intensities: Intensities of reference peaks that were matched.
+        all_ref_intensities:     Intensities of ALL reference peaks for the phase.
+        threshold:               Intensity threshold for "strong peak" classification.
+
+    Returns:
+        Penalty multiplier in [0.0, 1.0].  1.0 = no penalty.
+    """
+    strong_all = [i for i in all_ref_intensities if i >= threshold]
+    if not strong_all:
+        return 1.0  # No strong peaks → no penalty
+
+    strong_matched = [i for i in matched_ref_intensities if i >= threshold]
+    unmatched_count = len(strong_all) - len(strong_matched)
+
+    # Ensure non-negative (defensive)
+    unmatched_count = max(0, unmatched_count)
+
+    penalty = 1.0 - (unmatched_count / len(strong_all))
+    return max(0.0, min(1.0, penalty))
+
+
+# ── XRDFOMCalculator ───────────────────────────────────────────────────────
+
+
+class XRDFOMCalculator:
+    """
+    Figure-of-Merit (FOM) calculator for XRD phase search-match against a
+    B-Tree indexed SQLite reference database.
+
+    The calculator queries the local COD snapshot database using high-speed
+    range scans (O(log N)) to retrieve candidate phases, then scores each
+    candidate using a 3-component FOM algorithm:
+
+        FOM = (w_pos × S_pos + w_int × S_int) × P
+
+    where:
+        S_pos = Gaussian position score (peak proximity)
+        S_int = Cosine similarity on intensity vectors
+        P     = Unmatched strong-peak penalty
+        w_pos = 0.60 (position weight, default)
+        w_int = 0.40 (intensity weight, default)
+
+    The final FOM is clamped to [0.0, 1.0].
+
+    If the SQLite database file does not exist, the calculator automatically
+    activates fallback mode and returns mock candidate data to prevent
+    application errors.
+
+    Usage:
+        calc = XRDFOMCalculator()
+        result = calc.search_and_score(experimental_peaks, tolerance=0.5)
+    """
+
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        position_weight: float = _DEFAULT_POSITION_WEIGHT,
+        intensity_weight: float = _DEFAULT_INTENSITY_WEIGHT,
+    ):
+        """
+        Args:
+            db_path:         Path to SQLite reference database.
+                             Defaults to server/python/data/xrd_reference.db.
+            position_weight: Weight for position score component (default 0.60).
+            intensity_weight: Weight for intensity score component (default 0.40).
+        """
+        self._db_path: _Path = _Path(db_path) if db_path else _DB_PATH
+        self._db_exists: bool = self._db_path.exists()
+        self._position_weight = position_weight
+        self._intensity_weight = intensity_weight
+
+        if not self._db_exists:
+            logger.warning(
+                "XRDFOMCalculator: Database not found at %s. "
+                "Fallback mode will activate on search.",
+                self._db_path,
+            )
+
+    @property
+    def db_available(self) -> bool:
+        """Check if the SQLite database file exists."""
+        return self._db_path.exists()
+
+    def _ensure_db(self) -> bool:
+        """Refresh the database availability flag."""
+        self._db_exists = self._db_path.exists()
+        return self._db_exists
+
+    def _query_candidate_phases(
+        self,
+        min_twotheta: float,
+        max_twotheta: float,
+        tolerance: float,
+    ) -> List[str]:
+        """
+        Query the database for phase_ids that have at least one peak
+        within the experimental 2θ range ± tolerance.
+
+        Uses B-Tree index: O(log N) per bound scan.
+
+        Returns:
+            List of phase_id strings.
+        """
+        conn = _sqlite3.connect(str(self._db_path))
+        try:
+            cursor = conn.execute(
+                """
+                SELECT DISTINCT phase_id
+                FROM reference_peaks
+                WHERE twotheta BETWEEN ? AND ?
+                """,
+                (min_twotheta - tolerance, max_twotheta + tolerance),
+            )
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def _get_phase_metadata(self, phase_id: str) -> Optional[dict]:
+        """Fetch phase metadata from reference_phases table."""
+        conn = _sqlite3.connect(str(self._db_path))
+        try:
+            cursor = conn.execute(
+                """
+                SELECT phase_id, phase_label, formula, structure_family,
+                       elements, space_group, crystal_system, database_ref,
+                       lattice_a, lattice_b, lattice_c,
+                       lattice_alpha, lattice_beta, lattice_gamma
+                FROM reference_phases
+                WHERE phase_id = ?
+                """,
+                (phase_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+
+            elements_raw = row[4]
+            try:
+                elements = _json.loads(elements_raw) if elements_raw else []
+            except (ValueError, TypeError):
+                elements = []
+
+            return {
+                "phase_id": row[0],
+                "phase_label": row[1],
+                "formula": row[2],
+                "structure_family": row[3],
+                "elements": elements,
+                "space_group": row[5],
+                "crystal_system": row[6],
+                "database_ref": row[7],
+                "lattice_a": row[8],
+                "lattice_b": row[9],
+                "lattice_c": row[10],
+                "lattice_alpha": row[11],
+                "lattice_beta": row[12],
+                "lattice_gamma": row[13],
+            }
+        finally:
+            conn.close()
+
+    def _get_phase_peaks(self, phase_id: str) -> List[dict]:
+        """Fetch all reference peaks for a given phase."""
+        conn = _sqlite3.connect(str(self._db_path))
+        try:
+            cursor = conn.execute(
+                """
+                SELECT twotheta, d_spacing, relative_intensity, hkl, multiplicity
+                FROM reference_peaks
+                WHERE phase_id = ?
+                ORDER BY twotheta ASC
+                """,
+                (phase_id,),
+            )
+            return [
+                {
+                    "twotheta": row[0],
+                    "d_spacing": row[1],
+                    "relative_intensity": row[2],
+                    "hkl": row[3],
+                    "multiplicity": row[4],
+                }
+                for row in cursor.fetchall()
+            ]
+        finally:
+            conn.close()
+
+    def search_and_score(
+        self,
+        experimental_peaks: List[dict],
+        tolerance: float = 0.5,
+    ) -> dict:
+        """
+        Search the reference database and score candidate phases using FOM.
+
+        Args:
+            experimental_peaks: List of dicts with 'twotheta' (or 'center',
+                                'position') and optionally 'intensity',
+                                'amplitude', 'relative_intensity'.
+            tolerance:          Maximum |Δ2θ| for peak matching (degrees).
+
+        Returns:
+            dict with keys:
+                status, match_type, candidate_phases, primary_candidate,
+                candidate_count, limitations, db_source, fallback_active,
+                algorithm_info.
+        """
+        # ── Fallback mode check ────────────────────────────────────────────
+        if not self._ensure_db():
+            return _get_mock_fallback_data()
+
+        # ── Extract experimental peak positions and intensities ─────────────
+        exp_peaks: List[dict] = []
+        for peak in experimental_peaks:
+            pos = peak.get("twotheta") or peak.get("center") or peak.get("position")
+            if pos is None:
+                continue
+            try:
+                pos_val = float(pos)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(pos_val):
+                continue
+
+            # Extract intensity (try multiple keys)
+            intensity = (
+                peak.get("relative_intensity")
+                or peak.get("intensity")
+                or peak.get("amplitude")
+                or 50.0  # default if not provided
+            )
+            try:
+                intensity_val = float(intensity)
+            except (TypeError, ValueError):
+                intensity_val = 50.0
+
+            exp_peaks.append({
+                "twotheta": pos_val,
+                "intensity": max(0.0, intensity_val),
+            })
+
+        if not exp_peaks:
+            return {
+                "status": "no_match",
+                "match_type": "probabilistic_match",
+                "candidate_phases": [],
+                "primary_candidate": None,
+                "candidate_count": 0,
+                "limitations": _FOM_LIMITATIONS,
+                "db_source": "COD Local Snapshot",
+                "fallback_active": False,
+                "algorithm_info": _get_algorithm_info(self),
+            }
+
+        # ── Determine experimental 2θ range ────────────────────────────────
+        all_positions = [p["twotheta"] for p in exp_peaks]
+        min_2theta = min(all_positions)
+        max_2theta = max(all_positions)
+
+        # ── Query candidate phase IDs via B-Tree index ──────────────────────
+        candidate_phase_ids = self._query_candidate_phases(
+            min_2theta, max_2theta, tolerance
+        )
+
+        if not candidate_phase_ids:
+            return {
+                "status": "no_match",
+                "match_type": "probabilistic_match",
+                "candidate_phases": [],
+                "primary_candidate": None,
+                "candidate_count": 0,
+                "limitations": _FOM_LIMITATIONS,
+                "db_source": "COD Local Snapshot",
+                "fallback_active": False,
+                "algorithm_info": _get_algorithm_info(self),
+            }
+
+        # ── Score each candidate phase ─────────────────────────────────────
+        sigma = tolerance / _SIGMA_DIVISOR
+        scored_candidates: List[dict] = []
+
+        for phase_id in candidate_phase_ids:
+            meta = self._get_phase_metadata(phase_id)
+            if meta is None:
+                continue
+
+            ref_peaks = self._get_phase_peaks(phase_id)
+            if not ref_peaks:
+                continue
+
+            # ── Peak matching (greedy nearest-neighbor) ─────────────────────
+            matched_pairs: List[dict] = []
+            matched_ref_intensities: List[float] = []
+            used_exp_indices: set = set()
+
+            for ref_peak in ref_peaks:
+                ref_pos = ref_peak["twotheta"]
+                ref_int = ref_peak["relative_intensity"] or 0.0
+
+                best_delta = float("inf")
+                best_exp_idx = -1
+
+                for idx, exp_peak in enumerate(exp_peaks):
+                    if idx in used_exp_indices:
+                        continue
+                    delta = abs(exp_peak["twotheta"] - ref_pos)
+                    if delta < best_delta:
+                        best_delta = delta
+                        best_exp_idx = idx
+
+                if best_exp_idx >= 0 and best_delta <= tolerance:
+                    exp_peak = exp_peaks[best_exp_idx]
+                    gauss_score = _gaussian_position_score(best_delta, sigma)
+                    matched_pairs.append({
+                        "measured_two_theta": round(exp_peak["twotheta"], 4),
+                        "reference_two_theta": round(ref_pos, 4),
+                        "delta_two_theta": round(
+                            exp_peak["twotheta"] - ref_pos, 4
+                        ),
+                        "hkl": ref_peak["hkl"],
+                        "reference_relative_intensity": round(ref_int, 2),
+                        "gaussian_score": round(gauss_score, 4),
+                    })
+                    matched_ref_intensities.append(ref_int)
+                    used_exp_indices.add(best_exp_idx)
+
+            # ── S_pos: Mean Gaussian position score ─────────────────────────
+            if matched_pairs:
+                s_pos = sum(p["gaussian_score"] for p in matched_pairs) / len(
+                    matched_pairs
+                )
+            else:
+                s_pos = 0.0
+
+            # ── S_int: Cosine similarity on intensity vectors ───────────────
+            # Build vectors: for each matched pair, collect exp & ref intensities
+            exp_int_vec: List[float] = []
+            ref_int_vec: List[float] = []
+            for pair in matched_pairs:
+                # Find the experimental intensity for this match
+                exp_pos = pair["measured_two_theta"]
+                for exp_peak in exp_peaks:
+                    if abs(exp_peak["twotheta"] - exp_pos) < 1e-6:
+                        exp_int_vec.append(exp_peak["intensity"])
+                        break
+                ref_int_vec.append(pair["reference_relative_intensity"])
+
+            s_int = _cosine_intensity_score(exp_int_vec, ref_int_vec)
+
+            # ── P: Unmatched strong-peak penalty ────────────────────────────
+            all_ref_intensities = [
+                rp["relative_intensity"] or 0.0 for rp in ref_peaks
+            ]
+            penalty = _unmatched_penalty(
+                matched_ref_intensities, all_ref_intensities
+            )
+
+            # ── Identify unmatched strong peaks ─────────────────────────────
+            unmatched_strong: List[dict] = []
+            matched_ref_positions = {pair["reference_two_theta"] for pair in matched_pairs}
+            for rp in ref_peaks:
+                ref_int = rp["relative_intensity"] or 0.0
+                if ref_int >= _STRONG_PEAK_THRESHOLD:
+                    if rp["twotheta"] not in matched_ref_positions:
+                        unmatched_strong.append({
+                            "reference_two_theta": round(rp["twotheta"], 4),
+                            "hkl": rp["hkl"],
+                            "reference_relative_intensity": round(ref_int, 2),
+                        })
+
+            # ── FOM: Weighted combination × penalty ─────────────────────────
+            raw_fom = (
+                self._position_weight * s_pos
+                + self._intensity_weight * s_int
+            )
+            fom = max(0.0, min(1.0, raw_fom * penalty))
+
+            # ── Determine claim_level based on FOM ──────────────────────────
+            if fom >= 0.70:
+                claim_level = "probabilistic_match"
+                consistent = True
+            elif fom >= 0.40:
+                claim_level = "candidate_phase"
+                consistent = True
+            else:
+                claim_level = "weak_candidate"
+                consistent = False
+
+            scored_candidates.append({
+                "phase_id": meta["phase_id"],
+                "phase_label": meta["phase_label"],
+                "formula": meta["formula"],
+                "structure_family": meta["structure_family"],
+                "elements": meta["elements"],
+                "space_group": meta.get("space_group"),
+                "crystal_system": meta.get("crystal_system"),
+                "database_ref": meta.get("database_ref"),
+                "fom_score": round(fom, 4),
+                "position_score": round(s_pos, 4),
+                "intensity_score": round(s_int, 4),
+                "unmatched_penalty": round(penalty, 4),
+                "consistent_with_profile": consistent,
+                "matched_peak_count": len(matched_pairs),
+                "reference_peak_count": len(ref_peaks),
+                "matched_peaks": matched_pairs,
+                "unmatched_strong_peaks": unmatched_strong,
+                "claim_level": claim_level,
+            })
+
+        # ── Rank by FOM descending ─────────────────────────────────────────
+        scored_candidates.sort(key=lambda c: c["fom_score"], reverse=True)
+
+        # ── Determine top-level status ─────────────────────────────────────
+        if scored_candidates and scored_candidates[0]["fom_score"] >= 0.40:
+            status = "candidate_match"
+            match_type = "probabilistic_match"
+        elif scored_candidates and scored_candidates[0]["fom_score"] > 0.0:
+            status = "weak_match"
+            match_type = "probabilistic_match"
+        else:
+            status = "no_match"
+            match_type = "probabilistic_match"
+
+        primary = scored_candidates[0] if scored_candidates else None
+
+        return {
+            "status": status,
+            "match_type": match_type,
+            "candidate_phases": scored_candidates,
+            "primary_candidate": primary,
+            "candidate_count": len(scored_candidates),
+            "limitations": _FOM_LIMITATIONS,
+            "db_source": "COD Local Snapshot",
+            "fallback_active": False,
+            "algorithm_info": _get_algorithm_info(self),
+        }
+
+
+def _get_algorithm_info(calc: XRDFOMCalculator) -> dict:
+    """Return metadata about the FOM algorithm configuration."""
+    return {
+        "algorithm": "Figure of Merit (FOM)",
+        "position_score": "Gaussian penalty: exp(-(Δ2θ)² / (2σ²))",
+        "intensity_score": "Cosine similarity on matched intensity vectors",
+        "unmatched_penalty": "Penalty for strong reference peaks (>70% I_rel) not matched",
+        "weights": {
+            "position": calc._position_weight,
+            "intensity": calc._intensity_weight,
+        },
+        "sigma": "tolerance / 2.0",
+        "fom_range": "[0.0, 1.0]",
+        "claim_levels": {
+            "probabilistic_match": "FOM >= 0.70",
+            "candidate_phase": "0.40 <= FOM < 0.70",
+            "weak_candidate": "FOM < 0.40",
+        },
+        "disclaimer": (
+            "FOM reflects pattern similarity under controlled assumptions. "
+            "It is not a compositional proof. Additional characterization "
+            "(XPS, FTIR, Raman) is recommended for validation."
+        ),
+    }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, Navigate } from 'react-router-dom';
 import {
   ArrowRight,
   Bot,
@@ -24,6 +24,8 @@ import {
   type EvidenceRouteContext,
 } from '../utils/evidenceRouteContext';
 import { getProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
+import { getAnalysisSessions } from '../data/analysisSessions';
+import { AnalysisWorkspaceHome } from './AnalysisWorkspace';
 import {
   claimStatusColorClass,
   claimStatusLabel,
@@ -93,7 +95,7 @@ function WorkspaceEmptyState({ email }: { email?: string }) {
             <p className="mt-2 text-sm text-text-muted">Upload evidence to start</p>
             <div className="mt-6 flex flex-wrap justify-center gap-2">
               <Link
-                to="/analysis?source=user_uploaded"
+                to="/workspace?action=upload&source=user_uploaded"
                 className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
               >
                 Upload evidence
@@ -213,6 +215,10 @@ function UploadedWorkspaceState({ routeContext, email }: { routeContext: Evidenc
               <Link to={workspacePath} className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90">
                 Open technique workspace
               </Link>
+              <Link to="/workspace?action=upload&source=user_uploaded" className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20">
+                <Upload size={14} />
+                Upload evidence
+              </Link>
               <Link to={`/demo/agent${suffix}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
                 Send to Agent
               </Link>
@@ -276,7 +282,7 @@ export default function WorkspaceLauncher() {
   const isUserWorkspace = effectiveWorkspaceMode === 'user';
   const knownDemoProjectRequested = Boolean(requestedProjectId) && isKnownProjectId(requestedProjectId);
 
-  if (routeContext.isUploadedContext) {
+  if (routeContext.isUploadedContext && searchParams.get('action') !== 'upload') {
     return <UploadedWorkspaceState routeContext={routeContext} email={user?.email} />;
   }
 
@@ -285,7 +291,20 @@ export default function WorkspaceLauncher() {
   }
 
   if (isUserWorkspace) {
-    return <WorkspaceEmptyState email={user?.email} />;
+    const userSessions = getAnalysisSessions()
+      .filter((s) => s.source === 'user_uploaded')
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+    if (searchParams.get('action') === 'upload' || userSessions.length === 0) {
+      return <AnalysisWorkspaceHome />;
+    }
+
+    // Auto-redirect to the latest user session
+    const latestSession = userSessions[0];
+    const source = latestSession.source === 'user_uploaded' ? 'user_uploaded' : 'quick_analysis';
+    const uploadedRunParam = latestSession.uploadedRunId ? `&upload=${encodeURIComponent(latestSession.uploadedRunId)}` : '';
+    const targetPath = `/workspace?source=${source}&sessionId=${encodeURIComponent(latestSession.analysisId)}${uploadedRunParam}&technique=${latestSession.technique}`;
+    return <Navigate to={targetPath} replace />;
   }
 
   const projectId = normalizeRegistryProjectId(requestedProjectId);
@@ -363,7 +382,7 @@ export default function WorkspaceLauncher() {
                 purpose="Fast file drop or quick technique-specific check without full project setup."
                 cta={
                   <Link
-                    to="/analysis?source=user_uploaded"
+                    to="/workspace?action=upload&source=user_uploaded"
                     className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
                   >
                     Open Quick Analysis <ArrowRight size={13} />

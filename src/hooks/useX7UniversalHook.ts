@@ -1761,13 +1761,42 @@ export function identifyMaterialFeatures(
   let normalizedIndustry: 'Pharma' | 'Polymers' | 'Advanced Energy' | 'Minerals/Catalysts' | 'All' = 'All';
   const filterLower = (industryFilter || '').toLowerCase();
 
-  if (filterLower.includes('ยา') || filterLower.includes('pharma')) {
+  if (
+    filterLower.includes('ยา') ||
+    filterLower.includes('pharma') ||
+    filterLower.includes('organic') ||
+    filterLower.includes('api')
+  ) {
     normalizedIndustry = 'Pharma';
-  } else if (filterLower.includes('พลาสติก') || filterLower.includes('polymer') || filterLower.includes('pet') || filterLower.includes('nylon')) {
+  } else if (
+    filterLower.includes('พลาสติก') ||
+    filterLower.includes('polymer') ||
+    filterLower.includes('pet') ||
+    filterLower.includes('nylon') ||
+    filterLower.includes('macromolecule')
+  ) {
     normalizedIndustry = 'Polymers';
-  } else if (filterLower.includes('นาโน') || filterLower.includes('พลังงาน') || filterLower.includes('energy') || filterLower.includes('semiconductor') || filterLower.includes('solar') || filterLower.includes('mxene')) {
+  } else if (
+    filterLower.includes('นาโน') ||
+    filterLower.includes('พลังงาน') ||
+    filterLower.includes('energy') ||
+    filterLower.includes('semiconductor') ||
+    filterLower.includes('solar') ||
+    filterLower.includes('mxene') ||
+    filterLower.includes('physics') ||
+    filterLower.includes('solid state')
+  ) {
     normalizedIndustry = 'Advanced Energy';
-  } else if (filterLower.includes('แร่') || filterLower.includes('เร่ง') || filterLower.includes('mineral') || filterLower.includes('catalyst') || filterLower.includes('zeolite') || filterLower.includes('spinel') || filterLower.includes('ferrite')) {
+  } else if (
+    filterLower.includes('แร่') ||
+    filterLower.includes('เร่ง') ||
+    filterLower.includes('mineral') ||
+    filterLower.includes('catalyst') ||
+    filterLower.includes('zeolite') ||
+    filterLower.includes('spinel') ||
+    filterLower.includes('ferrite') ||
+    filterLower.includes('inorganic')
+  ) {
     normalizedIndustry = 'Minerals/Catalysts';
   }
 

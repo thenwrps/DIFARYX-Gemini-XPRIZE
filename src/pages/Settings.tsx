@@ -11,6 +11,7 @@ import {
   getDefaultConnectedAccountState,
   getGoogleConnectedShellState,
 } from '../runtime/connectedAccounts';
+import { isRealBackendEnabled, setRealBackendEnabled } from '../utils/featureToggle';
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -25,14 +26,29 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ToggleRow({ label, description, checked = true }: { label: string; description: string; checked?: boolean }) {
+function ToggleRow({
+  label,
+  description,
+  checked = true,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked?: boolean;
+  onChange?: (checked: boolean) => void;
+}) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-background/50 p-3">
+    <div 
+      onClick={() => onChange && onChange(!checked)}
+      className={`flex items-center justify-between gap-4 rounded-md border border-border bg-background/50 p-3 ${
+        onChange ? 'cursor-pointer select-none hover:border-primary/30 transition-colors' : ''
+      }`}
+    >
       <div>
         <div className="text-sm font-medium text-text-main">{label}</div>
         <div className="text-xs text-text-muted mt-1">{description}</div>
       </div>
-      <div className={`h-6 w-11 rounded-full p-0.5 ${checked ? 'bg-primary' : 'bg-surface-hover'}`}>
+      <div className={`h-6 w-11 rounded-full p-0.5 transition-colors ${checked ? 'bg-primary' : 'bg-surface-hover'}`}>
         <div className={`h-5 w-5 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : ''}`} />
       </div>
     </div>
@@ -43,6 +59,13 @@ export default function SettingsPage() {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { currentSession, dispatchWorkflowEvent } = useXrdWorkflowRuntime();
+
+  const [realBackendEnabled, setRealBackendEnabledState] = useState(() => isRealBackendEnabled());
+
+  const handleRealBackendToggle = (enabled: boolean) => {
+    setRealBackendEnabled(enabled);
+    setRealBackendEnabledState(enabled);
+  };
 
   // Connect X7E Enterprise Hook
   const {
@@ -61,41 +84,41 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Synchronize Google Profile email dynamically via OAuth token if connected
+  const isGoogleAuthenticated = user?.provider === 'google';
+  const isCloudConnected = isGoogleAuthenticated || gmailConnected;
+
+  const profileName = user?.name || currentSession?.userName || 'Scientific Researcher';
+  const profileEmail = (isGoogleAuthenticated ? user?.email : null) || (gmailConnected ? connectedEmail : null) || currentSession?.userEmail || 'Not Connected';
+  const profileOrg = user?.organization || currentSession?.organization || 'Independent Research / Affiliated Institution';
+
+  // Synchronize Google Profile details dynamically to the session context if active
   useEffect(() => {
     if (currentSession) {
-      const email = gmailConnected ? connectedEmail : 'Not Connected';
-      const name = gmailConnected ? (user?.name || 'Scientific Researcher') : 'Scientific Researcher';
-      const org = gmailConnected ? 'Google Authorized' : 'Independent Research / Affiliated Institution';
-
       if (
-        currentSession.userEmail !== email ||
-        currentSession.userName !== name ||
-        currentSession.organization !== org
+        currentSession.userEmail !== profileEmail ||
+        currentSession.userName !== profileName ||
+        currentSession.organization !== profileOrg
       ) {
         dispatchWorkflowEvent({
           type: 'UPDATE_USER_CONTEXT',
           payload: {
-            userEmail: email,
-            userName: name,
-            organization: org,
+            userEmail: profileEmail,
+            userName: profileName,
+            organization: profileOrg,
           },
         });
       }
     }
-  }, [gmailConnected, connectedEmail, user, currentSession, dispatchWorkflowEvent]);
-
-  const profileName = currentSession?.userName || 'Scientific Researcher';
-  const profileEmail = currentSession?.userEmail || 'Not Connected';
-  const profileOrg = currentSession?.organization || 'Independent Research / Affiliated Institution';
+  }, [profileEmail, profileName, profileOrg, currentSession, dispatchWorkflowEvent]);
 
   // Build real-time synchronized Google Account State
-  const isCloudConnected = profileEmail !== 'Not Connected';
   const localAccountState = getDefaultConnectedAccountState();
+  const googleAccountEmail = (isGoogleAuthenticated ? user?.email : null) || (gmailConnected ? connectedEmail : null) || 'Not Connected';
 
   const googleAccountShell = {
     ...getGoogleConnectedShellState(),
     status: isCloudConnected ? ('connected_active' as const) : ('approval_required' as const),
-    providerLabel: isCloudConnected ? `Google Workspace (Active: ${profileEmail})` : 'Google preview connection',
+    providerLabel: isCloudConnected ? `Google Workspace (Active: ${googleAccountEmail})` : 'Google preview connection',
     capabilities: getGoogleConnectedShellState().capabilities.map(cap => ({
       ...cap,
       status: isCloudConnected ? ('connected_active' as const) : cap.status,
@@ -163,7 +186,12 @@ Payload details: ${firstEmail?.body || 'No description'}`;
           <Card className="p-5">
             <h2 className="text-sm font-semibold flex items-center gap-2"><Database size={16} className="text-primary" /> Data Handling</h2>
             <div className="mt-5 grid gap-4">
-              <ToggleRow label="Local demo mode" description="Use bundled project data without a backend connection." />
+              <ToggleRow 
+                label="Real Backend Integration" 
+                description="Process uploaded signals using the FastAPI server at http://localhost:8000." 
+                checked={realBackendEnabled}
+                onChange={handleRealBackendToggle}
+              />
               <Field label="File retention" value="Demo files reset between production sessions" />
             </div>
           </Card>
