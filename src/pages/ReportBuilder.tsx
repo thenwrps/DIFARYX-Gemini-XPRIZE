@@ -435,7 +435,7 @@ function ReportEmptyState({ email }: { email?: string }) {
             <p className="mt-2 text-sm text-text-muted">Create report from uploaded evidence</p>
             <div className="mt-6 flex flex-wrap justify-center gap-2">
               <Link
-                to="/analysis?source=user_uploaded&next=report"
+                to="/workspace?action=upload&source=user_uploaded&next=report"
                 className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
               >
                 Upload evidence

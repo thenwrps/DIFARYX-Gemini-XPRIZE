@@ -530,7 +530,7 @@ export default function Dashboard() {
                   Upload evidence files to start a project. Existing uploaded evidence sessions remain available separately and can be opened from history.
                 </p>
                 <div className="flex flex-wrap justify-center gap-3">
-                  <Button variant="primary" className="gap-2" onClick={() => navigate('/analysis?source=user_uploaded')}>
+                  <Button variant="primary" className="gap-2" onClick={() => navigate('/workspace?action=upload&source=user_uploaded')}>
                     <Plus size={16} /> Upload Evidence
                   </Button>
                   <Button variant="outline" className="gap-2" onClick={() => setCreateMenuOpen(true)}>
@@ -729,7 +729,7 @@ export default function Dashboard() {
         } else if (option === 'project') {
           setProjectNotebookWizardOpen(true);
         } else if (option === 'import') {
-          navigate('/analysis?source=user_uploaded');
+          navigate('/workspace?action=upload&source=user_uploaded');
         }
       }}
     />

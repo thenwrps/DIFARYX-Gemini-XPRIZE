@@ -820,7 +820,7 @@ function UploadedMultiTechWorkspace({ routeContext }: { routeContext: EvidenceRo
                 <Link to={`/report${suffix}${suffix ? '&' : '?'}template=xrd-summary`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50">
                   Create Report
                 </Link>
-                <Link to="/analysis?source=user_uploaded" className="inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20">
+                <Link to="/workspace?action=upload&source=user_uploaded" className="inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20">
                   Add another evidence source
                 </Link>
               </div>
@@ -862,7 +862,7 @@ export default function MultiTechWorkspace() {
             <p className="mt-2 text-sm text-text-muted">Upload evidence to start multi-tech comparison.</p>
             <div className="mt-6 flex justify-center">
               <Link
-                to="/analysis?source=user_uploaded&next=workspace"
+                to="/workspace?action=upload&source=user_uploaded&next=workspace"
                 className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
               >
                 Upload evidence

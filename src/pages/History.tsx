@@ -245,7 +245,7 @@ export default function HistoryPage() {
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <Link
-                to="/analysis?source=user_uploaded"
+                to="/workspace?action=upload&source=user_uploaded"
                 className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
               >
                 Upload evidence
