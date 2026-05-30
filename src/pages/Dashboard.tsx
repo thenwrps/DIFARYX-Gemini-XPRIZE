@@ -54,11 +54,13 @@ import {
   jobTypeBadgeClass,
   jobTypeLabel,
   type RegistryProject,
+  type TechniqueId,
 } from '../data/demoProjectRegistry';
 import { DemoProjectGraph } from '../components/graphs/DemoProjectGraph';
 import { getProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
 import { getRuntimeBadgeClass, getRuntimeBadgeLabel } from '../runtime/difaryxRuntimeMode';
-import { getAnalysisSessions } from '../data/analysisSessions';
+import { getAnalysisSessions, deleteAnalysisSession, type AnalysisSession, seedAnalysisSessions } from '../data/analysisSessions';
+import { deleteUploadedSignalRun, getUploadedRunById } from '../data/uploadedSignalRuns';
 import {
   getStoredWorkspaceMode,
   setWorkspaceMode,
@@ -327,6 +329,409 @@ function ProjectCard({ project }: { project: RegistryProject }) {
   );
 }
 
+function makeGraphPoints(technique: string) {
+  const settings: Record<string, { min: number; max: number; peaks: Array<[number, number, number]> }> = {
+    xrd: {
+      min: 10,
+      max: 80,
+      peaks: [
+        [20.9, 26, 1.2],
+        [35.5, 92, 0.35],
+        [43.2, 52, 0.4],
+        [57.1, 38, 0.5],
+      ],
+    },
+    xps: {
+      min: 0,
+      max: 1200,
+      peaks: [
+        [284.8, 40, 16],
+        [531.4, 72, 20],
+        [710.8, 84, 18],
+        [933.4, 78, 22],
+      ],
+    },
+    ftir: {
+      min: 400,
+      max: 4000,
+      peaks: [
+        [620, 58, 45],
+        [1084, 80, 85],
+        [1625, 38, 75],
+        [3420, 42, 170],
+      ],
+    },
+    raman: {
+      min: 100,
+      max: 3200,
+      peaks: [
+        [382, 22, 28],
+        [585, 64, 28],
+        [690, 94, 34],
+        [1348, 42, 62],
+      ],
+    },
+  };
+  const config = settings[technique.toLowerCase()] || settings['xrd'];
+  const count = 150;
+  return Array.from({ length: count }, (_, index) => {
+    const x = config.min + ((config.max - config.min) * index) / (count - 1);
+    const base = technique.toLowerCase() === 'ftir' ? 92 : 8 + 3 * Math.sin(index / 12);
+    const y = config.peaks.reduce((sum, [center, height, width]) => {
+      const scaled = (x - center) / width;
+      const peak = height * Math.exp(-0.5 * scaled * scaled);
+      return technique.toLowerCase() === 'ftir' ? sum - peak * 0.45 : sum + peak;
+    }, base);
+    return { x: Number(x.toFixed(2)), y: Number(y.toFixed(3)) };
+  });
+}
+
+interface EvidenceCardProps {
+  session: AnalysisSession;
+  onDelete?: (session: AnalysisSession) => void;
+}
+
+function EvidenceCard({ session, onDelete }: EvidenceCardProps) {
+  const navigate = useNavigate();
+
+  const getTechniqueColor = (tech: string) => {
+    switch (tech.toLowerCase()) {
+      case 'xrd':
+        return {
+          bg: 'bg-blue-50 border-blue-200 text-blue-700',
+          accent: 'blue',
+          pill: 'border-blue-300 bg-blue-50/50 text-blue-700',
+          stroke: '#3b82f6'
+        };
+      case 'xps':
+        return {
+          bg: 'bg-indigo-50 border-indigo-200 text-indigo-700',
+          accent: 'indigo',
+          pill: 'border-indigo-300 bg-indigo-50/50 text-indigo-700',
+          stroke: '#6366f1'
+        };
+      case 'ftir':
+        return {
+          bg: 'bg-rose-50 border-rose-200 text-rose-700',
+          accent: 'rose',
+          pill: 'border-rose-300 bg-rose-50/50 text-rose-700',
+          stroke: '#f43f5e'
+        };
+      case 'raman':
+        return {
+          bg: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+          accent: 'emerald',
+          pill: 'border-emerald-300 bg-emerald-50/50 text-emerald-700',
+          stroke: '#10b981'
+        };
+      default:
+        return {
+          bg: 'bg-slate-50 border-slate-200 text-slate-700',
+          accent: 'slate',
+          pill: 'border-slate-300 bg-slate-50/50 text-slate-700',
+          stroke: '#94a3b8'
+        };
+    }
+  };
+
+  const colors = getTechniqueColor(session.technique);
+  
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+      case 'saved':
+        return 'text-primary bg-primary/5 border-primary/20';
+      case 'draft':
+        return 'text-text-muted bg-surface border-border';
+      case 'needs-review':
+        return 'text-amber-600 bg-amber-50 border-amber-200';
+      default:
+        return 'text-text-muted bg-surface border-border';
+    }
+  };
+
+  const query = new URLSearchParams();
+  if (session.source === 'user_uploaded') {
+    query.set('source', 'user_uploaded');
+  }
+  query.set('sessionId', session.analysisId);
+  if (session.uploadedRunId) query.set('upload', session.uploadedRunId);
+  if (session.projectId) query.set('project', session.projectId);
+  
+  const pathPrefix = session.source === 'user_uploaded' ? 'quick' : 'demo';
+  const workspacePath = `/workspace/${session.technique}?mode=${pathPrefix}&${query.toString()}`;
+
+  // Fetch real uploaded run if it's uploaded
+  const uploadedRun = session.uploadedRunId ? getUploadedRunById(session.uploadedRunId) : null;
+  const points = (uploadedRun && uploadedRun.points && uploadedRun.points.length > 0)
+    ? uploadedRun.points
+    : makeGraphPoints(session.technique);
+
+  return (
+    <Card
+      className="cursor-pointer hover:border-primary/50 transition-all duration-200 group flex flex-col h-full bg-white shadow-sm hover:shadow-md"
+      onClick={() => navigate(workspacePath)}
+    >
+      <div className="p-4 border-b border-border bg-surface-hover/20 flex justify-between items-start">
+        <div className="min-w-0 flex-1">
+          <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${colors.pill}`}>
+            {session.technique.toUpperCase()} Evidence
+          </span>
+          <h3 className="font-bold text-sm text-text-main group-hover:text-primary transition-colors mt-2 truncate">
+            {session.title}
+          </h3>
+          <div className="text-[10px] text-text-muted font-mono mt-1 truncate">
+            {session.fileName} {session.fileSizeLabel ? `(${session.fileSizeLabel})` : ''}
+          </div>
+        </div>
+        <div className="text-right ml-2 shrink-0">
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${getStatusBadge(session.status)}`}>
+            {session.status}
+          </span>
+          <div className="text-[9px] text-text-muted mt-1">{session.updatedLabel}</div>
+        </div>
+      </div>
+
+      <div className="h-[180px] px-2 py-2 border-b border-border/50 bg-white">
+        <DemoProjectGraph
+          source={{
+            kind: 'graph',
+            type: session.technique.toLowerCase() as TechniqueId,
+            xLabel: session.graphData.axisLabel,
+            yLabel: session.graphData.yLabel,
+            data: points,
+            peaks: session.graphData.markers.map((m) => ({
+              position: m.position,
+              intensity: m.intensity,
+              label: m.label,
+            })),
+          }}
+          compact
+          height="100%"
+        />
+      </div>
+
+      <div className="flex-1 p-4 flex flex-col justify-between gap-3 bg-surface/10">
+        <div className="space-y-1">
+          <p className="text-[11px] text-text-main font-semibold leading-relaxed line-clamp-1">
+            {session.processingState}
+          </p>
+          <ul className="space-y-1">
+            {session.interpretation.quick.slice(0, 2).map((bullet, idx) => (
+              <li key={idx} className="text-[10px] text-text-muted flex gap-1 items-start leading-tight">
+                <span className="text-primary">•</span>
+                <span className="line-clamp-2">{bullet}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="flex flex-wrap gap-1 mt-auto pt-2 border-t border-border/30">
+          <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[9px] font-medium text-text-muted">
+            {session.source ? session.source.replace('_', ' ') : 'quick analysis'}
+          </span>
+          {session.projectName && (
+            <span className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[9px] font-medium text-primary truncate max-w-[150px]" title={session.projectName}>
+              Linked: {session.projectName}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="p-3 border-t border-border bg-surface-hover/10">
+        <div className="grid grid-cols-4 gap-1.5">
+          <Link
+            to={workspacePath}
+            onClick={(e) => e.stopPropagation()}
+            className="col-span-2 inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
+          >
+            Open Workspace
+          </Link>
+          <Link
+            to={`/demo/agent?${query.toString()}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
+          >
+            Agent
+          </Link>
+          {session.source === 'user_uploaded' && onDelete ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(session);
+              }}
+              className="inline-flex h-8 items-center justify-center rounded-md border border-red-200 px-2 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
+            >
+              Delete
+            </button>
+          ) : (
+            <Link
+              to={`/notebook?${query.toString()}`}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
+            >
+              Notebook
+            </Link>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function ExperimentCard({ experiment }: { experiment: DemoExperiment }) {
+  const navigate = useNavigate();
+  const project = getProject(experiment.projectId);
+  if (!project) return null;
+  const workspaceTechnique = project.techniques.includes(experiment.technique)
+    ? experiment.technique
+    : getDefaultTechnique(project);
+  const conditionStatus = getConditionLockStatusLabel(experiment.conditionLock);
+
+  return (
+    <Card
+      className="cursor-pointer hover:border-primary/50 transition-colors group flex flex-col h-full bg-white"
+      onClick={() => navigate(`/workspace/${workspaceTechnique.toLowerCase()}?project=${project.id}&mode=demo`)}
+    >
+      <div className="p-4 border-b border-border bg-primary/5 flex justify-between items-start">
+        <div>
+          <span className="text-[9px] font-bold uppercase tracking-wider text-text-dim px-1.5 py-0.5 rounded border border-border bg-background">
+            QUICK EXPERIMENT
+          </span>
+          <h3 className="font-semibold text-sm text-text-main group-hover:text-primary transition-colors mt-1">
+            {experiment.title}
+          </h3>
+          <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-1">
+            <Clock size={11} /> {experiment.date}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-sm font-bold text-cyan">Demo</div>
+          <div className="text-[9px] text-text-muted uppercase tracking-wider">local</div>
+        </div>
+      </div>
+      <div className="flex-1 p-4 flex flex-col gap-2 bg-surface/10">
+        <p className="text-[11px] text-text-main leading-relaxed line-clamp-2">{experiment.notes}</p>
+        <div className="flex items-center gap-1">
+          <span className="px-2 py-0.5 bg-surface border border-border rounded text-[10px] font-medium text-text-dim uppercase tracking-wider">
+            {experiment.technique}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1 text-[9px]">
+          {['Research Mode', conditionStatus, 'Validation required'].map((badge) => (
+            <span key={badge} className="rounded-full border border-border bg-background px-2 py-0.5 font-medium text-text-muted">{badge}</span>
+          ))}
+        </div>
+      </div>
+      <div className="mt-auto p-4 pt-3 border-t border-border">
+        <div className="grid grid-cols-3 gap-1.5">
+          <Link
+            to={`/workspace/${workspaceTechnique.toLowerCase()}?project=${project.id}&mode=demo`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
+          >
+            Analyze
+          </Link>
+          <Link
+            to={`${getNotebookPath(project)}&mode=demo`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
+          >
+            Notebook
+          </Link>
+          <Link
+            to={`/project/${project.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
+          >
+            Details
+          </Link>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function NotebookCard({
+  notebook,
+  onDelete,
+}: {
+  notebook: ProjectNotebook;
+  onDelete: (id: string) => void;
+}) {
+  const navigate = useNavigate();
+  const typeBadge = getNotebookTypeBadge(notebook.mode);
+  const modeLabel = notebook.mode === 'research' ? 'Research' : notebook.mode === 'rd' ? 'R&D' : 'Analytical';
+  const setupComplete = isNotebookSetupComplete(notebook);
+  const statusLabel = notebook.workflowStatus === 'evidence_ready' ? 'Evidence ready' : notebook.workflowStatus === 'setup_ready' ? 'Setup ready' : (setupComplete ? 'Ready' : 'Setup required');
+  const statusColor = notebook.workflowStatus === 'evidence_ready' ? 'text-primary' : notebook.workflowStatus === 'setup_ready' ? 'text-amber-600' : (setupComplete ? 'text-primary' : 'text-amber-600');
+
+  return (
+    <Card
+      className="cursor-pointer hover:border-primary/50 transition-colors group flex flex-col h-full bg-white"
+      onClick={() => navigate(`/notebook?project=${notebook.id}&mode=demo`)}
+    >
+      <div className="p-4 border-b border-border bg-surface-hover/30">
+        <div className="flex items-start justify-between">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-text-dim px-2 py-0.5 rounded border border-border bg-background">
+            {typeBadge}
+          </span>
+          <span className={`text-xs font-bold ${statusColor}`}>{statusLabel}</span>
+        </div>
+        <h3 className="font-semibold text-sm text-text-main group-hover:text-primary transition-colors mt-1">
+          {notebook.title}
+        </h3>
+        <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-1">
+          <Clock size={11} /> {new Date(notebook.lastUpdated).toLocaleDateString()}
+        </div>
+      </div>
+      <div className="flex-1 p-4 flex flex-col gap-2 bg-surface/10">
+        <div className="flex items-center gap-1.5">
+          <Target size={11} className="text-primary" />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Objective</span>
+        </div>
+        <p className="text-[11px] text-text-main leading-relaxed line-clamp-2">{notebook.objective}</p>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="px-2 py-0.5 bg-surface border border-border rounded text-[10px] font-medium text-text-dim uppercase tracking-wider">{modeLabel}</span>
+          <span className="text-[10px] text-text-dim">{notebook.initialDataImport && !notebook.initialDataImport.skipped && notebook.initialDataImport.files.length > 0 ? 'Data attached' : 'Data pending'}</span>
+        </div>
+      </div>
+      <div className="mt-auto p-4 pt-3 border-t border-border">
+        <div className="grid grid-cols-3 gap-1.5">
+          <Link
+            to={`/notebook?project=${notebook.id}&mode=demo`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
+          >
+            Open
+          </Link>
+          <button
+            type="button"
+            disabled
+            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted opacity-50 whitespace-nowrap"
+          >
+            Analyze
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (window.confirm(`Delete "${notebook.title}"?`)) {
+                onDelete(notebook.id);
+              }
+            }}
+            className="inline-flex h-8 items-center justify-center rounded-md border border-red-300 px-2 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 /* ─── main dashboard ─── */
 
 export default function Dashboard() {
@@ -351,9 +756,13 @@ export default function Dashboard() {
   const showUserWorkspace = workspaceMode === 'user' && isOAuthUser;
   const showDemoProjects = !showUserWorkspace;
 
+  const [activeTab, setActiveTab] = useState<'projects' | 'evidence'>('projects');
+  const [analysisSessions, setAnalysisSessions] = useState<AnalysisSession[]>([]);
+
   useEffect(() => {
     setLocalExperiments(getLocalExperiments());
     setLocalNotebooks(getLocalProjectNotebooks());
+    setAnalysisSessions(getAnalysisSessions());
 
     const handleModeChange = (e: CustomEvent) => {
       setWorkspaceModeState(e.detail.mode);
@@ -415,6 +824,16 @@ export default function Dashboard() {
     navigate('/signin', { state: { from: location } });
   };
 
+  const handleDeleteUploadedSession = (session: AnalysisSession) => {
+    const confirmed = window.confirm(`Delete ${session.fileName} from local uploaded evidence history?`);
+    if (!confirmed) return;
+
+    deleteAnalysisSession(session.analysisId);
+    if (session.uploadedRunId) deleteUploadedSignalRun(session.uploadedRunId);
+    setAnalysisSessions(getAnalysisSessions());
+    setUploadedSessionCount(getAnalysisSessions().filter((s) => s.source === 'user_uploaded').length);
+  };
+
   /* aggregate stats */
   const totalGaps = demoProjectRegistry.reduce((sum, p) => sum + p.validationGapCount, 0);
   const criticalGaps = demoProjectRegistry.reduce((sum, p) => sum + p._raw.validationGaps.filter((g) => g.severity === 'critical').length, 0);
@@ -441,11 +860,6 @@ export default function Dashboard() {
             <p className="text-text-muted mt-0.5 text-xs">
               {showDemoProjects ? 'Scientific research managed through modular skill layers, evidence validation, and analytical reasoning.' : 'No user project exists yet. Uploaded evidence sessions are stored separately in Analysis History.'}
             </p>
-            {isOAuthUser && user?.email && (
-              <p className="text-text-muted mt-1 text-xs">
-                Signed in as <span className="font-semibold text-text-main">{user.email}</span>
-              </p>
-            )}
           </div>
           <div className="flex gap-3">
             {feedback && (
@@ -510,213 +924,164 @@ export default function Dashboard() {
             </div>
           </>
         )}
-        {/* User Workspace Empty State */}
-        {showUserWorkspace && (
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <FlaskConical size={14} className="text-primary" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">User Projects</h2>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => handleSwitchMode('demo')}>
-                Use Demo Project
-              </Button>
-            </div>
-            <div className="rounded-lg border-2 border-dashed border-border bg-surface/50 p-12 text-center">
-              <div className="mx-auto max-w-md">
-                <FlaskConical size={48} className="mx-auto text-text-dim mb-4" />
-                <h3 className="text-lg font-bold text-text-main mb-2">No user projects yet</h3>
-                <p className="text-sm text-text-muted mb-6">
-                  Upload evidence files to start a project. Existing uploaded evidence sessions remain available separately and can be opened from history.
-                </p>
-                <div className="flex flex-wrap justify-center gap-3">
-                  <Button variant="primary" className="gap-2" onClick={() => navigate('/workspace?action=upload&source=user_uploaded')}>
-                    <Plus size={16} /> Upload Evidence
-                  </Button>
-                  <Button variant="outline" className="gap-2" onClick={() => setCreateMenuOpen(true)}>
-                    <Plus size={16} /> Create Project
-                  </Button>
-                  <Link
-                    to="/history?mode=user"
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-white px-4 text-sm font-semibold text-text-main hover:bg-surface-hover"
-                  >
-                    <Clock size={16} /> View uploaded sessions{uploadedSessionCount > 0 ? ` (${uploadedSessionCount})` : ''}
-                  </Link>
-                  <Button variant="outline" className="gap-2" onClick={() => handleSwitchMode('demo')}>
-                    Use Demo Project
-                  </Button>
-                </div>
-              </div>
-            </div>
+        {/* main switcher area */}
+        <div className="mb-6">
+          <div className="flex border-b border-border mb-6">
+            <button
+              className={`flex items-center gap-2 pb-3 px-6 text-sm font-bold border-b-2 transition-all relative ${
+                activeTab === 'projects'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-text-muted hover:text-text-main'
+              }`}
+              onClick={() => setActiveTab('projects')}
+            >
+              <Layers size={16} />
+              Projects
+              <span className={`ml-1.5 px-2 py-0.5 text-[10px] rounded-full font-bold ${
+                activeTab === 'projects' ? 'bg-primary/10 text-primary' : 'bg-surface border border-border text-text-muted'
+              }`}>
+                {showDemoProjects ? demoProjectRegistry.length + localNotebooks.length : localNotebooks.length}
+              </span>
+            </button>
+            <button
+              className={`flex items-center gap-2 pb-3 px-6 text-sm font-bold border-b-2 transition-all relative ${
+                activeTab === 'evidence'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-text-muted hover:text-text-main'
+              }`}
+              onClick={() => setActiveTab('evidence')}
+            >
+              <FlaskConical size={16} />
+              Scientific Evidence
+              <span className={`ml-1.5 px-2 py-0.5 text-[10px] rounded-full font-bold ${
+                activeTab === 'evidence' ? 'bg-primary/10 text-primary' : 'bg-surface border border-border text-text-muted'
+              }`}>
+                {(showDemoProjects ? analysisSessions.filter(s => s.source !== 'user_uploaded').length : analysisSessions.filter(s => s.source === 'user_uploaded').length) + localExperiments.length}
+              </span>
+            </button>
           </div>
-        )}
 
-        {/* section: Active Research Projects (Demo Mode) */}
-        {showDemoProjects && (
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <FlaskConical size={14} className="text-primary" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">Active Research Projects</h2>
+          {activeTab === 'projects' ? (
+            /* PROJECTS TAB */
+            <div>
+              {/* Header inside Projects Tab */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Layers size={14} className="text-primary" />
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">
+                    {showDemoProjects ? 'Active Research Projects' : 'User Projects'}
+                  </h2>
+                </div>
+                {isOAuthUser && (
+                  <Button variant="outline" size="sm" onClick={() => handleSwitchMode(showDemoProjects ? 'user' : 'demo')}>
+                    {showDemoProjects ? 'Switch to User Workspace' : 'Use Demo Project'}
+                  </Button>
+                )}
               </div>
-              {isOAuthUser && (
-                <Button variant="outline" size="sm" onClick={() => handleSwitchMode('user')}>
-                  Switch to User Workspace
-                </Button>
+
+              {/* Grid or Empty State */}
+              {(showDemoProjects ? demoProjectRegistry.length + localNotebooks.length : localNotebooks.length) > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {/* Demo Projects */}
+                  {showDemoProjects && demoProjectRegistry.map((project) => (
+                    <ProjectCard key={project.id} project={project} />
+                  ))}
+                  {/* User Local Projects (Notebooks) */}
+                  {localNotebooks.map((notebook) => (
+                    <NotebookCard
+                      key={notebook.id}
+                      notebook={notebook}
+                      onDelete={(id) => {
+                        deleteProjectNotebook(id);
+                        setLocalNotebooks(getLocalProjectNotebooks());
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                /* User Projects Empty State */
+                <div className="rounded-lg border-2 border-dashed border-border bg-surface/50 p-12 text-center">
+                  <div className="mx-auto max-w-md">
+                    <FlaskConical size={48} className="mx-auto text-text-dim mb-4" />
+                    <h3 className="text-lg font-bold text-text-main mb-2">No user projects yet</h3>
+                    <p className="text-sm text-text-muted mb-6">
+                      Create a project notebook to manage multiple related experiments, files, or analytical runs under a single scientific objective.
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-3">
+                      <Button variant="primary" className="gap-2" onClick={() => setProjectNotebookWizardOpen(true)}>
+                        <Plus size={16} /> Create Project
+                      </Button>
+                      <Button variant="outline" className="gap-2" onClick={() => handleSwitchMode('demo')}>
+                        Use Demo Project
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {demoProjectRegistry.map((project) => (
-                <ProjectCard key={project.id} project={project} />
-              ))}
-            {/* local experiments */}
-            {localExperiments.map((experiment) => {
-              const project = getProject(experiment.projectId);
-              const workspaceTechnique = project.techniques.includes(experiment.technique)
-                ? experiment.technique
-                : getDefaultTechnique(project);
-              const conditionStatus = getConditionLockStatusLabel(experiment.conditionLock);
+          ) : (
+            /* EVIDENCE TAB */
+            <div>
+              {/* Header inside Evidence Tab */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <FlaskConical size={14} className="text-primary" />
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">
+                    {showDemoProjects ? 'Scientific Evidence Examples' : 'Uploaded Evidence'}
+                  </h2>
+                </div>
+                {isOAuthUser && (
+                  <Button variant="outline" size="sm" onClick={() => handleSwitchMode(showDemoProjects ? 'user' : 'demo')}>
+                    {showDemoProjects ? 'Switch to User Workspace' : 'Use Demo Project'}
+                  </Button>
+                )}
+              </div>
 
-              return (
-                <Card
-                  key={experiment.id}
-                  className="cursor-pointer hover:border-primary/50 transition-colors group flex flex-col h-full"
-                  onClick={() => navigate(`/workspace/${workspaceTechnique.toLowerCase()}?project=${project.id}&mode=demo`)}
-                >
-                  <div className="p-4 border-b border-border bg-primary/5 flex justify-between items-start">
-                    <div>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-text-dim px-1.5 py-0.5 rounded border border-border bg-background">
-                        QUICK EXPERIMENT
-                      </span>
-                      <h3 className="font-semibold text-sm text-text-main group-hover:text-primary transition-colors mt-1">
-                        {experiment.title}
-                      </h3>
-                      <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-1">
-                        <Clock size={11} /> {experiment.date}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-cyan">Demo</div>
-                      <div className="text-[9px] text-text-muted uppercase tracking-wider">local</div>
-                    </div>
-                  </div>
-                  <div className="flex-1 p-4 flex flex-col gap-2">
-                    <p className="text-[11px] text-text-main leading-relaxed line-clamp-2">{experiment.notes}</p>
-                    <div className="flex items-center gap-1">
-                      <span className="px-2 py-0.5 bg-surface border border-border rounded text-[10px] font-medium text-text-dim uppercase tracking-wider">
-                        {experiment.technique}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1 text-[9px]">
-                      {['Research Mode', conditionStatus, 'Validation required'].map((badge) => (
-                        <span key={badge} className="rounded-full border border-border bg-background px-2 py-0.5 font-medium text-text-muted">{badge}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="mt-auto p-4 pt-3 border-t border-border">
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <Link
-                        to={`/workspace/${workspaceTechnique.toLowerCase()}?project=${project.id}&mode=demo`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
-                      >
-                        Analyze
-                      </Link>
-                      <Link
-                        to={`${getNotebookPath(project)}&mode=demo`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
-                      >
-                        Notebook
-                      </Link>
-                      <Link
-                        to={`/project/${project.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
-                      >
-                        Details
-                      </Link>
+              {/* Grid or Empty State */}
+              {((showDemoProjects ? analysisSessions.filter(s => s.source !== 'user_uploaded').length : analysisSessions.filter(s => s.source === 'user_uploaded').length) + localExperiments.length) > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {/* Evidence Sessions (Demo or User) */}
+                  {(showDemoProjects
+                    ? analysisSessions.filter((s) => s.source !== 'user_uploaded')
+                    : analysisSessions.filter((s) => s.source === 'user_uploaded')
+                  ).map((session) => (
+                    <EvidenceCard
+                      key={session.analysisId}
+                      session={session}
+                      onDelete={session.source === 'user_uploaded' ? handleDeleteUploadedSession : undefined}
+                    />
+                  ))}
+                  {/* Quick Experiments */}
+                  {localExperiments.map((experiment) => (
+                    <ExperimentCard key={experiment.id} experiment={experiment} />
+                  ))}
+                </div>
+              ) : (
+                /* User Evidence Empty State */
+                <div className="rounded-lg border-2 border-dashed border-border bg-surface/50 p-12 text-center">
+                  <div className="mx-auto max-w-md">
+                    <FlaskConical size={48} className="mx-auto text-text-dim mb-4" />
+                    <h3 className="text-lg font-bold text-text-main mb-2">No scientific evidence yet</h3>
+                    <p className="text-sm text-text-muted mb-6">
+                      Upload XRD, XPS, FTIR, or Raman spectrum files to begin single-technique processing and reasoning.
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-3">
+                      <Button variant="primary" className="gap-2" onClick={() => navigate('/workspace?action=upload&source=user_uploaded')}>
+                        <Plus size={16} /> Upload Evidence
+                      </Button>
+                      <Button variant="outline" className="gap-2" onClick={() => setCreateMenuOpen(true)}>
+                        <Plus size={16} /> Create Quick Experiment
+                      </Button>
+                      <Button variant="outline" className="gap-2" onClick={() => handleSwitchMode('demo')}>
+                        Use Demo Evidence
+                      </Button>
                     </div>
                   </div>
-                </Card>
-              );
-            })}
-            {/* local notebooks */}
-            {localNotebooks.map((notebook) => {
-              const typeBadge = getNotebookTypeBadge(notebook.mode);
-              const modeLabel = notebook.mode === 'research' ? 'Research' : notebook.mode === 'rd' ? 'R&D' : 'Analytical';
-              const setupComplete = isNotebookSetupComplete(notebook);
-              const statusLabel = notebook.workflowStatus === 'evidence_ready' ? 'Evidence ready' : notebook.workflowStatus === 'setup_ready' ? 'Setup ready' : (setupComplete ? 'Ready' : 'Setup required');
-              const statusColor = notebook.workflowStatus === 'evidence_ready' ? 'text-primary' : notebook.workflowStatus === 'setup_ready' ? 'text-amber-600' : (setupComplete ? 'text-primary' : 'text-amber-600');
-
-              return (
-                <Card
-                  key={notebook.id}
-                  className="cursor-pointer hover:border-primary/50 transition-colors group flex flex-col h-full"
-                  onClick={() => navigate(`/notebook?project=${notebook.id}&mode=demo`)}
-                >
-                  <div className="p-4 border-b border-border bg-surface-hover/30">
-                    <div className="flex items-start justify-between">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-text-dim px-2 py-0.5 rounded border border-border bg-background">
-                        {typeBadge}
-                      </span>
-                      <span className={`text-xs font-bold ${statusColor}`}>{statusLabel}</span>
-                    </div>
-                    <h3 className="font-semibold text-sm text-text-main group-hover:text-primary transition-colors mt-1">
-                      {notebook.title}
-                    </h3>
-                    <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-1">
-                      <Clock size={11} /> {new Date(notebook.lastUpdated).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div className="flex-1 p-4 flex flex-col gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <Target size={11} className="text-primary" />
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Objective</span>
-                    </div>
-                    <p className="text-[11px] text-text-main leading-relaxed line-clamp-2">{notebook.objective}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="px-2 py-0.5 bg-surface border border-border rounded text-[10px] font-medium text-text-dim uppercase tracking-wider">{modeLabel}</span>
-                      <span className="text-[10px] text-text-dim">{notebook.initialDataImport && !notebook.initialDataImport.skipped && notebook.initialDataImport.files.length > 0 ? 'Data attached' : 'Data pending'}</span>
-                    </div>
-                  </div>
-                  <div className="mt-auto p-4 pt-3 border-t border-border">
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <Link
-                        to={`/notebook?project=${notebook.id}&mode=demo`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
-                      >
-                        Open
-                      </Link>
-                      <button
-                        type="button"
-                        disabled
-                        className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted opacity-50 whitespace-nowrap"
-                      >
-                        Analyze
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (window.confirm(`Delete "${notebook.title}"?`)) {
-                            deleteProjectNotebook(notebook.id);
-                            setLocalNotebooks(getLocalProjectNotebooks());
-                          }
-                        }}
-                        className="inline-flex h-8 items-center justify-center rounded-md border border-red-300 px-2 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        )}
       </div>
     </DashboardLayout>
 

@@ -1,57 +1,509 @@
-# DIFARYX Agent Handoff Guide
+# AGENTS.md
 
-## Project Purpose
+# DIFARYX Agent Operating Guide
+
+Version: 2026.05
+
+---
+
+# Project Identity
+
+## Organization
+
+dFRYX lab
+
+## Core Product
+
+DIFARYX
 
 DIFARYX is an autonomous scientific workflow intelligence system for experimental R&D.
 
-The current application is a deterministic frontend implementation that demonstrates how DIFARYX helps researchers move from a research objective to evidence-grounded scientific decisions. It shows how an agentic workflow can plan, execute, inspect experimental evidence, reason over uncertainty, identify validation gaps, recommend the next experiment or decision, and preserve the result as reproducible scientific memory.
+The system helps researchers transform experimental evidence into defensible scientific decisions through structured reasoning, validation awareness, and reproducible scientific memory.
 
-DIFARYX is not only a graph viewer, not only an XRD tool, and not only a materials characterization dashboard. XRD, XPS, FTIR, and Raman are used as the current proof objects for demonstrating the core product logic: evidence-linked scientific reasoning across experimental workflows.
+DIFARYX is NOT:
 
-Core workflow narrative:
+* an XRD application
+* a spectra viewer
+* a graph dashboard
+* a notebook replacement
+* a report generator
 
-Research Objective -> Experimental Setup / Context -> Evidence Workspace -> Agent Reasoning -> Validation Gap -> Next Experiment / Decision -> Notebook Memory / Report
+XRD, XPS, FTIR, and Raman are demonstration evidence sources used to showcase the broader DIFARYX workflow.
 
-Compact product narrative:
+The product identity is scientific workflow intelligence.
 
-Goal -> Plan -> Execute -> Evidence -> Reason -> Decision -> Report
+---
 
-## Important Routes
+# Core Workflow
 
-| Route | Purpose |
-| --- | --- |
-| `/` | Public landing page for the DIFARYX concept, scientific workflow story, and product positioning. |
-| `/login` | Demo sign-in surface; continues into the local dashboard without a real auth backend. |
-| `/dashboard` | Main project dashboard with demo projects, readiness, graph previews, scientific workflow status, and agent entry points. |
-| `/demo/agent` | Autonomous scientific agent demo with research objective input, selected datasets, live graph view, execution log, evidence review, reasoning trace, validation gap, next decision, and report handoff. |
-| `/workspace/xrd` | Evidence workspace for XRD graph review, processing controls, feature detection, phase-related evidence, provenance saving, and exports. |
-| `/workspace/xps` | Evidence workspace for XPS graph review, background/subtract controls, surface-state evidence, fitting-style evidence, provenance saving, and exports. |
-| `/workspace/ftir` | Evidence workspace for FTIR graph review, baseline adjustment, band evidence, bonding / functional group context, provenance saving, and exports. |
-| `/workspace/raman` | Evidence workspace for Raman graph review, mode assignment evidence, local symmetry / vibrational fingerprint context, provenance saving, and exports. |
-| `/workspace/multi` | Multi-tech evidence hub for combined XRD, XPS, FTIR, and Raman evidence fusion, consistency checking, and validation-gap review. |
-| `/notebook` | Notebook / scientific memory surface with generated decision, evidence summary, interpretation, caveats, validation gaps, provenance, and report exports. |
-| `/history` | Agent and workspace provenance history for previous deterministic demo runs, evidence states, decisions, and notebook handoffs. |
-| `/settings` | Demo settings for profile, local data handling, exports, reasoning preferences, and deterministic demo behavior. |
+All features must support the canonical DIFARYX workflow:
 
-## Safety Rules
+Research Objective
 
-- Do not rewrite the whole app.
-- Do not reframe DIFARYX as only an XRD tool, spectra viewer, or materials dashboard.
-- Do not remove graph components.
-- Do not hide the graph during agent run.
-- Do not collapse the final result into only "Complete".
-- Preserve the scientific reasoning chain: objective, context, evidence, reasoning, gap, decision, notebook/report.
-- Keep demo deterministic.
-- No backend unless explicitly requested.
-- No new dependencies without approval.
-- Do not change routing unless explicitly requested.
-- Do not change package dependencies during handoff prep.
-- Preserve existing source files and localStorage demo behavior.
-- Preserve graph-first evidence flow before adding integrations.
-- Preserve DIFARYX as the core scientific workflow intelligence system.
+↓
 
-## Build And Run Commands
+Experimental Setup / Context
+
+↓
+
+Evidence Workspace
+
+↓
+
+Agent Reasoning
+
+↓
+
+Validation Gap
+
+↓
+
+Next Experiment / Decision
+
+↓
+
+Notebook Memory
+
+↓
+
+Scientific Report
+
+Compact narrative:
+
+Goal → Plan → Execute → Evidence → Reason → Decision → Report
+
+Agents must preserve this workflow.
+
+Do not collapse the workflow into a single result state.
+
+---
+
+# Current Product Scope
+
+Supported techniques:
+
+* XRD
+* XPS
+* FTIR
+* Raman
+
+Fallback mode:
+
+* Unknown Signal
+
+Unknown Signal may only provide:
+
+* signal inspection
+* pattern observations
+* anomaly discussion
+
+Unknown Signal must never generate material-specific conclusions.
+
+---
+
+# Scientific Reasoning Rules
+
+Scientific reasoning is evidence-first.
+
+Evidence must precede interpretation.
+
+Interpretation must precede conclusions.
+
+Validation requirements must remain visible.
+
+Agents must explicitly separate:
+
+* Evidence
+* Interpretation
+* Hypothesis
+* Conclusion
+* Validation Gap
+
+Do not present interpretations as facts.
+
+Preferred wording:
+
+* evidence suggests
+* evidence supports
+* consistent with
+* may indicate
+* appears compatible with
+
+Avoid:
+
+* proves
+* confirms
+* definitely is
+* guarantees
+* unquestionably demonstrates
+
+unless validation requirements have been satisfied.
+
+---
+
+# Technique Boundaries
+
+## XRD
+
+Can support:
+
+* crystallographic evidence
+* phase-related evidence
+* peak matching evidence
+* structural consistency evidence
+
+Cannot independently confirm:
+
+* phase purity
+* synthesis success
+* composition
+* material performance
+
+---
+
+## XPS
+
+Can support:
+
+* surface composition evidence
+* oxidation state evidence
+* surface chemistry evidence
+
+Cannot independently determine:
+
+* bulk composition
+* complete phase assignment
+* phase purity
+
+---
+
+## FTIR
+
+Can support:
+
+* bonding evidence
+* functional-group evidence
+* chemical environment evidence
+
+Cannot independently determine:
+
+* crystal structure
+* phase purity
+* crystallographic identity
+
+---
+
+## Raman
+
+Can support:
+
+* vibrational fingerprint evidence
+* local structural evidence
+* symmetry-related evidence
+
+Cannot independently replace:
+
+* crystallographic validation
+* phase purity validation
+
+---
+
+# Condition Lock Architecture
+
+Experimental conditions are first-class evidence.
+
+Agents must preserve condition context throughout the workflow.
+
+Preserve:
+
+## Sample Preparation
+
+* precursor information
+* composition
+* synthesis route
+* temperatures
+* durations
+* atmosphere
+
+## Measurement Conditions
+
+* instrument configuration
+* acquisition parameters
+* scan settings
+* measurement settings
+
+## Processing Conditions
+
+* smoothing
+* baseline correction
+* normalization
+* fitting choices
+* transformations
+
+## Validation Conditions
+
+* reference sets
+* thresholds
+* approval status
+* validation assumptions
+
+Condition information must remain available during:
+
+* workspace analysis
+* agent reasoning
+* notebook generation
+* report generation
+* evidence handoff
+* fusion workflows
+
+---
+
+# Uploaded Signal Rules
+
+Uploaded Signal is currently Public Beta.
+
+Supported formats:
+
+* csv
+* txt
+* xy
+* dat
+
+Agents must:
+
+1. validate signal quality
+2. inspect completeness
+3. determine technique compatibility
+4. establish confidence boundaries
+5. generate validation requirements
+
+Weak signals must generate:
+
+* BLOCKED
+  or
+* LIMITED CONFIDENCE
+
+states.
+
+Never hallucinate material identification.
+
+Never fabricate phase assignments.
+
+---
+
+# Evidence Traceability
+
+All scientific claims must be traceable.
+
+Every claim should connect to:
+
+Claim
+
+↓
+
+Evidence
+
+↓
+
+Observations
+
+↓
+
+Limitations
+
+↓
+
+Confidence
+
+↓
+
+Validation Gap
+
+↓
+
+Next Recommended Action
+
+Agents must not generate orphan conclusions.
+
+Reasoning should remain explainable and auditable.
+
+---
+
+# Multi-Tech Evidence Fusion
+
+Fusion workflows must preserve source attribution.
+
+Agents must maintain:
+
+* XRD evidence provenance
+* XPS evidence provenance
+* FTIR evidence provenance
+* Raman evidence provenance
+
+Do not merge evidence in a way that obscures source techniques.
+
+Conflicts between techniques should remain visible.
+
+Validation gaps should remain visible.
+
+---
+
+# XRD Local Reference Validation
+
+Approval-aware validation is mandatory.
+
+Local reference matching requires:
+
+* approved reference
+* technically eligible reference
+* no critical validation errors
+* sufficient peak count
+* supported import state
+
+Reject references when status includes:
+
+* not_reviewed
+* requires_peak_extraction
+* requires_converter
+* unsupported_format
+* corrupted_file
+* parse_error
+* not_supported_yet
+
+Do not bypass approval checks.
+
+Do not weaken validation gates.
+
+---
+
+# Safety Rules
+
+Do not rewrite the entire application.
+
+Do not reframe DIFARYX as:
+
+* only an XRD tool
+* only a spectroscopy tool
+* only a graph viewer
+* only a materials dashboard
+
+Do not remove:
+
+* graph components
+* evidence workspaces
+* reasoning stages
+* validation gap stages
+* notebook handoff stages
+
+Do not hide graphs during agent execution.
+
+Do not replace reasoning chains with a simple completion state.
+
+Preserve:
+
+* objective
+* context
+* evidence
+* reasoning
+* validation gap
+* decision
+* notebook/report
+
+Keep the demo deterministic.
+
+Do not introduce backend services unless explicitly requested.
+
+Do not add dependencies without approval.
+
+Do not modify routing without approval.
+
+Do not remove existing localStorage workflows.
+
+Do not weaken scientific guardrails.
+
+---
+
+# Important Routes
+
+| Route            | Purpose                         |
+| ---------------- | ------------------------------- |
+| /                | DIFARYX landing experience      |
+| /login           | Demo authentication entry       |
+| /dashboard       | Project dashboard               |
+| /demo/agent      | Scientific agent workflow demo  |
+| /workspace/xrd   | XRD evidence workspace          |
+| /workspace/xps   | XPS evidence workspace          |
+| /workspace/ftir  | FTIR evidence workspace         |
+| /workspace/raman | Raman evidence workspace        |
+| /workspace/multi | Multi-tech evidence fusion      |
+| /notebook        | Scientific memory and reporting |
+| /history         | Provenance history              |
+| /settings        | Demo settings                   |
+
+---
+
+# Current Technology Stack
+
+Frontend
+
+* React 19
+* TypeScript
+* Vite
+* React Router DOM
+* Tailwind CSS
+* Recharts
+
+Backend
+
+* Python
+* FastAPI
+
+Visualization
+
+* Recharts
+
+Video
+
+* Remotion
+
+---
+
+# Engineering Expectations
+
+Prefer:
+
+* deterministic behavior
+* explainable outputs
+* traceable reasoning
+* schema-first design
+* validation-first architecture
+* scientific transparency
+
+Avoid:
+
+* hidden assumptions
+* unsupported conclusions
+* black-box reasoning
+* evidence-free outputs
+
+---
+
+# Build Commands
 
 ```powershell
 npm run dev
+
 npm.cmd run build
+```
+
+---
+
+# Mission
+
+Build DIFARYX into a trustworthy scientific workflow intelligence system that transforms experimental evidence into validated decisions and reproducible scientific memory.
+
+Every contribution should strengthen:
+
+Evidence → Reasoning → Decision → Memory
+
+rather than only improving visual presentation.

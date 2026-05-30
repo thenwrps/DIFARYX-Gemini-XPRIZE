@@ -200,6 +200,16 @@ export interface XpsEvidenceMetadata {
   fwhm?: number;
   /** Atomic concentration percentage. */
   atomicPercent?: number;
+  /** Identified element symbol from global registry (e.g., 'C', 'Ti', 'Au'). */
+  element?: string;
+  /** Active core-level shell from global registry (e.g., '1s', '2p', '4f'). */
+  shell?: string;
+  /** Dynamic bonding assignment from global XPS registry lookup. */
+  bondingAssignment?: string;
+  /** Doublet splitting interval ΔE in eV from global registry (e.g., 5.7 for Ti 2p). */
+  doubletSplitting?: number;
+  /** C 1s charging calibration offset in eV (Observed BE − 284.8 eV). */
+  chargingCalibrationOffset?: number;
 }
 
 /** FTIR-specific evidence metadata. */

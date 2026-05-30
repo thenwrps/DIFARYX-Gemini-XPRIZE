@@ -49,6 +49,28 @@ export type {
   CrossValidationRule,
 } from './knowledgeBase';
 
+// Backend pipeline — Agent workflow orchestrator
+export {
+  executeAgentReasoningWorkflow,
+  getWorkflowPhases,
+  getSessionById,
+} from './agentHandler';
+
+// Backend pipeline — Data transformer
+export { transformSessionToEvidenceNodes } from './transformer';
+
+// Backend pipeline — Workspace sync & persistence layer
+export {
+  formatAgentLog,
+  enforceLanguageRules,
+  buildSessionUpdate,
+  FORBIDDEN_PHRASES,
+  generateXpsEvidenceSummary,
+  generateFtirEvidenceSummary,
+  generateRamanEvidenceSummary,
+  generateTechniqueEvidenceSummary,
+} from './persistenceSync';
+
 // Type exports
 export type {
   // Material system
@@ -84,3 +106,4 @@ export type {
   // Configuration
   ReasoningEngineOptions,
 } from './types';
+

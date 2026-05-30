@@ -512,7 +512,7 @@ function UploadedReportContext({ routeContext }: { routeContext: EvidenceRouteCo
       heading: 'Uploaded Scientific Evidence Context',
       lines: [
         `Dataset: ${dataset?.fileName ?? snapshot.sampleIdentity}`,
-        `Source: user_uploaded`,
+        `Source: User-uploaded evidence`,
         `Technique: ${snapshot.availableTechniques.join(', ') || 'metadata-only'}`,
       ],
     },
@@ -576,7 +576,7 @@ function UploadedReportContext({ routeContext }: { routeContext: EvidenceRouteCo
                 </div>
                 <div className="rounded-md border border-border bg-slate-50 p-3">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Source</p>
-                  <p className="mt-1 text-sm font-bold text-text-main">source=user_uploaded</p>
+                  <p className="mt-1 text-sm font-bold text-text-main">User-uploaded evidence</p>
                 </div>
                 <div className="rounded-md border border-border bg-slate-50 p-3">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">External writes</p>

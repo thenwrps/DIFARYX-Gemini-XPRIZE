@@ -2675,7 +2675,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                         {isUploadedContext
                           ? evidenceSnapshot?.activeDataset
                             ? 'The uploaded evidence snapshot loaded, but it does not include graph points for this technique.'
-                            : 'The requested session/upload pair was not found in local browser storage. Re-upload the evidence or open a saved user_uploaded session.'
+                            : 'The requested session/upload pair was not found in local browser storage. Re-upload the evidence or open a saved user-uploaded session.'
                           : project
                           ? `${config.label} evidence is not available for the selected project. The route remains project-linked and records the evidence gap instead of loading an unrelated dataset.`
                           : `Open this workspace from a project or attach a dataset to begin ${config.label} processing.`}

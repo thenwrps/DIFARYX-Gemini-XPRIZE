@@ -40,6 +40,7 @@ import {
   ProcessingParameter,
   TECHNIQUE_DEFINITIONS,
   createAnalysisSession,
+  createUserProject,
   deleteAnalysisSession,
   getAnalysisSession,
   getAnalysisSessions,
@@ -65,6 +66,7 @@ import {
 import { getRegistryProject, normalizeRegistryProjectId } from '../data/demoProjectRegistry';
 import { cn } from '../components/ui/Button';
 import { runWhenIdle } from '../utils/idle';
+import { executeAgentReasoningWorkflow } from '../engines/reasoningEngine';
 
 const TECHNIQUES = ['xrd', 'xps', 'ftir', 'raman'] as const;
 
@@ -75,12 +77,12 @@ function isAnalysisTechnique(value: string | null): value is AnalysisTechnique {
 const ROUTE_FLOW = [
   { label: 'Home', path: '/analysis' },
   { label: 'New Analysis', path: '/analysis/new' },
-  { label: 'Quick XRD Workspace', path: '/workspace/xrd?mode=quick&sessionId=ANL-2024-000123' },
-  { label: 'Quick XPS Workspace', path: '/workspace/xps?mode=quick&sessionId=ANL-2024-000126' },
-  { label: 'Quick FTIR Workspace', path: '/workspace/ftir?mode=quick&sessionId=ANL-2024-000124' },
-  { label: 'Quick Raman Workspace', path: '/workspace/raman?mode=quick&sessionId=ANL-2024-000125' },
-  { label: 'Evidence Registry', path: '/project/cufe2o4-sba15/evidence' },
-  { label: 'History Continue', path: '/workspace/xrd?mode=quick&sessionId=ANL-2024-000123' },
+  { label: 'Quick XRD Workspace', path: '/workspace/xrd?mode=quick' },
+  { label: 'Quick XPS Workspace', path: '/workspace/xps?mode=quick' },
+  { label: 'Quick FTIR Workspace', path: '/workspace/ftir?mode=quick' },
+  { label: 'Quick Raman Workspace', path: '/workspace/raman?mode=quick' },
+  { label: 'Evidence Registry', path: '/analysis' },
+  { label: 'History Continue', path: '/analysis' },
 ];
 
 function quickWorkspacePath(session: AnalysisSession) {
@@ -614,7 +616,7 @@ export function AnalysisWorkspaceHome() {
       ? createUploadedSignalRun({
           fileName: file.parsed.fileName,
           technique: uploadedTechnique,
-          sampleIdentity: file.parsed.fileName.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '),
+          sampleIdentity: '',
           xAxisLabel: axisDefaults.xAxisLabel,
           yAxisLabel: axisDefaults.yAxisLabel,
           referenceScope: 'User Workspace local upload',
@@ -1118,6 +1120,9 @@ function SessionHeader({
             <span>Owner: <span className="font-semibold text-text-main">{session.owner}</span></span>
             <span>Project: <span className="font-semibold text-text-main">{session.projectName || 'No project linked'}</span></span>
             <span>Status: <span className="font-semibold text-text-main">{getStatusLabel(session.status)}</span></span>
+            <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">
+              Claim Status: {session.claimStatus || 'Unverified Draft'}
+            </span>
             <span>Autosaved {session.updatedLabel === 'just now' ? '8 sec ago' : session.updatedLabel}</span>
           </div>
         </div>
@@ -1177,6 +1182,22 @@ function ProcessingWorkspace({
   session: AnalysisSession;
   setSession: React.Dispatch<React.SetStateAction<AnalysisSession | null>>;
 }) {
+  const [isRunningAgent, setIsRunningAgent] = React.useState(false);
+  const [agentError, setAgentError] = React.useState<string | null>(null);
+
+  const handleRunWorkflow = async () => {
+    setIsRunningAgent(true);
+    setAgentError(null);
+    try {
+      const updatedSession = await executeAgentReasoningWorkflow(session.analysisId);
+      setSession(updatedSession);
+    } catch (err) {
+      setAgentError(err instanceof Error ? err.message : 'Agent workflow execution failed');
+    } finally {
+      setIsRunningAgent(false);
+    }
+  };
+
   const updateParameter = (id: string, value: string) => {
     setSession((current) => current
       ? {
@@ -1271,6 +1292,9 @@ function ProcessingWorkspace({
         <div className="mb-3 flex items-center gap-2">
           <SlidersHorizontal size={15} className="text-primary" />
           <h2 className="text-sm font-bold text-text-main">Processing Parameters</h2>
+          <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700">
+            Unlocked / Active Workspace
+          </span>
         </div>
         <div className="space-y-2">
           {session.processingParameters.map((parameter) => (
@@ -1311,6 +1335,65 @@ function ProcessingWorkspace({
             Save Session
           </button>
         </div>
+
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={handleRunWorkflow}
+            disabled={isRunningAgent}
+            className="h-9 w-full rounded-md bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isRunningAgent ? 'Running Agent Workflow…' : 'Run Workflow'}
+          </button>
+          {agentError && (
+            <p className="mt-1.5 text-[11px] font-semibold text-red-600">{agentError}</p>
+          )}
+        </div>
+
+        {/* Trace Panel */}
+        {session.processingLog.length > 0 && (
+          <div className="mt-4">
+            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+              <History size={13} className="text-primary" /> Trace
+            </h3>
+            <div className="max-h-[140px] overflow-y-auto space-y-1 rounded-md border border-border bg-slate-50 p-2">
+              {session.processingLog.slice(0, 12).map((entry, index) => (
+                <div key={`${entry}-${index}`} className="rounded border border-border bg-white px-2 py-1 text-[10px] text-text-main">
+                  {entry}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Evidence Panel */}
+        {session.qualityChecks.length > 0 && (
+          <div className="mt-4">
+            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+              <FlaskConical size={13} className="text-primary" /> Evidence
+            </h3>
+            <div className="space-y-1.5">
+              {session.qualityChecks.map((metric) => (
+                <div key={metric.label} className={cn('flex items-center justify-between rounded border px-2 py-1.5 text-[10px]', qualityClass(metric.state))}>
+                  <span className="font-semibold">{metric.label}</span>
+                  <span>{metric.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Boundary / Claim Status Panel */}
+        {session.claimStatus && (
+          <div className="mt-4">
+            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+              <AlertTriangle size={13} className="text-primary" /> Boundary
+            </h3>
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[10px] font-semibold text-amber-800">
+              {session.claimStatus}
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -1592,14 +1675,31 @@ function slugifyProjectName(name: string) {
 }
 
 function AttachProjectPanel({ session, setSession }: { session: AnalysisSession; setSession: React.Dispatch<React.SetStateAction<AnalysisSession | null>> }) {
-  const [projectId, setProjectId] = React.useState(session.projectId || PROJECT_OPTIONS[0].id);
+  const [projectId, setProjectId] = React.useState(session.projectId || '');
   const [projectName, setProjectName] = React.useState('');
   const [sampleSystem, setSampleSystem] = React.useState('');
   const [contextGoal, setContextGoal] = React.useState('');
   const [attachedProject, setAttachedProject] = React.useState<{ id: string; name: string } | null>(null);
-  const selectedProject = PROJECT_OPTIONS.find((project) => project.id === projectId) || PROJECT_OPTIONS[0];
+
+  const existingUserProjects = React.useMemo(() => {
+    const projectsMap = new Map<string, { id: string; name: string; sample: string }>();
+    const allSessions = getAnalysisSessions();
+    allSessions.forEach((s) => {
+      if (s.projectId && s.projectName) {
+        projectsMap.set(s.projectId, {
+          id: s.projectId,
+          name: s.projectName,
+          sample: s.title || `Project: ${s.projectName}`,
+        });
+      }
+    });
+    return Array.from(projectsMap.values());
+  }, [session]);
+
+  const selectedProject = existingUserProjects.find((project) => project.id === projectId) || null;
 
   const attachSelected = () => {
+    if (!selectedProject) return;
     const saved = updateSessionProject(session.analysisId, selectedProject.id, selectedProject.name);
     if (saved) {
       setSession(saved);
@@ -1649,32 +1749,45 @@ function AttachProjectPanel({ session, setSession }: { session: AnalysisSession;
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="rounded-lg bg-white p-4">
             <h3 className="text-sm font-bold text-text-main">Attach to existing project</h3>
-            <input
-              placeholder="Search/select project"
-              className="mt-3 h-9 w-full rounded-md border border-border bg-white px-3 text-xs font-semibold text-text-main outline-none focus:border-primary"
-            />
-            <div className="mt-2 space-y-2">
-              {PROJECT_OPTIONS.map((project) => (
+            {existingUserProjects.length === 0 ? (
+              <div className="mt-4 rounded border border-dashed border-border bg-slate-50/50 p-4 text-center text-xs text-text-muted">
+                No active user projects found. Enter a name or chemical formula on the right to start your first project.
+              </div>
+            ) : (
+              <>
+                <input
+                  placeholder="Search/select project"
+                  className="mt-3 h-9 w-full rounded-md border border-border bg-white px-3 text-xs font-semibold text-text-main outline-none focus:border-primary"
+                />
+                <div className="mt-2 max-h-[160px] overflow-y-auto space-y-2">
+                  {existingUserProjects.map((project) => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      onClick={() => setProjectId(project.id)}
+                      className={cn(
+                        'flex w-full items-start justify-between gap-3 rounded-md border px-3 py-2 text-left text-xs',
+                        projectId === project.id ? 'border-primary/50 bg-primary/5' : 'border-border bg-slate-50 hover:bg-surface-hover',
+                      )}
+                    >
+                      <span>
+                        <span className="block font-bold text-text-main">{project.name}</span>
+                        <span className="text-text-muted">{project.sample}</span>
+                      </span>
+                      {projectId === project.id && <CheckCircle2 size={15} className="text-primary" />}
+                    </button>
+                  ))}
+                </div>
                 <button
-                  key={project.id}
                   type="button"
-                  onClick={() => setProjectId(project.id)}
-                  className={cn(
-                    'flex w-full items-start justify-between gap-3 rounded-md border px-3 py-2 text-left text-xs',
-                    projectId === project.id ? 'border-primary/50 bg-primary/5' : 'border-border bg-slate-50 hover:bg-surface-hover',
-                  )}
+                  onClick={attachSelected}
+                  disabled={!projectId}
+                  className="mt-3 h-9 w-full rounded-md bg-primary text-xs font-bold text-white hover:bg-primary/90 disabled:opacity-40"
                 >
-                  <span>
-                    <span className="block font-bold text-text-main">{project.name}</span>
-                    <span className="text-text-muted">{project.sample}</span>
-                  </span>
-                  {projectId === project.id && <CheckCircle2 size={15} className="text-primary" />}
+                  Attach to Selected Project
                 </button>
-              ))}
-            </div>
-            <button type="button" onClick={attachSelected} className="mt-3 h-9 w-full rounded-md bg-primary text-xs font-bold text-white hover:bg-primary/90">
-              Attach to Selected Project
-            </button>
+              </>
+            )}
           </Card>
 
           <Card className="rounded-lg bg-white p-4">

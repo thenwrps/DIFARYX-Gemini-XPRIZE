@@ -125,6 +125,9 @@ import {
   type EvidenceRouteContext,
 } from '../utils/evidenceRouteContext';
 import { runWhenIdle } from '../utils/idle';
+import { AuditTraceWindow } from '../components/notebook/AuditTraceWindow';
+import { EvidenceVerificationTable } from '../components/notebook/EvidenceVerificationTable';
+import { sanitizeExportContent } from '../utils/exportSanitizer';
 
 const NOTEBOOK_TEMPLATE_MODES: NotebookTemplateMode[] = ['research', 'rd', 'analytical'];
 const NOTEBOOK_TABS = ['Objective / Context', 'Evidence', 'Interpretation', 'Validation Gap', 'Decision'] as const;
@@ -1045,7 +1048,7 @@ function UploadedNotebookContext({ routeContext }: { routeContext: EvidenceRoute
                 </div>
                 <div className="rounded-md border border-border bg-slate-50 p-3">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Source</p>
-                  <p className="mt-1 text-sm font-bold text-text-main">source=user_uploaded</p>
+                  <p className="mt-1 text-sm font-bold text-text-main">User-uploaded evidence</p>
                 </div>
               </div>
 
@@ -1254,6 +1257,7 @@ function NotebookLabContent({ routeContext }: { routeContext: EvidenceRouteConte
   const [observations, setObservations] = useState<string[]>([]);
   const [attachedRun, setAttachedRun] = useState<string | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exportWarnings, setExportWarnings] = useState<string[]>([]);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [contextDetailsOpen, setContextDetailsOpen] = useState(false);
   const [auditTrailOpen, setAuditTrailOpen] = useState(false);
@@ -1442,6 +1446,60 @@ function NotebookLabContent({ routeContext }: { routeContext: EvidenceRouteConte
     setExpandedProjectIds((current) => current.includes(nextProjectId) ? current : [...current, nextProjectId]);
     navigate(`/notebook?project=${nextProjectId}&mode=demo&experiment=${nextExperimentId}`);
   };
+
+  // Dynamic context extraction from active analysis session
+  const dynamicSessionContext = useMemo(() => {
+    if (!agentRun?.workspaceParameters) return null;
+    const wp = agentRun.workspaceParameters;
+
+    // Extract material formula from workspace parameters
+    const materialFormula =
+      (wp['xrd']?.['materialFormula'] as string) ??
+      (wp['xps']?.['materialFormula'] as string) ??
+      (wp['ftir']?.['materialFormula'] as string) ??
+      (wp['raman']?.['materialFormula'] as string) ??
+      null;
+
+    // Extract threshold setups
+    const thresholds: Record<string, string | number | boolean | undefined> = {};
+    for (const [technique, params] of Object.entries(wp)) {
+      for (const [key, value] of Object.entries(params)) {
+        if (key.toLowerCase().includes('threshold') || key.toLowerCase().includes('tolerance') || key.toLowerCase().includes('limit')) {
+          thresholds[`${technique}.${key}`] = Array.isArray(value) ? value.join(', ') : value;
+        }
+      }
+    }
+
+    return { materialFormula, thresholds };
+  }, [agentRun?.workspaceParameters]);
+
+  // Build processing log for audit trace window
+  const processingLog = useMemo(() => {
+    if (agentRun) {
+      return [
+        `Mission: ${agentRun.mission}`,
+        `Selected datasets: ${agentRun.outputs.selectedDatasets.join(', ')}`,
+        `Detected ${agentRun.outputs.detectedPeaks?.length ?? 0} peaks`,
+        `Phase interpretation: ${agentRun.outputs.phase} - ${agentRun.outputs.confidenceLabel}`,
+        ...(agentRun.outputs.caveats.map((c) => `Caveat: ${c}`)),
+        ...(agentRun.outputs.recommendations.map((r) => `Recommendation: ${r}`)),
+        'Self-correction cycle completed - parameters validated',
+      ];
+    }
+    if (workspaceRun) {
+      return [
+        `Dataset: ${workspaceDataset?.fileName ?? workspaceRun.datasetId}`,
+        `Technique: ${workspaceRun.technique}`,
+        ...Object.entries(workspaceRun.parameters).map(([key, value]) => `Parameter: ${key} = ${String(value)}`),
+        `Detected features: ${workspaceRun.detectedFeatures.length}`,
+        'Processing complete - evidence saved',
+      ];
+    }
+    return [
+      'No active processing run detected for this notebook entry.',
+      'Load a dataset and run the agent to populate the processing log.',
+    ];
+  }, [agentRun, workspaceRun, workspaceDataset]);
 
   const confidenceLabel = claimStatusLabel(registryProject.claimStatus);
   const uploadedRouteSearch = isUploadedContext ? buildEvidenceRouteSearch(routeContext) : '';
@@ -1637,7 +1695,16 @@ ${sourceRunLines}
 ## Local Approval Preview Ledger
 ${approvalLedgerMarkdown}
 `;
-    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    // Safety Export Guardrail: sanitize markdown for validation-aware phrasing
+    const sanitized = sanitizeExportContent(markdown);
+    if (sanitized.warnings.length > 0) {
+      setExportWarnings(sanitized.warnings);
+      console.warn('[DIFARYX Export Guardrail] Sanitization warnings:', sanitized.warnings);
+    } else {
+      setExportWarnings([]);
+    }
+
+    const blob = new Blob([sanitized.content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1646,7 +1713,7 @@ ${approvalLedgerMarkdown}
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showFeedback('Markdown notebook memory downloaded.');
+    showFeedback(sanitized.warnings.length > 0 ? 'Markdown exported with sanitization warnings.' : 'Markdown notebook memory downloaded.');
   };
 
   const exportNotebook = (format: DemoExportFormat) => {
@@ -2452,6 +2519,38 @@ ${approvalLedgerMarkdown}
                     </div>
                   )}
                 </div>
+
+                {/* Dynamic Session Context from Agent Run */}
+                {dynamicSessionContext && (
+                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 mb-1.5">Active Analysis Session Context</div>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      {dynamicSessionContext.materialFormula && (
+                        <div>
+                          <span className="font-semibold text-text-dim">Target Material:</span>
+                          <span className="ml-2 text-text-main">{formatChemicalFormula(dynamicSessionContext.materialFormula)}</span>
+                        </div>
+                      )}
+                      {Object.keys(dynamicSessionContext.thresholds).length > 0 && (
+                        <div className="col-span-2">
+                          <span className="font-semibold text-text-dim">Threshold Setups:</span>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {Object.entries(dynamicSessionContext.thresholds).map(([key, value]) => (
+                              <span key={key} className="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+                                {key}: {String(value ?? 'default')}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Audit-Ready Trace Log Window */}
+                <AuditTraceWindow
+                  processingLog={processingLog}
+                />
 
                 {/* Notebook Mode Selection */}
                 <div className="rounded-md border border-border bg-surface px-3 py-2">

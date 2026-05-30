@@ -35,6 +35,7 @@ import {
   saveAgentRunResult,
   DEFAULT_PROJECT_ID,
 } from '../data/demoProjects';
+import { getAnalysisSessions, getAnalysisSession } from '../data/analysisSessions';
 import type {
   AgentRunResult,
   DemoDataset,
@@ -185,6 +186,7 @@ type DecisionResult = {
 
 type AgentDemoState = {
   projectId: string;
+  sessionId?: string;
   mode: AgentMode;
   context: TechniqueContext;
   datasetId: string;
@@ -782,14 +784,20 @@ function getDatasetOption(context: TechniqueContext, datasetId: string, projectI
   return options.find((option) => option.dataset.id === datasetId) ?? options[0] ?? makePendingDatasetOption(project, context);
 }
 
-function makeInitialState(projectId: string, mode: AgentMode): AgentDemoState {
+function makeInitialState(
+  projectId: string,
+  mode: AgentMode,
+  defaultTechnique?: TechniqueContext,
+  sessionId?: string,
+): AgentDemoState {
   const normalizedProjectId = normalizeRegistryProjectId(projectId) || DEFAULT_PROJECT_ID;
   const project = getProject(normalizedProjectId) ?? getProject(DEFAULT_PROJECT_ID)!;
-  const context = getDefaultContext(project);
+  const context = defaultTechnique || getDefaultContext(project);
   const datasetId = getDefaultDatasetId(context, project.id);
 
   return {
     projectId: project.id,
+    sessionId,
     mode,
     context,
     datasetId,
@@ -1624,9 +1632,21 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
   const [missionText, setMissionText] = useState(DEFAULT_MISSION);
   const [feedback, setFeedback] = useState('');
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>('demo');
-  const [agentState, setAgentState] = useState<AgentDemoState>(() =>
-    makeInitialState(projectIdFromUrl, modeFromUrl),
-  );
+  const [agentState, setAgentState] = useState<AgentDemoState>(() => {
+    let initialTech: TechniqueContext | undefined = undefined;
+    if (isUploadedContext) {
+      const snap = getProjectEvidenceSnapshot(null, {
+        source: routeContext.source,
+        analysisSessionId: routeContext.sessionId,
+        uploadedRunId: routeContext.uploadedRunId,
+        driveFileId: routeContext.driveFileId,
+        runtimeMode: 'demo',
+        deferStoredContext: false,
+      });
+      initialTech = snap.primaryTechnique as TechniqueContext;
+    }
+    return makeInitialState(projectIdFromUrl, modeFromUrl, initialTech, routeContext.sessionId || undefined);
+  });
   const [approvalAction, setApprovalAction] = useState<ApprovalActionPreview | null>(null);
   const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false);
   const [moreDetailsOpen, setMoreDetailsOpen] = useState(false);
@@ -1654,13 +1674,33 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
   }, []);
 
   React.useEffect(() => {
-    const newProjectId = normalizeRegistryProjectId(searchParams.get('project')) || DEFAULT_PROJECT_ID;
+    const isUploaded = routeContext.isUploadedContext;
+    const newProjectId = isUploaded
+      ? 'uploaded-evidence-temp'
+      : (normalizeRegistryProjectId(searchParams.get('project')) || DEFAULT_PROJECT_ID);
     const newMode = normalizeAgentMode(searchParams.get('mode'));
+    const newSessionId = isUploaded ? (routeContext.sessionId || undefined) : undefined;
 
-    if (newProjectId !== agentState.projectId || newMode !== agentState.mode) {
-      setAgentState(makeInitialState(newProjectId, newMode));
+    if (
+      newProjectId !== agentState.projectId ||
+      newMode !== agentState.mode ||
+      newSessionId !== agentState.sessionId
+    ) {
+      let defaultTech: TechniqueContext | undefined = undefined;
+      if (isUploaded) {
+        const snap = getProjectEvidenceSnapshot(null, {
+          source: routeContext.source,
+          analysisSessionId: routeContext.sessionId,
+          uploadedRunId: routeContext.uploadedRunId,
+          driveFileId: routeContext.driveFileId,
+          runtimeMode,
+          deferStoredContext: false,
+        });
+        defaultTech = snap.primaryTechnique as TechniqueContext;
+      }
+      setAgentState(makeInitialState(newProjectId, newMode, defaultTech, newSessionId));
     }
-  }, [searchParams]);
+  }, [searchParams, routeContext, runtimeMode]);
 
   if (hasError) {
     return (
@@ -2317,6 +2357,20 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     setSearchParams(newParams);
   };
 
+  const handleUploadedSessionChange = (sessionId: string) => {
+    if (runningGuardRef.current) return;
+    const session = getAnalysisSession(sessionId);
+    if (!session) return;
+
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('source', 'user_uploaded');
+    newParams.set('sessionId', session.analysisId);
+    newParams.set('upload', session.uploadedRunId || session.analysisId);
+    newParams.set('technique', session.technique.toLowerCase());
+    newParams.delete('project');
+    setSearchParams(newParams);
+  };
+
   const handleModeChange = (newMode: AgentMode) => {
     if (runningGuardRef.current) return;
     const newParams = new URLSearchParams(searchParams);
@@ -2749,17 +2803,58 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
           {/* Project Selector */}
           <div className="relative">
             <select
-              value={agentState.projectId}
+              value={isUploadedContext ? (routeContext.sessionId || 'uploaded-evidence-temp') : agentState.projectId}
               disabled={runningGuardRef.current}
-              onChange={(e) => handleProjectChange(e.target.value)}
+              onChange={(e) => {
+                if (isUploadedContext) {
+                  handleUploadedSessionChange(e.target.value);
+                } else {
+                  handleProjectChange(e.target.value);
+                }
+              }}
               className="h-7 px-2 pr-6 text-xs font-semibold bg-white border border-slate-300 rounded text-slate-700 appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:border-slate-400"
               title={currentProject.name}
             >
-              {demoProjectRegistry.map((proj) => (
-                <option key={proj.id} value={proj.id}>
-                  {proj.title}
-                </option>
-              ))}
+              {isUploadedContext ? (
+                (() => {
+                  const userSessions = getAnalysisSessions().filter(
+                    (session) => session.source === 'user_uploaded'
+                  );
+                  if (userSessions.length === 0) {
+                    return (
+                      <option value="uploaded-evidence-temp">
+                        {currentProject.name}
+                      </option>
+                    );
+                  }
+                  const currentSessionId = routeContext.sessionId;
+                  const hasCurrent = userSessions.some((s) => s.analysisId === currentSessionId);
+                  const items = [...userSessions];
+                  if (currentSessionId && !hasCurrent) {
+                    const currentSession = getAnalysisSession(currentSessionId);
+                    if (currentSession) {
+                      items.unshift(currentSession);
+                    } else {
+                      items.unshift({
+                        analysisId: currentSessionId,
+                        fileName: currentProject.name,
+                        title: currentProject.name,
+                      } as any);
+                    }
+                  }
+                  return items.map((session) => (
+                    <option key={session.analysisId} value={session.analysisId}>
+                      {session.fileName || session.title}
+                    </option>
+                  ));
+                })()
+              ) : (
+                demoProjectRegistry.map((proj) => (
+                  <option key={proj.id} value={proj.id}>
+                    {proj.title}
+                  </option>
+                ))
+              )}
             </select>
             <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>

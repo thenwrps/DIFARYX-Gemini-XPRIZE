@@ -40,6 +40,8 @@ export interface AnalysisFeature {
   id: string;
   label: string;
   values: Record<string, string>;
+  /** Optional technique-specific metadata (e.g., XPS registry-enriched fields). */
+  metadata?: Record<string, unknown>;
 }
 
 export interface AnalysisInterpretation {
@@ -89,6 +91,7 @@ export interface AnalysisSession {
   projectId?: string;
   projectName?: string;
   status: AnalysisStatus;
+  claimStatus?: string;
   processingState: string;
   processingPipeline: ProcessingPipelineStep[];
   processingParameters: ProcessingParameter[];
@@ -122,13 +125,28 @@ export interface ProjectEvidenceEntry {
 
 export const ANALYSIS_SESSION_STORAGE_KEY = 'difaryx-analysis-sessions-v1';
 
-export const PROJECT_OPTIONS = [
-  { id: 'cu-fe2o4-spinel', name: 'CuFe2O4', sample: 'Copper ferrite spinel' },
-  { id: 'cufe2o4-sba15', name: 'CuFe2O4/SBA-15', sample: 'CuFe2O4 on SBA-15 support' },
-  { id: 'nife2o4', name: 'NiFe2O4', sample: 'Nickel ferrite spinel' },
-  { id: 'cofe2o4', name: 'CoFe2O4', sample: 'Cobalt ferrite spinel' },
-  { id: 'fe3o4-nanoparticles', name: 'Fe3O4', sample: 'Iron oxide nanoparticles' },
-];
+export const PROJECT_OPTIONS: Array<{ id: string; name: string; sample: string }> = [];
+
+/**
+ * Dynamically create a new project schema block from a user-supplied
+ * chemical formula. Used in User Mode to replace the former hardcoded
+ * PROJECT_OPTIONS dropdown.
+ */
+export function createUserProject(
+  formula: string,
+  sampleDesc?: string,
+): { id: string; name: string; sample: string } {
+  const id = formula
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'user-project';
+  return {
+    id,
+    name: formula.trim() || 'Untitled Project',
+    sample: sampleDesc?.trim() || `User-defined material: ${formula.trim()}`,
+  };
+}
 
 export const TECHNIQUE_DEFINITIONS: Record<
   AnalysisTechnique,
@@ -322,47 +340,47 @@ function version(
 const XRD_FEATURES: AnalysisFeature[] = [
   {
     id: 'xrd-001',
-    label: 'Primary spinel reflection',
+    label: 'Primary reflection',
     values: {
       '2theta': '35.5',
       'd-spacing': '2.53 A',
       intensity: '100',
       FWHM: '0.21',
-      assignment: '(311) CuFe2O4 spinel',
-      'match confidence': 'supported',
-      'best match': 'CuFe2O4 spinel',
-      'matched peaks count': '8 / 9',
-      status: 'Refinement pending',
+      assignment: '(311) primary spinel structure',
+      'match confidence': 'pending verification',
+      'best match': 'pending material assignment',
+      'matched peaks count': '\u2014',
+      status: 'Awaiting material definition',
     },
   },
   {
     id: 'xrd-002',
-    label: 'Support shoulder',
+    label: 'Secondary shoulder',
     values: {
       '2theta': '20.9',
       'd-spacing': '4.25 A',
       intensity: '24',
       FWHM: 'broad',
-      assignment: 'SBA-15 amorphous shoulder',
+      assignment: 'amorphous / support shoulder',
       'match confidence': 'contextual',
-      'best match': 'silica support',
+      'best match': 'pending assignment',
       'matched peaks count': 'context',
       status: 'Support context',
     },
   },
   {
     id: 'xrd-003',
-    label: 'Secondary ferrite reflection',
+    label: 'Secondary reflection',
     values: {
       '2theta': '43.2',
       'd-spacing': '2.09 A',
       intensity: '52',
       FWHM: '0.24',
-      assignment: '(400) CuFe2O4 spinel',
-      'match confidence': 'supported',
-      'best match': 'CuFe2O4 spinel',
-      'matched peaks count': '8 / 9',
-      status: 'Matched',
+      assignment: '(400) secondary spinel structure',
+      'match confidence': 'pending verification',
+      'best match': 'pending material assignment',
+      'matched peaks count': '\u2014',
+      status: 'Awaiting material definition',
     },
   },
 ];
@@ -379,6 +397,12 @@ const XPS_FEATURES: AnalysisFeature[] = [
       'fitting residual': 'review needed',
       confidence: 'validation-limited',
     },
+    metadata: {
+      element: 'Cu',
+      shell: '2p3/2',
+      bondingAssignment: 'Copper Oxide (Cu2+ / CuO)',
+      doubletSplitting: 19.8,
+    },
   },
   {
     id: 'xps-002',
@@ -390,6 +414,12 @@ const XPS_FEATURES: AnalysisFeature[] = [
       'oxidation-state assignment': 'Fe3+ likely',
       'fitting residual': 'acceptable',
       confidence: 'supported',
+    },
+    metadata: {
+      element: 'Fe',
+      shell: '2p3/2',
+      bondingAssignment: 'Iron Oxide (Fe3+ / Fe2O3)',
+      doubletSplitting: 13.6,
     },
   },
 ];
@@ -511,15 +541,16 @@ function interpretationFor(technique: AnalysisTechnique): AnalysisInterpretation
 
   return {
     quick: [
-      'Pattern matches CuFe2O4 spinel structure.',
+      'Pattern detected; pending material system verification.',
       'Sharp reflections suggest crystallinity.',
       'No obvious secondary phase detected above threshold.',
     ],
-    evidenceContribution: 'Supports claim: Phase / Structure',
-    confidence: 'supported, validation-limited',
-    validationImpact: 'reduces gap G1',
-    qualityFlags: ['Refinement still pending', 'Support shoulder preserved as context'],
+    evidenceContribution: 'Supports claim: Phase / Structure (pending verification)',
+    confidence: 'unverified draft',
+    validationImpact: 'pending material assignment',
+    qualityFlags: ['Material system not yet defined', 'Refinement pending'],
     recommendedNextSteps: [
+      'Define the target material system.',
       'Review XPS for surface oxidation state.',
       'Optional refinement for publication-level claim.',
       'Attach to project for reasoning.',
@@ -566,9 +597,9 @@ function graphFor(technique: AnalysisTechnique): AnalysisGraphData {
     axisLabel: '2theta (deg)',
     yLabel: 'Intensity (a.u.)',
     markers: [
-      { position: 20.9, intensity: 24, label: 'SBA shoulder' },
-      { position: 35.5, intensity: 100, label: 'CuFe2O4 (311)' },
-      { position: 43.2, intensity: 52, label: 'CuFe2O4 (400)' },
+      { position: 20.9, intensity: 24, label: 'Peak C (shoulder)' },
+      { position: 35.5, intensity: 100, label: 'Peak A (311)' },
+      { position: 43.2, intensity: 52, label: 'Peak B (400)' },
     ],
   };
 }
@@ -612,6 +643,7 @@ function baseSession(input: {
 
   return {
     ...input,
+    claimStatus: 'Unverified Draft',
     processingPipeline,
     processingParameters,
     qualityChecks: clone(QUALITY_TEMPLATES[input.technique]),
@@ -753,8 +785,16 @@ function writeStoredSessions(sessions: AnalysisSession[]) {
   window.localStorage.setItem(ANALYSIS_SESSION_STORAGE_KEY, JSON.stringify(sessions));
 }
 
-export function getAnalysisSessions(): AnalysisSession[] {
+export interface GetAnalysisSessionsOptions {
+  /** When true, exclude all seed demo sessions and return only user-created sessions. */
+  excludeSeeds?: boolean;
+}
+
+export function getAnalysisSessions(options?: GetAnalysisSessionsOptions): AnalysisSession[] {
   const stored = readStoredSessions();
+  if (options?.excludeSeeds) {
+    return stored ?? [];
+  }
   if (!stored || stored.length === 0) return clone(seedAnalysisSessions);
   const seedIds = new Set(stored.map((session) => session.analysisId));
   const missingSeeds = seedAnalysisSessions.filter((session) => !seedIds.has(session.analysisId));
