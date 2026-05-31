@@ -79,7 +79,7 @@ export function getProvenanceTimelineEvents(projectIdFilter?: string): TimelineE
       projects.forEach(p => {
         if (projectIdFilter && p.id !== projectIdFilter) return;
         events.push({
-          timestamp: p.createdAt || new Date().toISOString(),
+          timestamp: p.createdDate || new Date().toISOString(),
           type: 'project_created',
           title: 'Project Created',
           description: `Research project "${p.title}" was initialized.`,
@@ -94,11 +94,11 @@ export function getProvenanceTimelineEvents(projectIdFilter?: string): TimelineE
   try {
     const runs = readUploadedSignalRuns();
     runs.forEach(run => {
-      const pId = run.projectId;
+      const pId = (run as any).projectId;
       if (projectIdFilter && pId !== projectIdFilter) return;
       const projName = pId ? getProjectName(pId) : 'Standalone';
       events.push({
-        timestamp: run.uploadedAt || new Date().toISOString(),
+        timestamp: (run as any).uploadedAt || run.createdAt || new Date().toISOString(),
         type: 'file_uploaded',
         title: 'Evidence File Uploaded',
         description: `Signal dataset "${run.fileName}" (${run.technique}) uploaded to ${projName}.`,

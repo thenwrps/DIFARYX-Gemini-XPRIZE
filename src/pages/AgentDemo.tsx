@@ -92,6 +92,7 @@ import {
   toggleTechnique,
   changeFocusedTechnique,
 } from '../utils/agentEvidenceModel';
+import { useBackendStatus, BackendStatusBadge } from '../utils/backendStatus';
 import {
   demoProjectRegistry,
   getFocusedEvidenceSource,
@@ -1292,6 +1293,7 @@ function createDecisionResult(
   context: TechniqueContext,
   option: DatasetOption,
   xrdAnalysis: ReturnType<typeof runXrdPhaseIdentificationAgent> | null,
+  llmOutput: ReasoningOutput | null = null,
 ): DecisionResult {
   const { project, dataset } = option;
   const config = CONTEXT_CONFIG[context];
@@ -1328,7 +1330,6 @@ function createDecisionResult(
     : dataset.detectedFeatures.length;
 
   // Build technique-specific metric cards
-  const dominantClaim = fusionResult.reasoningTrace.find(t => t.isDominant);
   const display = TECHNIQUE_DISPLAY[context];
   const xs = dataset.dataPoints.length > 0
     ? dataset.dataPoints.map((p) => p.x)
@@ -1340,31 +1341,49 @@ function createDecisionResult(
   const dominantValue = topPeaks.length > 0
     ? topPeaks.map((p) => display.formatPosition(p.position)).join(', ')
     : 'Pending';
+  
   const metrics: Array<{ label: string; value: string; tone?: 'cyan' | 'emerald' | 'violet' | 'amber' }> = [
     { label: display.featureLabel, value: String(featureCount), tone: 'cyan' },
     { label: display.rangeLabel, value: rangeValue, tone: 'emerald' },
-    { label: display.dominantLabel, value: dominantValue, tone: 'violet' },
-    { label: display.qualityLabel, value: formatReviewStatus(dominantClaim?.status ?? 'unsupported'), tone: 'amber' },
   ];
 
-  // Build detail rows from reasoning trace
-  const detailRows = fusionResult.reasoningTrace.map((trace, index) => ({
-    Claim: trace.claimId,
-    Review: formatReviewStatus(trace.status),
-    Evidence: `${trace.evidenceIds.length} nodes`,
-    Conflicts: trace.contradictingEvidenceIds.length > 0 ? 'Yes' : 'No',
-  }));
+  if (llmOutput) {
+    const confidencePercent = Math.round(llmOutput.confidence * 100);
+    metrics.push({ label: 'AI Confidence', value: `${confidencePercent}%`, tone: 'emerald' });
+    const providerName = llmOutput.metadata?.provider === 'vertex-gemini' ? 'Gemini' : llmOutput.metadata?.provider === 'gemma' ? 'Gemma' : 'Deterministic';
+    metrics.push({ label: 'Provider', value: providerName, tone: 'violet' });
+  } else {
+    const dominantClaim = fusionResult.reasoningTrace.find(t => t.isDominant);
+    metrics.push({ label: display.dominantLabel, value: dominantValue, tone: 'violet' });
+    metrics.push({ label: display.qualityLabel, value: formatReviewStatus(dominantClaim?.status ?? 'unsupported'), tone: 'amber' });
+  }
+
+  // Build detail rows from reasoning trace or LLM output
+  const detailRows = llmOutput
+    ? [
+        { Metric: 'Conclusion', Value: llmOutput.primaryResult, Status: 'AI Generated' },
+        { Metric: 'Engine', Value: llmOutput.metadata?.model || 'unknown', Status: llmOutput.metadata?.fallbackUsed ? 'Fallback' : 'Connected' },
+        { Metric: 'Duration', Value: `${llmOutput.metadata?.durationMs || 0}ms`, Status: 'Complete' },
+      ]
+    : fusionResult.reasoningTrace.map((trace, index) => ({
+        Claim: trace.claimId,
+        Review: formatReviewStatus(trace.status),
+        Evidence: `${trace.evidenceIds.length} nodes`,
+        Conflicts: trace.contradictingEvidenceIds.length > 0 ? 'Yes' : 'No',
+      }));
 
   return {
     runId: generateRunId(),
-    primaryResult: fusionResult.conclusion,
-    subtitle: `${config.label} - Fusion Engine Interpretation`,
+    primaryResult: llmOutput ? llmOutput.primaryResult : fusionResult.conclusion,
+    subtitle: llmOutput
+      ? `${config.label} - AI-Assisted Reasoning${llmOutput.metadata?.fallbackUsed ? ' (Fallback)' : ''}`
+      : `${config.label} - Fusion Engine Interpretation`,
     reasoningTrace: fusionResult.reasoningTrace,
-    conclusion: fusionResult.conclusion,
-    basis: fusionResult.basis,
-    crossTech: fusionResult.crossTech,
-    limitations: fusionResult.limitations,
-    decision: fusionResult.decision,
+    conclusion: llmOutput ? llmOutput.primaryResult : fusionResult.conclusion,
+    basis: llmOutput ? llmOutput.evidenceSummary : fusionResult.basis,
+    crossTech: llmOutput ? llmOutput.decisionLogic : fusionResult.crossTech,
+    limitations: llmOutput ? llmOutput.uncertainty : fusionResult.limitations,
+    decision: llmOutput ? llmOutput.recommendedNextStep : fusionResult.decision,
     highlightedEvidenceIds: fusionResult.highlightedEvidenceIds,
     metrics,
     detailRows,
@@ -1660,6 +1679,13 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     activeStage: runtimeActiveStage,
     isValidated7E4: runtimeIsValidated,
   } = useXrdWorkflowRuntime();
+
+  // Backend Status Hook
+  const { xrdStatus, agentStatus } = useBackendStatus(
+    agentState.reasoningState.status === 'running',
+    runtimeIsProcessing,
+    agentState.llmState.fallbackUsed
+  );
 
   // Add error boundary
   const [hasError, setHasError] = useState(false);
@@ -1988,12 +2014,84 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     }));
   };
 
+  async function callLlmReasoning(
+    modelMode: ModelMode,
+    context: TechniqueContext,
+    dataset: DemoDataset,
+    project: DemoProject,
+    xrdAnalysis: ReturnType<typeof runXrdPhaseIdentificationAgent> | null,
+    toolTrace: ToolTraceEntry[],
+  ): Promise<{ output: ReasoningOutput | null; fallbackUsed: boolean }> {
+    if (modelMode === 'deterministic') {
+      return { output: null, fallbackUsed: false };
+    }
+
+    try {
+      const featureCount = context === 'XRD'
+        ? xrdAnalysis?.detectedPeaks.length || dataset.detectedFeatures.length || 9
+        : dataset.detectedFeatures.length || 4;
+
+      let baseConfidence = 50;
+      if (context === 'XRD') {
+        baseConfidence = xrdAnalysis?.candidates[0]?.score ? Math.round(xrdAnalysis.candidates[0].score * 100) : project.confidence;
+      } else {
+        const techEvidence = project.evidence.find((item) =>
+          item.toLowerCase().includes(context.toLowerCase())
+        );
+        baseConfidence = techEvidence ? 80 : 40;
+      }
+
+      const mcpToolTrace: ToolResult[] = toolTrace.map((entry) => ({
+        id: entry.id,
+        toolCallId: entry.id,
+        name: entry.toolName as any,
+        status: entry.status === 'error' ? 'error' : entry.status,
+        output: {
+          summary: entry.resultSummary || entry.argsSummary,
+          durationMs: entry.durationMs,
+        },
+        durationMs: entry.durationMs,
+        timestamp: entry.timestamp,
+      }));
+
+      const packet = buildEvidencePacket(
+        context,
+        dataset,
+        project,
+        xrdAnalysis,
+        featureCount,
+        baseConfidence,
+        mcpToolTrace,
+      );
+
+      const response = await callReasoningAPI({
+        packet,
+        provider: modelMode,
+      });
+
+      if (!response.success) {
+        console.error('LLM reasoning failed:', response.error);
+        return { output: null, fallbackUsed: true };
+      }
+
+      return {
+        output: response.output ?? null,
+        fallbackUsed: response.fallbackUsed ?? false,
+      };
+    } catch (error) {
+      console.error('LLM reasoning error:', error);
+      return { output: null, fallbackUsed: true };
+    }
+  }
+
   const finalizeRun = (
     context: TechniqueContext,
     option: DatasetOption,
     xrdResult: ReturnType<typeof runXrdPhaseIdentificationAgent> | null,
+    llmOutput: ReasoningOutput | null = null,
+    fallbackUsed = false,
   ) => {
-    const decision = createDecisionResult(context, option, xrdResult);
+    const decision = createDecisionResult(context, option, xrdResult, llmOutput);
 
     // ── Enrich with persisted XRD backend evidence (additive, non-breaking) ──
     if (context === 'XRD' && xrdBackendEvidence) {
@@ -2091,8 +2189,8 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       workspaceParameters: workspaceParameters,
       outputs: {
         phase: decision.primaryResult,
-        confidence: 85, // Placeholder - fusionEngine doesn't use numeric confidence
-        confidenceLabel: 'Status',
+        confidence: llmOutput ? Math.round(llmOutput.confidence * 100) : 85, // Placeholder - fusionEngine doesn't use numeric confidence
+        confidenceLabel: llmOutput ? 'AI confidence' : 'Status',
         evidence: decision.basis,
         interpretation: decision.crossTech,
         caveats: decision.limitations,
@@ -2112,14 +2210,14 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         result: decision,
       },
       llmState: {
-        output: null,
-        usedLlm: false,
-        fallbackUsed: false,
+        output: llmOutput || null,
+        usedLlm: !!llmOutput,
+        fallbackUsed: fallbackUsed,
       },
     }));
     appendLog({
       stamp: '[decision]',
-      message: `${CONTEXT_CONFIG[context].decisionKind} prepared: ${decision.conclusion}`,
+      message: `${CONTEXT_CONFIG[context].decisionKind} prepared: ${decision.conclusion}${llmOutput ? ` [AI-Assisted: ${llmOutput.metadata?.provider === 'vertex-gemini' ? 'Gemini' : llmOutput.metadata?.provider === 'gemma' ? 'Gemma' : 'Deterministic'}]` : ''}`,
       type: 'success',
     });
   };
@@ -2241,7 +2339,44 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       await wait(300);
       if (runTokenRef.current !== token) return;
 
-      finalizeRun(context, option, xrdResult);
+      let llmOutput: ReasoningOutput | null = null;
+      let fallbackUsed = false;
+
+      if (agentState.modelMode !== 'deterministic') {
+        appendLog({
+          stamp: `[${formatStamp(config.stages.length)}]`,
+          message: `LLM Reasoning (${MODEL_MODE_LABELS[agentState.modelMode]}): Analyzing evidence packet...`,
+          type: 'tool',
+        });
+
+        const llmResult = await callLlmReasoning(
+          agentState.modelMode,
+          context,
+          option.dataset,
+          option.project,
+          xrdResult,
+          agentState.toolTrace,
+        );
+
+        llmOutput = llmResult.output;
+        fallbackUsed = llmResult.fallbackUsed;
+
+        if (llmOutput) {
+          appendLog({
+            stamp: `[${formatStamp(config.stages.length)}]`,
+            message: `LLM reasoning complete: ${llmOutput.primaryResult} (confidence: ${(llmOutput.confidence * 100).toFixed(1)}%)`,
+            type: 'success',
+          });
+        } else if (fallbackUsed) {
+          appendLog({
+            stamp: `[${formatStamp(config.stages.length)}]`,
+            message: 'LLM provider offline or unauthorized, using simulated reasoning fallback',
+            type: 'info',
+          });
+        }
+      }
+
+      finalizeRun(context, option, xrdResult, llmOutput, fallbackUsed);
     } finally {
       if (runTokenRef.current === token) {
         runningGuardRef.current = false;
@@ -2326,7 +2461,45 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       if (nextIndex === stages.length - 1) {
         await wait(300);
         if (runTokenRef.current !== token) return;
-        finalizeRun(agentState.context, option, xrdResult);
+
+        let llmOutput: ReasoningOutput | null = null;
+        let fallbackUsed = false;
+
+        if (agentState.modelMode !== 'deterministic') {
+          appendLog({
+            stamp: `[${formatStamp(stages.length)}]`,
+            message: `LLM Reasoning (${MODEL_MODE_LABELS[agentState.modelMode]}): Analyzing evidence packet...`,
+            type: 'tool',
+          });
+
+          const llmResult = await callLlmReasoning(
+            agentState.modelMode,
+            agentState.context,
+            option.dataset,
+            option.project,
+            xrdResult,
+            agentState.toolTrace,
+          );
+
+          llmOutput = llmResult.output;
+          fallbackUsed = llmResult.fallbackUsed;
+
+          if (llmOutput) {
+            appendLog({
+              stamp: `[${formatStamp(stages.length)}]`,
+              message: `LLM reasoning complete: ${llmOutput.primaryResult} (confidence: ${(llmOutput.confidence * 100).toFixed(1)}%)`,
+              type: 'success',
+            });
+          } else if (fallbackUsed) {
+            appendLog({
+              stamp: `[${formatStamp(stages.length)}]`,
+              message: 'LLM provider offline or unauthorized, using simulated reasoning fallback',
+              type: 'info',
+            });
+          }
+        }
+
+        finalizeRun(agentState.context, option, xrdResult, llmOutput, fallbackUsed);
       }
     } finally {
       if (runTokenRef.current === token) {
@@ -2946,6 +3119,32 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
             );
           })()}
 
+          {/* Model Mode Selector */}
+          <div className="relative">
+            <select
+              value={agentState.modelMode}
+              disabled={runningGuardRef.current}
+              onChange={(e) => {
+                const newMode = e.target.value as ModelMode;
+                setAgentState((current) => ({
+                  ...resetRunState(current, current.context, current.datasetId),
+                  modelMode: newMode,
+                }));
+              }}
+              className="h-7 px-2 pr-6 text-xs font-semibold bg-white border border-slate-300 rounded text-slate-700 appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:border-slate-400"
+              title="Reasoning Engine"
+            >
+              <option value="deterministic">Deterministic</option>
+              <option value="vertex-gemini">Gemini 1.5 Flash</option>
+              <option value="gemma">Gemma</option>
+            </select>
+            <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+
+          {/* Backend Status Badges */}
+          <BackendStatusBadge type="XRD" status={xrdStatus} />
+          <BackendStatusBadge type="Agent" status={agentStatus} />
+
           <div className="flex-1" />
 
           {/* Run Mode Toggle */}
@@ -3195,6 +3394,8 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
           runtimeMode={runtimeMode}
           approvalLedgerProjectId={selectedProject.id}
           approvalLedgerBundleId={evidenceBundle?.bundleId ?? `single-${selectedProject.id}`}
+          modelMode={agentState.modelMode}
+          llmState={agentState.llmState}
         />
       </div>
       <ApprovalActionDialog

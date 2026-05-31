@@ -28,7 +28,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_REFERENCE_SET_ID = 'spinel_ferrite_sba15_demo_set';
 
 function getBackendBaseUrl(): string {
-  return import.meta.env.VITE_XRD_BACKEND_URL || DEFAULT_BASE_URL;
+  return import.meta.env.VITE_XRD_API_URL || import.meta.env.VITE_XRD_BACKEND_URL || DEFAULT_BASE_URL;
 }
 
 function debugXrdBackendClient(message: string, details?: Record<string, unknown>) {
@@ -94,7 +94,9 @@ export function mapXrdParametersToBackend(
       polynomial_order: parameters.smoothing.polynomialOrder,
     },
     peak_detection: {
-      min_prominence: parameters.peakDetection.minProminence,
+      min_prominence: parameters.peakDetection.minProminence > 1.0
+        ? parameters.peakDetection.minProminence / 100
+        : parameters.peakDetection.minProminence,
       min_distance_deg: parameters.peakDetection.minDistanceDeg,
       min_height_ratio: parameters.peakDetection.minHeightRatio,
       max_peak_count: parameters.peakDetection.maxPeakCount,
@@ -142,7 +144,9 @@ export function mapXrdParametersToLegacyParams(
     theta_min: parameters.range.twoThetaMin,
     theta_max: parameters.range.twoThetaMax,
     wavelength: parameters.radiation.wavelengthAngstrom,
-    min_prominence: parameters.peakDetection.minProminence,
+    min_prominence: parameters.peakDetection.minProminence > 1.0
+      ? parameters.peakDetection.minProminence / 100
+      : parameters.peakDetection.minProminence,
     peak_threshold: parameters.peakDetection.minHeightRatio,
     baseline: {
       method: parameters.baseline.method,

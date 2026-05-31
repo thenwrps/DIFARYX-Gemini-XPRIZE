@@ -12,7 +12,7 @@ import {
 const DEFAULT_BASE_URL = 'http://localhost:8000';
 
 function getBackendBaseUrl(): string {
-  return import.meta.env.VITE_XRD_BACKEND_URL || DEFAULT_BASE_URL;
+  return import.meta.env.VITE_XRD_API_URL || import.meta.env.VITE_XRD_BACKEND_URL || DEFAULT_BASE_URL;
 }
 
 /**
@@ -36,7 +36,7 @@ async function fallbackLocalUpload(file: File, technique: string): Promise<Uploa
   const parsed = parseUploadedSignalText(file.name, text);
   
   if (!parsed.ok) {
-    throw new Error(parsed.error || 'Failed to parse file content locally.');
+    throw new Error((parsed as any).error || 'Failed to parse file content locally.');
   }
 
   // Map technique string to uppercase Technique

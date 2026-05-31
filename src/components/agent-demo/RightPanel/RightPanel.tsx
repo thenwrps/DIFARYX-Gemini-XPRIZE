@@ -93,6 +93,12 @@ interface RightPanelProps {
   runtimeMode?: RuntimeMode;
   approvalLedgerProjectId?: string;
   approvalLedgerBundleId?: string;
+  modelMode?: 'deterministic' | 'vertex-gemini' | 'gemma';
+  llmState?: {
+    output: any;
+    usedLlm: boolean;
+    fallbackUsed: boolean;
+  };
 }
 
 export function RightPanel({
@@ -113,6 +119,8 @@ export function RightPanel({
   runtimeMode = 'demo',
   approvalLedgerProjectId,
   approvalLedgerBundleId,
+  modelMode = 'deterministic',
+  llmState,
 }: RightPanelProps) {
   const modeConfig = AGENT_MODES[mode];
   const [activeTab, setActiveTab] = useState<string>(modeConfig.tabs[0].id);
@@ -156,9 +164,27 @@ export function RightPanel({
         <ScientificConfidenceSummary
           claimStatus={registryProject?.claimStatus || 'partial'}
           readinessPercent={registryProject?.reportReadiness || 30}
-          validationGaps={registryProject?.validationGaps || []}
+          validationGaps={registryProject?._raw.validationGaps || []}
           availableTechniques={registryProject?.techniques.filter(t => t.available).map(t => t.label) || []}
           pendingTechniques={registryProject?.techniques.filter(t => !t.available).map(t => t.label) || []}
+        />
+        {llmState?.fallbackUsed && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold">Simulated Fallback Active</span>
+              <p className="mt-1 text-[11px] text-amber-800 leading-normal">
+                LLM request failed ({llmState.output?.metadata?.fallbackReason || 'API Key validation error'}). Reasoning is generated from a simulated backend response rather than a live model.
+              </p>
+            </div>
+          </div>
+        )}
+        <EvidenceUsedCard
+          modelMode={modelMode}
+          llmState={llmState}
+          registryProject={registryProject}
+          evidenceWorkspace={evidenceWorkspace}
+          agentContext={agentContext}
         />
         {mode === 'deterministic' && activeTab === 'goal' && (
           <>
@@ -1098,6 +1124,88 @@ function Section({ title, items, color }: { title: string; items: string[]; colo
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function EvidenceUsedCard({
+  modelMode = 'deterministic',
+  llmState,
+  registryProject,
+  evidenceWorkspace,
+  agentContext,
+}: {
+  modelMode?: 'deterministic' | 'vertex-gemini' | 'gemma';
+  llmState?: { output: any; usedLlm: boolean; fallbackUsed: boolean; };
+  registryProject?: RegistryProject;
+  evidenceWorkspace?: AgentEvidenceWorkspace;
+  agentContext: AgentContext;
+}) {
+  const engineMap = {
+    deterministic: 'Deterministic',
+    'vertex-gemini': 'Gemini 1.5 Flash',
+    gemma: 'Gemma',
+  };
+
+  const reasoningEngine = engineMap[modelMode] || 'Deterministic';
+  const fallbackUsed = llmState?.fallbackUsed ? 'Yes' : 'No';
+  const fallbackReason = llmState?.fallbackUsed && llmState.output?.metadata?.fallbackReason
+    ? ` (${llmState.output.metadata.fallbackReason})`
+    : '';
+
+  const evidenceSources: string[] = [];
+
+  // Collect active techniques
+  if (registryProject) {
+    registryProject.techniques.forEach(t => {
+      if (t.available) {
+        evidenceSources.push(t.id.toUpperCase());
+      }
+    });
+  } else if (evidenceWorkspace) {
+    evidenceSources.push(evidenceWorkspace.technique.toUpperCase());
+  } else if (agentContext.primaryTechnique) {
+    evidenceSources.push(agentContext.primaryTechnique.toUpperCase());
+  }
+
+  // If multi-tech is active, include "Fusion"
+  if (agentContext.evidenceMode === 'multi-tech') {
+    evidenceSources.push('Fusion');
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
+        <Database size={14} className="text-blue-600" />
+        Evidence Used & Provenance
+      </h3>
+      <div className="space-y-2 text-xs">
+        <div className="flex justify-between border-b border-slate-100 pb-1.5">
+          <span className="font-semibold text-slate-600">Reasoning Engine:</span>
+          <span className="text-slate-900 font-medium">{reasoningEngine}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-100 pb-1.5">
+          <span className="font-semibold text-slate-600">Fallback Used:</span>
+          <span className={`font-semibold ${llmState?.fallbackUsed ? 'text-amber-600' : 'text-slate-900'}`}>
+            {fallbackUsed}{fallbackReason}
+          </span>
+        </div>
+        <div>
+          <span className="font-semibold text-slate-600 block mb-1">Evidence Sources:</span>
+          <ul className="space-y-1 pl-1">
+            {evidenceSources.length > 0 ? (
+              evidenceSources.map((source) => (
+                <li key={source} className="flex items-center gap-1.5 text-slate-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
+                  <span>{source}</span>
+                </li>
+              ))
+            ) : (
+              <li className="text-slate-400 italic">No evidence loaded</li>
+            )}
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }

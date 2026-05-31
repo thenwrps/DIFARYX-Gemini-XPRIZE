@@ -81,15 +81,25 @@ export async function handleReasoningRequest(
 export async function callReasoningAPI(
   request: ReasoningRequest,
 ): Promise<ReasoningResponse> {
-  // PRODUCTION: Replace with actual API call
-  // const response = await fetch('/api/reasoning', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify(request),
-  // });
-  // return response.json();
+  const baseUrl = import.meta.env.VITE_AGENT_API_URL || 'http://localhost:3001';
+  try {
+    const response = await fetch(`${baseUrl}/api/reasoning`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
 
-  // DEMO: Call server function directly
-  // Note: In a real deployment, this would be a separate server process
-  return handleReasoningRequest(request);
+    if (!response.ok) {
+      throw new Error(`Agent backend returned HTTP ${response.status}`);
+    }
+
+    const data: ReasoningResponse = await response.json();
+    return data;
+  } catch (error) {
+    console.warn('Failed to call agent backend reasoning API, falling back to local reasoning:', error);
+    // Fallback to local client-side function if backend is completely down
+    return handleReasoningRequest(request);
+  }
 }

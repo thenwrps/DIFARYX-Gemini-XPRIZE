@@ -396,6 +396,21 @@ async def health_check():
 # Helper: build domain config from API request
 # ============================================================================
 
+_SAFE_TO_LABEL = {
+    "asymmetric_ls": "Asymmetric LS",
+    "polynomial": "Polynomial",
+    "rolling_ball": "Rolling Ball",
+    "none": "None",
+    "savitzky_golay": "Savitzky-Golay",
+    "moving_average": "Moving Average",
+    "pseudo_voigt": "Pseudo-Voigt",
+    "gaussian": "Gaussian",
+    "lorentzian": "Lorentzian",
+}
+
+def _to_legacy_label(val: str) -> str:
+    return _SAFE_TO_LABEL.get(val, val)
+
 
 def _build_config(request: XRDProcessRequest) -> XRDPipelineConfig:
     """
@@ -422,16 +437,49 @@ def _build_config(request: XRDProcessRequest) -> XRDPipelineConfig:
     database = DatabaseParams(
         reference_db=request.database.reference_db.value,
     )
+
+    wavelength = request.wavelength
+    theta_min = request.theta_min
+    theta_max = request.theta_max
+    peak_threshold = request.peak_threshold
+    min_prominence = request.min_prominence
+
+    if request.parameters:
+        p = request.parameters
+        if p.radiation:
+            wavelength = p.radiation.wavelength_angstrom
+        if p.range:
+            theta_min = p.range.two_theta_min
+            theta_max = p.range.two_theta_max
+        if p.peak_detection:
+            peak_threshold = p.peak_detection.min_height_ratio
+            min_prominence = p.peak_detection.min_prominence
+        if p.baseline:
+            baseline = BaselineParams(
+                method=_to_legacy_label(p.baseline.method.value),
+                poly_order=request.baseline.poly_order,
+                half_window=request.baseline.half_window,
+            )
+        if p.smoothing:
+            smoothing = SmoothingParams(
+                method=_to_legacy_label(p.smoothing.method.value),
+                window_length=p.smoothing.window_size,
+            )
+        if p.peak_fitting:
+            fit_model = FitModelParams(
+                model_type=_to_legacy_label(p.peak_fitting.model.value),
+            )
+
     return XRDPipelineConfig(
         baseline=baseline,
         smoothing=smoothing,
         fit_model=fit_model,
         database=database,
-        wavelength=request.wavelength,
-        theta_min=request.theta_min,
-        theta_max=request.theta_max,
-        peak_threshold=request.peak_threshold,
-        min_prominence=request.min_prominence,
+        wavelength=wavelength,
+        theta_min=theta_min,
+        theta_max=theta_max,
+        peak_threshold=peak_threshold,
+        min_prominence=min_prominence,
     )
 
 

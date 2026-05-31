@@ -108,9 +108,10 @@ import {
   XRDBackendError,
   type XRDHealthStatus,
 } from '../../services/xrdBackendClient';
+import { useBackendStatus, BackendStatusBadge } from '../../utils/backendStatus';
 import type { XRDLocalReferencePayload, XRDNormalizedResult, XRDReferenceMatchV2, XRDReferenceMatchV2Candidate } from '../../types/xrdBackend';
 import type { XRDDatasetContext } from '../../types/xrdDatasetContext';
-import type { XRDClaimMode, XRDMatchMode, XRDParameters } from '../../types/xrdParameters';
+import type { XRDClaimMode, XRDMatchMode, XRDParameters, XRDBaselineMethod, XRDSmoothingMethod, XRDPeakFitModel } from '../../types/xrdParameters';
 import {
   PLANNED_XRD_LOCAL_REFERENCES,
   createEmptyXrdLocalReferenceParseResult,
@@ -841,7 +842,7 @@ function getXrdReadinessState({
 export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName, sessionId }: TechniqueWorkspaceShellProps) {
   const isQuickMode = mode === 'quick';
   const config = useMemo(() => getTechniqueWorkspaceConfig(technique), [technique]);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   // Phase X6B: Access runtime context for reactive event dispatching
   const {
@@ -948,6 +949,13 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   const [xrdBackendError, setXrdBackendError] = useState<string | null>(null);
   const [xrdBackendSaved, setXrdBackendSaved] = useState(false);
   const [useXrdLocalReferenceForBackend, setUseXrdLocalReferenceForBackend] = useState(false);
+
+  // Backend Status Hook
+  const { xrdStatus, agentStatus } = useBackendStatus(
+    false,
+    xrdBackendLoading,
+    false
+  );
 
   const [reReadTrigger, setReReadTrigger] = useState(0);
   const triggerReRead = () => setReReadTrigger((prev) => prev + 1);
@@ -1080,7 +1088,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       return true;
     }
 
-    return graphData?.type === 'xrd' && hasFiniteXrdSignalPoints(graphData.data);
+    return graphData?.type?.toLowerCase() === 'xrd' && hasFiniteXrdSignalPoints(graphData.data);
   }, [graphData, quickAnalysisSession?.uploadedRunId, routeContext.uploadedRunId, technique]);
   const hasProjectEvidence = Boolean(
     isUploadedContext ||
@@ -1686,7 +1694,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       });
     }
 
-    if (graphData?.type === 'xrd') {
+    if (graphData?.type?.toLowerCase() === 'xrd') {
       return buildXrdBackendSignalSource(graphData.data, {
         uploadedRunId: uploadedRunId ?? undefined,
         fileName: datasetLabel,
@@ -2561,6 +2569,10 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {/* Backend Status Badges */}
+          <BackendStatusBadge type="XRD" status={xrdStatus} />
+          <BackendStatusBadge type="Agent" status={agentStatus} />
+
           <Link
             to={isQuickMode ? '/workspace' : '/workspace'}
             className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-white px-3 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
@@ -2933,6 +2945,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                 xrdBackendLoading={xrdBackendLoading}
                 xrdBackendError={xrdBackendError}
                 xrdBackendSaved={xrdBackendSaved}
+                datasetContext={xrdDatasetContext}
               />
             )}
 
@@ -3053,6 +3066,7 @@ function EvidencePanel({
   xrdBackendLoading,
   xrdBackendError,
   xrdBackendSaved,
+  datasetContext,
 }: {
   config: TechniqueWorkspaceConfig;
   focusedEvidence: DemoFocusedEvidenceSource | null;
@@ -3068,6 +3082,7 @@ function EvidencePanel({
   xrdBackendLoading: boolean;
   xrdBackendError: string | null;
   xrdBackendSaved: boolean;
+  datasetContext: XRDDatasetContext;
 }) {
   const evidenceTitle = focusedEvidence?.title
     || (isUploadedContext && (quickSession || graphData?.data?.length)

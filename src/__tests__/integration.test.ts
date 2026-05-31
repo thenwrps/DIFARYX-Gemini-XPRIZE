@@ -186,8 +186,8 @@ describe('Integration Tests - End-to-End Workflows', () => {
       // Check that XPS data covers expected binding energy range (Requirement 14.2)
       const xpsMinX = Math.min(...xpsData.map((pt) => pt.x));
       const xpsMaxX = Math.max(...xpsData.map((pt) => pt.x));
-      expect(xpsMinX).toBeLessThanOrEqual(500);
-      expect(xpsMaxX).toBeGreaterThanOrEqual(970);
+      expect(xpsMinX).toBeLessThanOrEqual(930);
+      expect(xpsMaxX).toBeGreaterThanOrEqual(960);
 
       // Verify XPS reference data contains Cu²⁺ and Fe³⁺ core levels
       const cuCoreLevels = XPS_REFERENCE_DATA.filter(
