@@ -410,11 +410,16 @@ export function Graph({
 
     const markers = peakMarkers ?? [];
     const labeledMarkerPositions = getLabeledMarkerPositions(type, markers);
-    const heightClass = height === '100%' ? 'h-full' : height === 100 ? 'h-[100px]' : 'h-[400px]';
+    const resolvedHeight = height !== undefined ? height : 400;
+    const containerStyle = {
+      width: '100%',
+      height: typeof resolvedHeight === 'number' ? `${resolvedHeight}px` : resolvedHeight,
+      minHeight: typeof resolvedHeight === 'number' ? `${resolvedHeight}px` : (resolvedHeight === '100%' ? '120px' : '300px'),
+    };
 
     return (
-      <div className={`w-full ${heightClass}`}>
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="w-full" style={containerStyle}>
+        <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
           <LineChart data={externalChartData} margin={{ top: 18, right: 24, bottom: 24, left: 24 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} />
             <XAxis
@@ -571,10 +576,16 @@ export function Graph({
     ? [settings.residualOffset - 8, settings.residualOffset + 8]
     : settings.yDomain;
 
-  const heightClass = height === '100%' ? 'h-full' : height === 100 ? 'h-[100px]' : 'h-[400px]';
+  const resolvedHeight = height !== undefined ? height : 400;
+  const containerStyle = {
+    width: '100%',
+    height: typeof resolvedHeight === 'number' ? `${resolvedHeight}px` : resolvedHeight,
+    minHeight: typeof resolvedHeight === 'number' ? `${resolvedHeight}px` : (resolvedHeight === '100%' ? '120px' : '300px'),
+  };
+
   return (
-    <div className={`w-full ${heightClass}`}>
-      <ResponsiveContainer width="100%" height="100%">
+    <div className="w-full" style={containerStyle}>
+      <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
         <LineChart data={internalData} margin={{ top: 18, right: 24, bottom: 24, left: 24 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} />
           <XAxis

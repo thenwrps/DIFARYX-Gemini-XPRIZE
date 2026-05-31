@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
 import { AlertCircle, CheckCircle2, ChevronRight, Microscope } from 'lucide-react';
+import { formatClaimStatus, sanitizeScientificWording } from '../../utils/claimBoundaryPresentation';
 
 interface ScientificReasoningPanelProps {
   result: {
@@ -19,15 +20,11 @@ interface ScientificReasoningPanelProps {
 }
 
 function getEvidenceStatusLabel(claimStatus?: string, confidenceLevel?: string): string {
-  if (claimStatus === 'strongly_supported') return 'Supported assignment with validation boundaries';
-  if (claimStatus === 'supported') return 'Requires validation';
-  if (claimStatus === 'partial') return 'Validation-limited';
-  if (claimStatus === 'inconclusive') return 'Publication-limited';
-  if (claimStatus === 'contradicted') return 'Claim boundary';
+  if (claimStatus) return formatClaimStatus(claimStatus);
   // Fallback to confidence level mapping
-  if (confidenceLevel === 'high') return 'Supported assignment with validation boundaries';
-  if (confidenceLevel === 'medium') return 'Requires validation';
-  return 'Publication-limited';
+  if (confidenceLevel === 'high') return formatClaimStatus('strongly_supported');
+  if (confidenceLevel === 'medium') return formatClaimStatus('supported');
+  return formatClaimStatus('inconclusive');
 }
 
 function getEvidenceStatusColor(claimStatus?: string, confidenceLevel?: string): string {
@@ -48,7 +45,7 @@ export function ScientificReasoningPanel({ result, className }: ScientificReason
           <span className="text-xs font-semibold tracking-wider uppercase">Characterization Overview</span>
         </div>
         <CardTitle className="text-xl mt-2 flex justify-between items-start">
-          <span>{result.primaryResult}</span>
+          <span>{sanitizeScientificWording(result.primaryResult)}</span>
           <div className="flex flex-col items-end">
             <span className={`text-sm font-bold ${statusColor}`}>{status}</span>
             <span className="text-xs text-text-muted font-normal">Evidence Status</span>
@@ -59,7 +56,7 @@ export function ScientificReasoningPanel({ result, className }: ScientificReason
       <CardContent className="pt-6 space-y-6">
         <div>
           <p className="text-sm text-text-muted leading-relaxed">
-            {result.interpretation}
+            {sanitizeScientificWording(result.interpretation)}
           </p>
         </div>
 

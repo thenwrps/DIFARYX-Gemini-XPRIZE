@@ -8,6 +8,7 @@ import type { AgentEvidenceWorkspace } from '../../../utils/agentEvidenceModel';
 import type { RegistryProject } from '../../../data/demoProjectRegistry';
 import type { RuntimeMode } from '../../../runtime/difaryxRuntimeMode';
 import { ApprovalLedgerPanel } from '../../runtime/ApprovalLedgerPanel';
+import { ScientificConfidenceSummary } from '../../ui/ScientificConfidenceSummary';
 import { getTechniqueWorkspaceConfig, type TechniqueWorkspaceId, type TechniqueParameterControl, type TechniqueParameterValue } from '../../../data/techniqueWorkspaceContent';
 import { ParameterControlField } from '../../workspace/ParameterControlField';
 import {
@@ -152,6 +153,13 @@ export function RightPanel({
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        <ScientificConfidenceSummary
+          claimStatus={registryProject?.claimStatus || 'partial'}
+          readinessPercent={registryProject?.reportReadiness || 30}
+          validationGaps={registryProject?.validationGaps || []}
+          availableTechniques={registryProject?.techniques.filter(t => t.available).map(t => t.label) || []}
+          pendingTechniques={registryProject?.techniques.filter(t => !t.available).map(t => t.label) || []}
+        />
         {mode === 'deterministic' && activeTab === 'goal' && (
           <>
             <InputCard label={modeConfig.inputLabel} placeholder={modeConfig.inputPlaceholder} />
@@ -977,19 +985,51 @@ function ValidationGapsCard({ context }: { context: AgentContext }) {
       </div>
     );
   }
+
+  const criticalCount = context.validationGaps.filter(g => g.severity?.toLowerCase() === 'critical').length;
+  const highCount = context.validationGaps.filter(g => {
+    const s = g.severity?.toLowerCase();
+    return s === 'high' || s === 'moderate' || s === 'major';
+  }).length;
+  const mediumCount = context.validationGaps.filter(g => {
+    const s = g.severity?.toLowerCase();
+    return s === 'medium' || s === 'minor';
+  }).length;
+  const lowCount = context.validationGaps.filter(g => g.severity?.toLowerCase() === 'low').length;
+
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
       <h3 className="flex items-center gap-2 text-xs font-bold text-amber-900 mb-2">
         <AlertTriangle size={14} className="text-amber-600" />
         Validation Gaps ({context.validationGaps.length})
       </h3>
-      <ul className="space-y-1.5 text-xs text-amber-800">
-        {context.validationGaps.map((gap: ValidationGap, i: number) => (
-          <li key={i} className="flex gap-2">
-            <span className="text-amber-600">-</span>
-            <span className="flex-1">{gap.description}</span>
-          </li>
-        ))}
+
+      <div className="flex flex-wrap items-center gap-1 mb-3 text-[9px] font-bold">
+        <span className="rounded bg-red-100 px-1.5 py-0.5 text-red-800">Critical: {criticalCount}</span>
+        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 font-bold">High: {highCount}</span>
+        <span className="rounded bg-blue-100 px-1.5 py-0.5 text-blue-800 font-bold">Medium: {mediumCount}</span>
+        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-800 font-bold">Low: {lowCount}</span>
+      </div>
+
+      <ul className="space-y-2 text-xs text-amber-800">
+        {context.validationGaps.map((gap: ValidationGap, i: number) => {
+          const s = gap.severity?.toLowerCase();
+          const badgeStyle = s === 'critical' ? 'bg-red-100 text-red-800' :
+                             (s === 'high' || s === 'moderate' || s === 'major') ? 'bg-amber-100 text-amber-800' :
+                             (s === 'medium' || s === 'minor') ? 'bg-blue-100 text-blue-800' :
+                             'bg-emerald-100 text-emerald-800';
+          return (
+            <li key={i} className="flex gap-2 items-start">
+              <span className="text-amber-600 mt-0.5 shrink-0">-</span>
+              <span className="flex-1">
+                <span className={`inline-block mr-1.5 rounded px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide leading-none ${badgeStyle}`}>
+                  {gap.severity}
+                </span>
+                {gap.description}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

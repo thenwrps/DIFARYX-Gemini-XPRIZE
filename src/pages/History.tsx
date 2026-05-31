@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, BookOpen, Bot, ClipboardList, FileText, FolderOpen, History, Target, Trash2 } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Card } from '../components/ui/Card';
+import { EmptyStateCard } from '../components/ui/EmptyStateCard';
 import { ApprovalLedgerPanel } from '../components/runtime/ApprovalLedgerPanel';
 import { useAuth } from '../contexts/AuthContext';
 import { formatChemicalFormula } from '../utils';
@@ -237,28 +238,14 @@ export default function HistoryPage() {
         )}
 
         {showUserHistory && userLedgerEntryCount === 0 && userUploadedSessions.length === 0 && (
-          <Card className="mb-5 rounded-lg border-dashed bg-white p-8 text-center">
-            <History size={38} className="mx-auto text-text-dim" />
-            <h2 className="mt-4 text-lg font-bold text-text-main">No user history yet</h2>
-            <p className="mt-2 text-sm text-text-muted">
-              Upload evidence or connect a read-only evidence preview to create user_uploaded or google_connected activity.
-            </p>
-            <div className="mt-5 flex flex-wrap justify-center gap-2">
-              <Link
-                to="/workspace?action=upload&source=user_uploaded"
-                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
-              >
-                Upload evidence
-              </Link>
-              <button
-                type="button"
-                onClick={switchToDemoHistory}
-                className="inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20"
-              >
-                Switch to Demo Mode
-              </button>
-            </div>
-          </Card>
+          <EmptyStateCard
+            type="generic"
+            title="No user history yet"
+            description="Upload evidence or connect a read-only evidence preview to create user_uploaded or google_connected activity."
+            actionText="Switch to Demo Mode"
+            onAction={switchToDemoHistory}
+            className="mb-5 bg-white"
+          />
         )}
 
         {showUserHistory && userUploadedSessions.length > 0 && (
@@ -382,8 +369,12 @@ export default function HistoryPage() {
             </div>
           ))}
           {events.length === 0 && (
-            <div className="px-5 py-8 text-center text-sm text-text-muted">
-              No experiment history events match the current filters.
+            <div className="p-6 border-t border-border bg-white">
+              <EmptyStateCard
+                type="generic"
+                title="No events match filter"
+                description="No experiment history events match the current project, technique, or event type filters."
+              />
             </div>
           )}
         </Card>

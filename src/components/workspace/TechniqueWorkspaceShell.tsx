@@ -68,6 +68,8 @@ import {
   setParameterOverride,
   resetParameters as resetParameterState,
   getParameterStateStorageKey,
+  readParameterHistory,
+  type ParameterHistoryEntry,
 } from '../../utils/parameterStateManager';
 import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../utils/evidenceSnapshot';
 import { useAuth } from '../../contexts/AuthContext';
@@ -86,6 +88,8 @@ import {
   getRuntimeBadgeLabel,
   getRuntimeContextForEvidenceSource,
 } from '../../runtime/difaryxRuntimeMode';
+import { sanitizeScientificWording } from '../../utils/claimBoundaryPresentation';
+import { EmptyStateCard } from '../ui/EmptyStateCard';
 import {
   readUploadedSignalRuns,
   updateUploadedRunProcessingResults,
@@ -97,7 +101,7 @@ import {
 import { RawFileUpload } from './RawFileUpload';
 import { RawFileUploadModal } from './RawFileUploadModal';
 import { runXrdPhaseIdentificationAgent, preprocess_xrd, detect_xrd_peaks, type XrdProcessingParams } from '../../agents/xrdAgent/runner';
-import { getXrdProcessingParams, getXrdParameterSnapshot } from '../../utils/xrdParameterAdapter';
+import { getXrdProcessingParams, getXrdParameterSnapshot, xrdToFlatParameters, flatToXrdParameters } from '../../utils/xrdParameterAdapter';
 import {
   processXrdSkillEvidence,
   checkXrdBackendHealth,
@@ -1247,6 +1251,80 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     if (sessionState.storageKey !== sessionStorageKey) return;
     window.localStorage.setItem(sessionStorageKey, JSON.stringify(sessionState));
   }, [sessionState, sessionStorageKey]);
+
+  // Bidirectional sync between flat parameters (sessionState.parameters) and nested xrdParameters React state
+  useEffect(() => {
+    if (technique !== 'xrd') return;
+
+    // Check if flat parameters differ from what xrdParameters represents
+    const mappedFlat = xrdToFlatParameters(xrdParameters);
+    const differs = Object.keys(mappedFlat).some(key => {
+      const flatVal = sessionState.parameters[key];
+      const mappedVal = mappedFlat[key];
+      if (Array.isArray(flatVal) && Array.isArray(mappedVal)) {
+        return JSON.stringify(flatVal) !== JSON.stringify(mappedVal);
+      }
+      return flatVal !== mappedVal;
+    });
+
+    if (differs) {
+      // Sync from flat parameters to nested xrdParameters
+      const newXrd = flatToXrdParameters(sessionState.parameters, xrdParameters);
+      if (JSON.stringify(newXrd) !== JSON.stringify(xrdParameters)) {
+        setXrdParameters(newXrd);
+      }
+    }
+  }, [sessionState.parameters, technique]);
+
+  useEffect(() => {
+    if (technique !== 'xrd') return;
+
+    const mappedFlat = xrdToFlatParameters(xrdParameters);
+    const differs = Object.keys(mappedFlat).some(key => {
+      const flatVal = sessionState.parameters[key];
+      const mappedVal = mappedFlat[key];
+      if (Array.isArray(flatVal) && Array.isArray(mappedVal)) {
+        return JSON.stringify(flatVal) !== JSON.stringify(mappedVal);
+      }
+      return flatVal !== mappedVal;
+    });
+
+    if (differs) {
+      // Sync from nested xrdParameters to flat parameters and local storage overrides
+      setSessionState((prev) => {
+        const nextParams = { ...prev.parameters, ...mappedFlat };
+
+        // Also update local storage parameterState if project is active
+        if (projectId) {
+          Object.entries(mappedFlat).forEach(([key, val]) => {
+            if (prev.parameters[key] !== val) {
+              setParameterOverride(projectId, 'xrd', key, val, 'workspace');
+            }
+          });
+        }
+
+        return {
+          ...prev,
+          parameters: nextParams,
+          dirty: true,
+          pendingRecalculation: true,
+        };
+      });
+    }
+  }, [xrdParameters, technique, projectId]);
+
+  // Auto-run trigger if reproduce=true on mount
+  const isReproduceSession = searchParams.get('reproduce') === 'true';
+  useEffect(() => {
+    if (isReproduceSession) {
+      const timer = setTimeout(() => {
+        reprocess();
+        setSessionState((prev) => addLog(prev, '[reproduce] Auto-reprocessing historical session pattern.'));
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReproduceSession]);
 
   useEffect(() => {
     setPaneLayout(loadPaneLayout(paneLayoutStorageKey));
@@ -2563,10 +2641,23 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         />
 
         <main
-          className="min-w-0 flex-1 overflow-hidden bg-background p-2 transition-[width] duration-150"
+          className="min-w-0 flex-1 overflow-hidden bg-background p-2 transition-[width] duration-150 flex flex-col gap-2"
           style={{ minWidth: CENTER_PANEL_MIN_WIDTH }}
         >
-          <section className="flex h-full min-h-0 flex-col overflow-hidden rounded border border-border bg-surface">
+          {isReproduceSession && (
+            <div className="shrink-0 flex items-center justify-between rounded border border-blue-200 bg-blue-50 px-3 py-2 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                </span>
+                <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Reproduced Analysis Session</span>
+                <span className="text-[11px] text-blue-900 font-medium">| Historical parameters and state restored from notebook provenance log.</span>
+              </div>
+              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-800 uppercase tracking-wide">Audit View</span>
+            </div>
+          )}
+          <section className="flex flex-1 min-h-0 flex-col overflow-hidden rounded border border-border bg-surface">
             <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-hover/40 px-2">
               <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pr-1">
                 {config.centerTabs.map((tab) => {
@@ -2658,37 +2749,41 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
             ) : activeCenterTab === config.centerTabs[0].id ? (
               <div className="flex-1 min-h-[420px] bg-background/25 p-8 flex flex-col justify-center overflow-y-auto">
                 <div className="mx-auto w-full max-w-4xl grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
-                  {/* Left Column: Info & Action (5 cols) */}
-                  <div className="md:col-span-5 text-left space-y-4">
-                    <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
-                      <AlertTriangle size={20} />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-bold text-text-main">
-                        {isUploadedContext
-                          ? evidenceSnapshot?.activeDataset
-                            ? 'Graph data unavailable'
-                            : 'Uploaded evidence not found'
-                          : `No project-linked ${config.label} dataset`}
-                      </h2>
-                      <p className="mt-2 text-xs leading-relaxed text-text-muted">
-                        {isUploadedContext
-                          ? evidenceSnapshot?.activeDataset
-                            ? 'The uploaded evidence snapshot loaded, but it does not include graph points for this technique.'
-                            : 'The requested session/upload pair was not found in local browser storage. Re-upload the evidence or open a saved user-uploaded session.'
-                          : project
+                  {/* Left Column: Standardized Empty State (5 cols) */}
+                  <div className="md:col-span-5 text-left">
+                    {isUploadedContext ? (
+                      evidenceSnapshot?.activeDataset ? (
+                        <EmptyStateCard
+                          type="generic"
+                          title="Graph data unavailable"
+                          description="The uploaded evidence snapshot loaded, but it does not include graph points for this technique."
+                          actionText="Open Workspace Hub"
+                          onAction={() => { window.location.href = workspacePath; }}
+                          className="border-0 bg-transparent p-0"
+                        />
+                      ) : (
+                        <EmptyStateCard
+                          type="missing_evidence"
+                          title="Uploaded evidence not found"
+                          description="The requested session/upload pair was not found in local browser storage. Re-upload the evidence or open a saved user-uploaded session."
+                          actionText="Open Workspace Hub"
+                          onAction={() => { window.location.href = workspacePath; }}
+                          className="border-0 bg-transparent p-0"
+                        />
+                      )
+                    ) : (
+                      <EmptyStateCard
+                        type="missing_evidence"
+                        title={project ? `No project-linked ${config.label} dataset` : "No Active Dataset"}
+                        description={project
                           ? `${config.label} evidence is not available for the selected project. The route remains project-linked and records the evidence gap instead of loading an unrelated dataset.`
-                          : `Open this workspace from a project or attach a dataset to begin ${config.label} processing.`}
-                      </p>
-                    </div>
-                    <div>
-                      <Link
-                        to={workspacePath}
-                        className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-white px-3 text-xs font-semibold text-text-main hover:bg-surface-hover transition-colors"
-                      >
-                        Open Workspace Hub <ArrowRight size={13} />
-                      </Link>
-                    </div>
+                          : `Open this workspace from a project or attach a dataset to begin ${config.label} processing.`
+                        }
+                        actionText="Open Workspace Hub"
+                        onAction={() => { window.location.href = workspacePath; }}
+                        className="border-0 bg-transparent p-0"
+                      />
+                    )}
                   </div>
 
                   {/* Divider line for md and larger */}
@@ -3115,6 +3210,11 @@ function EvidencePanel({
             </Panel>
           )}
 
+          <XRDReferenceCandidateEvidence
+            referenceMatch={xrdBackendResult?.referenceMatchV2}
+            materialSystem={datasetContext.sampleName || datasetContext.declaredPhases.join(' / ') || 'TiO₂'}
+          />
+
           {xrdBackendResult && (
             <>
               {xrdBackendResult.scientificEvidenceObject && (
@@ -3166,10 +3266,6 @@ function EvidencePanel({
                 </Panel>
               )}
 
-              {xrdBackendResult.referenceMatchV2 && (
-                <XRDReferenceCandidateEvidence referenceMatch={xrdBackendResult.referenceMatchV2} />
-              )}
-
               {xrdBackendSaved && (
                 <Panel title="Evidence Handoff" icon={<CheckCircle2 size={13} />}>
                   <p className="text-[10px] font-bold text-emerald-700">
@@ -3196,11 +3292,108 @@ function EvidencePanel({
   );
 }
 
-function XRDReferenceCandidateEvidence({ referenceMatch }: { referenceMatch: XRDReferenceMatchV2 }) {
-  const primaryCandidate = referenceMatch.primary_candidate ?? referenceMatch.ranked_candidates?.[0] ?? null;
+function XRDReferenceCandidateEvidence({
+  referenceMatch,
+  materialSystem = 'TiO₂'
+}: {
+  referenceMatch: XRDReferenceMatchV2 | null | undefined;
+  materialSystem?: string;
+}) {
+  const status = referenceMatch?.status;
+  const primaryCandidate = referenceMatch?.primary_candidate ?? referenceMatch?.ranked_candidates?.[0] ?? null;
   const matchedPeaks = primaryCandidate?.matched_peaks ?? [];
   const visibleMatchedPeaks = matchedPeaks.slice(0, 5);
-  const boundaryNotes = getReferenceMatchBoundaryNotes(referenceMatch);
+  const boundaryNotes = referenceMatch ? getReferenceMatchBoundaryNotes(referenceMatch) : [];
+
+  // Scenario 3: Not Yet Executed
+  if (!referenceMatch || !status) {
+    return (
+      <Panel title="Reference Candidate Evidence" icon={<Search size={13} />}>
+        <div className="rounded border border-dashed border-border bg-slate-50/50 p-3 text-center">
+          <p className="text-xs font-bold text-slate-500">Reference Matching Not Yet Executed</p>
+          <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
+            User has not run reference matching. Apply parameters to run a backend reference matching check.
+          </p>
+        </div>
+        <div className="mt-2 space-y-1 rounded border border-border bg-background p-2 text-[10px]">
+          <div className="flex justify-between">
+            <span className="font-semibold text-text-dim">Material System:</span>
+            <span className="font-medium text-text-main">{materialSystem}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-semibold text-text-dim">Approved References:</span>
+            <span className="font-medium text-text-main">0</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-semibold text-text-dim">Reference Status:</span>
+            <span className="font-semibold text-slate-500 uppercase tracking-wider">
+              Not Executed
+            </span>
+          </div>
+        </div>
+      </Panel>
+    );
+  }
+
+  // Scenario 1: Unavailable
+  if (status === 'unavailable' || status === 'blocked') {
+    return (
+      <Panel title="Reference Candidate Evidence" icon={<Search size={13} />}>
+        <div className="rounded border border-red-200 bg-red-50/50 p-3 text-center">
+          <p className="text-xs font-bold text-red-700">Reference Matching Unavailable</p>
+          <p className="mt-1 text-[10px] leading-relaxed text-red-800/80">
+            No approved reference patterns were found for the current material system.
+          </p>
+        </div>
+        <div className="mt-2 space-y-1 rounded border border-border bg-background p-2 text-[10px]">
+          <div className="flex justify-between">
+            <span className="font-semibold text-text-dim">Material System:</span>
+            <span className="font-medium text-text-main">{materialSystem}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-semibold text-text-dim">Approved References:</span>
+            <span className="font-medium text-text-main">0</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-semibold text-text-dim">Reference Status:</span>
+            <span className="font-bold text-red-600 uppercase tracking-wider">
+              Unavailable
+            </span>
+          </div>
+        </div>
+      </Panel>
+    );
+  }
+
+  // Scenario 2: No Match Found
+  if (status === 'no_match' || !primaryCandidate) {
+    return (
+      <Panel title="Reference Candidate Evidence" icon={<Search size={13} />}>
+        <div className="rounded border border-amber-200 bg-amber-50/50 p-3 text-center">
+          <p className="text-xs font-bold text-amber-800">No Match Found</p>
+          <p className="mt-1 text-[10px] leading-relaxed text-amber-900/80">
+            Curated reference database scanned, but no candidates met the matching thresholds.
+          </p>
+        </div>
+        <div className="mt-2 space-y-1 rounded border border-border bg-background p-2 text-[10px]">
+          <div className="flex justify-between">
+            <span className="font-semibold text-text-dim">Material System:</span>
+            <span className="font-medium text-text-main">{materialSystem}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-semibold text-text-dim">Approved References:</span>
+            <span className="font-medium text-text-main">{referenceMatch.candidate_count ?? 0}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-semibold text-text-dim">Reference Status:</span>
+            <span className="font-bold text-amber-600 uppercase tracking-wider">
+              No Match
+            </span>
+          </div>
+        </div>
+      </Panel>
+    );
+  }
 
   return (
     <Panel title="Reference Candidate Evidence" icon={<Search size={13} />}>
@@ -3270,6 +3463,45 @@ function XRDReferenceCandidateEvidence({ referenceMatch }: { referenceMatch: XRD
             ))}
           </ul>
         </div>
+      </div>
+    </Panel>
+  );
+}
+
+function ParameterHistoryPanel({ projectId, technique }: { projectId: string | null; technique: string }) {
+  const history = React.useMemo(() => {
+    return projectId ? readParameterHistory(projectId, technique) : [];
+  }, [projectId, technique]);
+
+  if (history.length === 0) {
+    return (
+      <Panel title="Parameter History" icon={<RotateCcw size={13} />}>
+        <div className="text-[10px] text-text-muted p-1">No parameter changes recorded in this session.</div>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel title="Parameter History" icon={<RotateCcw size={13} />}>
+      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+        {history.map((entry, idx) => {
+          const dateLabel = new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          return (
+            <div key={idx} className="rounded bg-surface-hover/30 p-1.5 text-[10px] leading-tight border border-border/50">
+              <div className="flex justify-between text-text-muted mb-0.5 font-semibold">
+                <span className="truncate max-w-[120px]" title={entry.parameter}>
+                  {entry.parameter === 'all_parameters' ? 'All Parameters' : entry.parameter}
+                </span>
+                <span className="shrink-0">{dateLabel}</span>
+              </div>
+              <div className="flex items-center gap-1 text-text-main">
+                <span className="text-red-600 truncate max-w-[80px] inline-block font-mono" title={String(entry.oldValue)}>{String(entry.oldValue)}</span>
+                <span className="text-text-muted font-mono">&rarr;</span>
+                <span className="text-emerald-700 font-bold truncate max-w-[80px] inline-block font-mono" title={String(entry.newValue)}>{String(entry.newValue)}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </Panel>
   );
@@ -3425,6 +3657,8 @@ function ParametersPanel({
           </button>
         </div>
       </Panel>
+
+      <ParameterHistoryPanel projectId={xrdLocalReferenceProjectId ?? null} technique={config.id} />
     </div>
   );
 }
@@ -4235,6 +4469,16 @@ function XRDParametersPanel({
         </Panel>
       ),
     },
+    {
+      id: 'history',
+      element: (
+        <ParameterHistoryPanel
+          key="history"
+          projectId={projectId ?? null}
+          technique="xrd"
+        />
+      ),
+    },
   ];
 
   const getPanelStepMatch = (panelId: string, stepId: string | null): boolean => {
@@ -4260,6 +4504,7 @@ function XRDParametersPanel({
     'local_ref',
     'boundary',
     'legacy',
+    'history',
   ];
 
   const sortedPanels = [...allPanels].sort((a, b) => {
@@ -4560,17 +4805,17 @@ function BoundaryPanel({
     <div className="space-y-2">
       <Panel title="Claim Boundary Contribution" icon={<GitBranch size={13} />}>
         <p className="text-[11px] leading-relaxed text-text-muted">
-          {formatChemicalFormula(comparisonRow?.limitation || focusedEvidence?.limitation || project?.notebook.validationBoundary || `${config.label} cannot update a project claim until evidence is linked.`)}
+          {formatChemicalFormula(sanitizeScientificWording(comparisonRow?.limitation || focusedEvidence?.limitation || project?.notebook.validationBoundary || `${config.label} cannot update a project claim until evidence is linked.`))}
         </p>
       </Panel>
       <Panel title="What This Technique Supports" icon={<CheckCircle2 size={13} />}>
         <p className="text-[11px] leading-relaxed text-text-muted">
-          {formatChemicalFormula(comparisonRow?.keyFinding || focusedEvidence?.role || config.purpose)}
+          {formatChemicalFormula(sanitizeScientificWording(comparisonRow?.keyFinding || focusedEvidence?.role || config.purpose))}
         </p>
       </Panel>
       <Panel title="What It Cannot Prove Alone" icon={<AlertTriangle size={13} />}>
         <p className="text-[11px] leading-relaxed text-text-muted">
-          {formatChemicalFormula(project?.agentWorkflow.claimBoundary.cannotConclude[0] || 'Standalone evidence cannot close the full claim boundary without project context and complementary validation.')}
+          {formatChemicalFormula(sanitizeScientificWording(project?.agentWorkflow.claimBoundary.cannotConclude[0] || 'Standalone evidence cannot close the full claim boundary without project context and complementary validation.'))}
         </p>
       </Panel>
     </div>

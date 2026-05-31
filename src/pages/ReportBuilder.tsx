@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Clipboard, Download, FileText, Save, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowRight, Clipboard, Download, FileText, Save, ShieldCheck, Sparkles, RotateCcw } from 'lucide-react';
+import { reproduceAnalysis } from '../utils/reproduceAnalysis';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
+
 import { Button } from '../components/ui/Button';
+import { EmptyStateCard } from '../components/ui/EmptyStateCard';
 import { Card } from '../components/ui/Card';
 import { useAuth } from '../contexts/AuthContext';
 import { useXrdWorkflowRuntime } from '../context/XrdWorkflowRuntimeContext';
@@ -41,6 +44,7 @@ import {
 import { exportDemoArtifact, type DemoExportFormat, type DemoExportSection } from '../utils/demoExport';
 import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
 import { createUploadedEvidenceRegistryProject } from '../utils/uploadedEvidenceProjectContext';
+import { ScientificConfidenceSummary } from '../components/ui/ScientificConfidenceSummary';
 import {
   getRuntimeBadgeClass,
   getRuntimeBadgeLabel,
@@ -77,7 +81,7 @@ import {
   formatProvenanceSource,
   formatProvenanceTimestamp,
 } from '../utils/parameterProvenanceSummary';
-import type { TechniqueWorkspaceId } from '../data/techniqueWorkspaceContent';
+import { getTechniqueWorkspaceConfig, type TechniqueWorkspaceId } from '../data/techniqueWorkspaceContent';
 import {
   getStoredWorkspaceMode,
   setWorkspaceMode,
@@ -230,18 +234,35 @@ function buildReportSections(
   const parameterSummaries = availableTechniqueIds.map(technique =>
     getParameterProvenanceSummary(snapshot.projectId, technique)
   );
-  const hasAnyOverrides = parameterSummaries.some(s => s.hasOverrides);
-  const parameterProvenanceLines = hasAnyOverrides
-    ? parameterSummaries.flatMap(summary => {
-        if (!summary.hasOverrides) return [];
-        return [
-          `${summary.techniqueLabel}: ${summary.overrideCount} parameter${summary.overrideCount !== 1 ? 's' : ''} modified (last updated by ${formatProvenanceSource(summary.lastUpdatedBy)})`,
-          ...summary.changedParameters.map(param =>
-            `  ${param.label}: ${formatParameterValueForDisplay(param.defaultValue)}${param.unit ? ` ${param.unit}` : ''} → ${formatParameterValueForDisplay(param.effectiveValue)}${param.unit ? ` ${param.unit}` : ''} (${formatProvenanceSource(param.provenance.updatedBy)})`
-          ),
-        ];
-      })
-    : ['Default processing parameters used for all techniques.'];
+
+  const parameterProvenanceLines = [
+    `Analysis Version: v2.0.0`,
+    `Report Generation Timestamp: ${new Date().toISOString()}`,
+    `Evidence Sources: ${snapshot.evidenceEntries.map(e => `${e.technique}:${e.datasetLabel} (ID: ${e.datasetId || 'N/A'})`).join(', ') || snapshot.activeDataset?.fileName || 'None'}`,
+    ``,
+    `--- Mapped Processing Parameters ---`,
+    ...parameterSummaries.flatMap(summary => {
+      const config = getTechniqueWorkspaceConfig(summary.technique);
+      if (!config) return [];
+
+      const tableHeader = [
+        `Technique: ${summary.techniqueLabel} (last updated by ${formatProvenanceSource(summary.lastUpdatedBy)})`,
+        `| Parameter | Default Value | Active Value | Status |`,
+        `| --- | --- | --- | --- |`
+      ];
+
+      const tableRows = config.parameters.map(ctrl => {
+        const isOverridden = summary.changedParameters.some(p => p.id === ctrl.id);
+        const defaultValue = summary.state.defaultValues[ctrl.id];
+        const effectiveValue = summary.state.effectiveValues[ctrl.id];
+        const unit = ctrl.unit ? ` ${ctrl.unit}` : '';
+        const status = isOverridden ? 'Modified' : 'Default';
+        return `| ${ctrl.label} | ${formatParameterValueForDisplay(defaultValue)}${unit} | ${formatParameterValueForDisplay(effectiveValue)}${unit} | ${status} |`;
+      });
+
+      return [...tableHeader, ...tableRows, ''];
+    })
+  ];
 
   const xrdBackendEvidenceSection: DemoExportSection[] = xrdBackendEvidenceSummary
     ? [
@@ -355,7 +376,10 @@ function buildReportSections(
     },
     {
       heading: 'Recommended Next Action',
-      lines: [registryProject.crossTechniqueComparison.recommendedNextAction, registryProject.notebook.decision],
+      lines: [
+        registryProject.crossTechniqueComparison.recommendedNextAction,
+        registryProject.notebook.decision
+      ],
     },
     {
       heading: 'Processing Parameters / Reproducibility',
@@ -429,33 +453,33 @@ function ReportEmptyState({ email }: { email?: string }) {
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-text-main">User Report Drafts</h1>
             {email && <p className="mt-1 text-sm text-text-muted">Signed in as {email}</p>}
           </div>
-          <Card className="rounded-lg border-dashed bg-white p-10 text-center">
-            <FileText size={42} className="mx-auto text-text-dim" />
-            <h2 className="mt-4 text-lg font-bold text-text-main">No user report drafts yet</h2>
-            <p className="mt-2 text-sm text-text-muted">Create report from uploaded evidence</p>
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              <Link
-                to="/workspace?action=upload&source=user_uploaded&next=report"
-                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90"
-              >
-                Upload evidence
-              </Link>
-              <Link
-                to="/notebook"
-                className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50"
-              >
-                Create report draft
-              </Link>
-              <Link
-                to="/reports?project=cu-fe2o4-spinel&mode=demo"
-                onClick={() => setWorkspaceMode('demo')}
-                className="inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20"
-              >
-                Use demo report
-              </Link>
-            </div>
-            <p className="mt-5 text-xs font-semibold text-amber-700">External writes disabled</p>
-          </Card>
+          <EmptyStateCard 
+            type="not_executed" 
+            title="No User Report Drafts Yet" 
+            description="Create or preview report drafts from uploaded scientific evidence." 
+          />
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <Link
+              to="/workspace?action=upload&source=user_uploaded&next=report"
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-bold text-white hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+            >
+              Upload evidence
+            </Link>
+            <Link
+              to="/notebook"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-3 text-xs font-bold text-text-main hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+            >
+              Create report draft
+            </Link>
+            <Link
+              to="/reports?project=cu-fe2o4-spinel&mode=demo"
+              onClick={() => setWorkspaceMode('demo')}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+            >
+              Use demo report
+            </Link>
+          </div>
+          <p className="mt-5 text-center text-xs font-semibold text-amber-700">External writes disabled</p>
         </div>
       </div>
     </DashboardLayout>
@@ -561,9 +585,9 @@ function UploadedReportContext({ routeContext }: { routeContext: EvidenceRouteCo
               <p className="mt-1 text-sm text-text-muted">Validation-limited report draft from user-uploaded evidence. No demo report is loaded.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportUploadedReport('md')}><Download size={13} /> Export Markdown</Button>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportUploadedReport('pdf')}><Download size={13} /> Export PDF</Button>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportUploadedReport('docx')}><Download size={13} /> Export DOCX</Button>
+              <Button variant="outline" size="sm" className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => exportUploadedReport('md')} aria-label="Export report content in Markdown format" title="Export report content in Markdown format"><Download size={13} /> Export Markdown</Button>
+              <Button variant="outline" size="sm" className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => exportUploadedReport('pdf')} aria-label="Export report as a PDF document" title="Export report as a PDF document"><Download size={13} /> Export PDF</Button>
+              <Button variant="outline" size="sm" className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => exportUploadedReport('docx')} aria-label="Export report as a Word document" title="Export report as a Word document"><Download size={13} /> Export DOCX</Button>
             </div>
           </div>
 
@@ -1114,13 +1138,13 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {feedback && <span className="rounded border border-primary/20 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">{feedback}</span>}
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportReport('md')}><Download size={13} /> Export Markdown</Button>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportReport('pdf')}><Download size={13} /> Export PDF</Button>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportReport('docx')}><Download size={13} /> Export DOCX</Button>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={copyReport}><Clipboard size={13} /> Copy report</Button>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openFutureExportPreview('google_drive_export_future')}><Download size={13} /> Drive export</Button>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openFutureExportPreview('gmail_draft_future')}><FileText size={13} /> Preview Gmail Draft</Button>
-              <Button size="sm" className="gap-1.5" onClick={saveReportVersion}><Save size={13} /> Save version</Button>
+              <Button variant="outline" size="sm" className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => exportReport('md')} aria-label="Export report content in Markdown format" title="Export report content in Markdown format"><Download size={13} /> Export Markdown</Button>
+              <Button variant="outline" size="sm" className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => exportReport('pdf')} aria-label="Export report as a PDF document" title="Export report as a PDF document"><Download size={13} /> Export PDF</Button>
+              <Button variant="outline" size="sm" className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => exportReport('docx')} aria-label="Export report as a Word document" title="Export report as a Word document"><Download size={13} /> Export DOCX</Button>
+              <Button variant="outline" size="sm" className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={copyReport} aria-label="Copy entire report content to clipboard" title="Copy entire report content to clipboard"><Clipboard size={13} /> Copy report</Button>
+              <Button variant="outline" size="sm" className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => openFutureExportPreview('google_drive_export_future')} aria-label="Save this report to Google Drive" title="Save this report to Google Drive"><Download size={13} /> Drive export</Button>
+              <Button variant="outline" size="sm" className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => openFutureExportPreview('gmail_draft_future')} aria-label="Generate an email draft in Gmail" title="Generate an email draft in Gmail"><FileText size={13} /> Preview Gmail Draft</Button>
+              <Button size="sm" className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={saveReportVersion} aria-label="Save current report version to memory" title="Save current report version to memory"><Save size={13} /> Save version</Button>
             </div>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1151,6 +1175,14 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[280px_minmax(0,1fr)]">
           <aside className="min-h-0 overflow-y-auto rounded-lg border border-border bg-surface p-3">
+            <ScientificConfidenceSummary
+              claimStatus={registryProject?.claimStatus || 'partial'}
+              readinessPercent={registryProject?.reportReadiness || 30}
+              validationGaps={evidenceSnapshot.validationGaps}
+              availableTechniques={evidenceSnapshot.availableTechniques}
+              pendingTechniques={evidenceSnapshot.pendingTechniques}
+              className="mb-3"
+            />
             <div className="space-y-2">
               {[
                 ['Project', evidenceSnapshot.projectName],
@@ -1247,6 +1279,24 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
             </div>
 
             <div className="mt-3 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const technique = (evidenceSnapshot.primaryTechnique || 'xrd').toLowerCase() as any;
+                  reproduceAnalysis(
+                    currentProject.id,
+                    workflowNotebookEntry.workspaceParameters || {},
+                    technique,
+                    undefined,
+                    evidenceSnapshot.activeDataset?.id
+                  );
+                }}
+                className="inline-flex h-8 items-center justify-center rounded-md border border-blue-200 bg-blue-50 px-3 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-colors shadow-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                aria-label="Reproduce the analysis workflow using historical parameters"
+                title="Reproduce the analysis workflow using historical parameters"
+              >
+                Reproduce Analysis <RotateCcw size={13} className="ml-1.5" />
+              </button>
               <Link to={isUploadedContext && uploadedRouteSearch
                 ? `/notebook?${uploadedRouteSearch}&template=research`
                 : `/notebook?project=${currentProject.id}&mode=demo&template=${templateMode}&entry=${workflowNotebookEntry.id}`}

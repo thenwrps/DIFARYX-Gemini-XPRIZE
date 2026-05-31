@@ -23,6 +23,7 @@ import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Graph } from '../components/ui/Graph';
+import { EmptyStateCard } from '../components/ui/EmptyStateCard';
 import XRDWorkspace from './XRDWorkspace';
 import {
   DEFAULT_PROJECT_ID,
@@ -1306,7 +1307,15 @@ export default function TechniqueWorkspace() {
                   )}
                   <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
                     {(['pdf', 'docx', 'csv', 'txt', 'png'] as DemoExportFormat[]).map((format) => (
-                      <Button key={format} variant="outline" size="sm" className="gap-1" onClick={() => handleExportReport(format)}>
+                      <Button 
+                        key={format} 
+                        variant="outline" 
+                        size="sm" 
+                        className="gap-1 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" 
+                        onClick={() => handleExportReport(format)}
+                        aria-label={`Export report as ${format.toUpperCase()}`}
+                        title={`Export report as ${format.toUpperCase()}`}
+                      >
                         <Download size={13} /> Export {format.toUpperCase()}
                       </Button>
                     ))}
@@ -1481,7 +1490,13 @@ export default function TechniqueWorkspace() {
                   <h3 className="text-sm font-semibold">Saved runs</h3>
                 </div>
                 <div className="space-y-2">
-                  {savedRuns.length === 0 && <p className="text-sm text-text-muted">No saved run yet. Save or send this analysis to create one.</p>}
+                  {savedRuns.length === 0 && (
+                    <EmptyStateCard
+                      type="not_executed"
+                      title="No Saved Runs"
+                      description="Save or send this analysis to create one."
+                    />
+                  )}
                   {savedRuns.slice(-4).reverse().map((run) => (
                     <Link
                       key={run.id}

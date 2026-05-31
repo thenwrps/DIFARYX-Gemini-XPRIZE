@@ -8,16 +8,19 @@ import {
   Bot,
   CheckCircle2,
   Clock,
+  Download,
   FileText,
   FlaskConical,
   Layers,
   Lightbulb,
   Plus,
   Target,
+  Upload,
   Workflow,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ActivityTimelineWidget } from '../components/dashboard/ActivityTimelineWidget';
 import { ExperimentModal } from '../components/workspace/ExperimentModal';
 import { CreateMenu } from '../components/dashboard/CreateMenu';
 import { ProjectNotebookWizard } from '../components/dashboard/ProjectNotebookWizard';
@@ -47,6 +50,7 @@ import {
   getConditionLockStatusLabel,
 } from '../data/experimentConditionLock';
 import { formatChemicalFormula } from '../utils';
+import { ScientificConfidenceSummary, getEvidenceStrengthQualifier } from '../components/ui/ScientificConfidenceSummary';
 import {
   claimStatusColorClass,
   claimStatusLabel,
@@ -71,6 +75,9 @@ import {
   type WorkspaceMode,
 } from '../utils/workspaceMode';
 import { runWhenIdle } from '../utils/idle';
+import { downloadSessionBundle, importSessionBundle } from '../utils/sessionBundle';
+import { EmptyStateCard } from '../components/ui/EmptyStateCard';
+
 
 /* ─── workflow chain (top of dashboard) ─── */
 const WORKFLOW_STEPS = [
@@ -261,8 +268,18 @@ function ProjectCard({ project }: { project: RegistryProject }) {
           </span>
         </div>
 
-        <div className="text-[10px] font-medium text-text-dim tracking-wide">
-          <span className="text-text-muted">Phase Indication:</span> {formatChemicalFormula(evidenceSnapshot.supportedAssignment)}
+        <ScientificConfidenceSummary
+          compact
+          claimStatus={project.claimStatus}
+          readinessPercent={project.reportReadiness}
+          validationGaps={evidenceSnapshot.validationGaps}
+          availableTechniques={evidenceSnapshot.availableTechniques}
+          pendingTechniques={evidenceSnapshot.pendingTechniques}
+          className="mt-1"
+        />
+
+        <div className="text-[10px] font-medium text-text-dim tracking-wide mt-1">
+          <span className="text-text-muted">Phase Indication:</span> {formatChemicalFormula(evidenceSnapshot.supportedAssignment)} ({getEvidenceStrengthQualifier(project.claimStatus)})
         </div>
         <div className="text-[10px] font-medium text-text-dim tracking-wide line-clamp-1" title={firstValidationGap?.description ?? claimBoundaryLabel}>
           <span className="text-text-muted">Boundary:</span> {firstValidationGap?.description ?? claimBoundaryLabel}
@@ -302,27 +319,36 @@ function ProjectCard({ project }: { project: RegistryProject }) {
           <Link
             to={`/history?project=${project.id}&mode=demo`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
+            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+            aria-label={`View history for project ${project.title}`}
+            title={`View history for project ${project.title}`}
           >
             History
           </Link>
-          <button
-            type="button"
-            disabled={!exportReady}
-            onClick={(e) => e.stopPropagation()}
-            title={
-              !exportReady
-                ? 'Report readiness too low for export.'
-                : 'Report export is not enabled in this demo.'
-            }
-            className={`inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted whitespace-nowrap ${
-              !exportReady
-                ? 'opacity-50'
-                : 'opacity-70'
-            }`}
-          >
-            Export
-          </button>
+          {exportReady ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/reports?project=${project.id}&mode=demo`);
+              }}
+              className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+              aria-label={`Export report for project ${project.title}`}
+              title={`Export report for project ${project.title}`}
+            >
+              Export
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled
+              title="Report readiness too low for export."
+              className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted whitespace-nowrap opacity-50 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+              aria-label="Report readiness too low for export"
+            >
+              Export
+            </button>
+          )}
         </div>
       </div>
     </Card>
@@ -551,7 +577,9 @@ function EvidenceCard({ session, onDelete }: EvidenceCardProps) {
           <Link
             to={`/demo/agent?${query.toString()}`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
+            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+            aria-label={`Open Agent workspace for ${session.fileName}`}
+            title={`Open Agent workspace for ${session.fileName}`}
           >
             Agent
           </Link>
@@ -562,7 +590,9 @@ function EvidenceCard({ session, onDelete }: EvidenceCardProps) {
                 e.stopPropagation();
                 onDelete(session);
               }}
-              className="inline-flex h-8 items-center justify-center rounded-md border border-red-200 px-2 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
+              className="inline-flex h-8 items-center justify-center rounded-md border border-red-200 px-2 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+              aria-label={`Delete evidence ${session.fileName}`}
+              title={`Delete evidence ${session.fileName}`}
             >
               Delete
             </button>
@@ -570,7 +600,9 @@ function EvidenceCard({ session, onDelete }: EvidenceCardProps) {
             <Link
               to={`/notebook?${query.toString()}`}
               onClick={(e) => e.stopPropagation()}
-              className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
+              className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+              aria-label={`Open Notebook for ${session.fileName}`}
+              title={`Open Notebook for ${session.fileName}`}
             >
               Notebook
             </Link>
@@ -703,14 +735,17 @@ function NotebookCard({
           <Link
             to={`/notebook?project=${notebook.id}&mode=demo`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
+            className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+            aria-label={`Open Notebook for project ${notebook.title}`}
+            title={`Open Notebook for project ${notebook.title}`}
           >
             Open
           </Link>
           <button
             type="button"
             disabled
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted opacity-50 whitespace-nowrap"
+            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted opacity-50 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+            aria-label="Analyze action unavailable"
           >
             Analyze
           </button>
@@ -722,7 +757,9 @@ function NotebookCard({
                 onDelete(notebook.id);
               }
             }}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-red-300 px-2 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
+            className="inline-flex h-8 items-center justify-center rounded-md border border-red-300 px-2 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+            aria-label={`Delete project ${notebook.title}`}
+            title={`Delete project ${notebook.title}`}
           >
             Delete
           </button>
@@ -834,6 +871,40 @@ export default function Dashboard() {
     setUploadedSessionCount(getAnalysisSessions().filter((s) => s.source === 'user_uploaded').length);
   };
 
+  const handleExportSession = () => {
+    downloadSessionBundle();
+    setFeedback('Session package exported');
+    setTimeout(() => setFeedback(''), 2000);
+  };
+
+  const handleImportSessionClick = () => {
+    const input = document.getElementById('session-file-input') as HTMLInputElement;
+    if (input) {
+      input.value = '';
+      input.click();
+    }
+  };
+
+  const handleSessionFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const res = importSessionBundle(text);
+      if (res.success) {
+        setFeedback('Session package imported. Reloading...');
+        setTimeout(() => {
+          window.location.reload();
+        }, 1200);
+      } else {
+        alert(`Session import failed: ${res.error}`);
+      }
+    } catch (e: any) {
+      alert(`Unable to read session file: ${e.message || String(e)}`);
+    }
+  };
+
   /* aggregate stats */
   const totalGaps = demoProjectRegistry.reduce((sum, p) => sum + p.validationGapCount, 0);
   const criticalGaps = demoProjectRegistry.reduce((sum, p) => sum + p._raw.validationGaps.filter((g) => g.severity === 'critical').length, 0);
@@ -867,13 +938,39 @@ export default function Dashboard() {
                 {feedback}
               </span>
             )}
+            <input
+              type="file"
+              id="session-file-input"
+              accept=".difaryx"
+              onChange={handleSessionFileChange}
+              style={{ display: 'none' }}
+              aria-label="Import Session Bundle file selector"
+            />
+            <Button
+              variant="outline"
+              className="gap-2 text-xs"
+              onClick={handleExportSession}
+              aria-label="Export all active session data as a .difaryx bundle file"
+              title="Export all active session data as a .difaryx bundle file"
+            >
+              <Download size={14} /> Export Session
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2 text-xs"
+              onClick={handleImportSessionClick}
+              aria-label="Import a previously exported .difaryx session bundle file"
+              title="Import a previously exported .difaryx session bundle file"
+            >
+              <Upload size={14} /> Import Session
+            </Button>
             {!isOAuthUser && showDemoProjects && (
-              <Button variant="outline" className="gap-2" onClick={handleGoogleSignIn}>
+              <Button variant="outline" className="gap-2 text-xs" onClick={handleGoogleSignIn}>
                 Sign in with Google
               </Button>
             )}
-            <Button variant="primary" className="gap-2" onClick={() => setCreateMenuOpen(true)}>
-              <Plus size={16} /> New
+            <Button variant="primary" className="gap-2 text-xs font-bold" onClick={() => setCreateMenuOpen(true)}>
+              <Plus size={14} /> New
             </Button>
           </div>
         </div>
@@ -925,15 +1022,18 @@ export default function Dashboard() {
           </>
         )}
         {/* main switcher area */}
-        <div className="mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start mb-6">
+          <div className="lg:col-span-3 min-w-0">
           <div className="flex border-b border-border mb-6">
             <button
-              className={`flex items-center gap-2 pb-3 px-6 text-sm font-bold border-b-2 transition-all relative ${
+              className={`flex items-center gap-2 pb-3 px-6 text-sm font-bold border-b-2 transition-all relative focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none rounded-t-md ${
                 activeTab === 'projects'
                   ? 'border-primary text-primary'
                   : 'border-transparent text-text-muted hover:text-text-main'
               }`}
               onClick={() => setActiveTab('projects')}
+              aria-label="View Projects list"
+              title="View Projects list"
             >
               <Layers size={16} />
               Projects
@@ -944,12 +1044,14 @@ export default function Dashboard() {
               </span>
             </button>
             <button
-              className={`flex items-center gap-2 pb-3 px-6 text-sm font-bold border-b-2 transition-all relative ${
+              className={`flex items-center gap-2 pb-3 px-6 text-sm font-bold border-b-2 transition-all relative focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none rounded-t-md ${
                 activeTab === 'evidence'
                   ? 'border-primary text-primary'
                   : 'border-transparent text-text-muted hover:text-text-main'
               }`}
               onClick={() => setActiveTab('evidence')}
+              aria-label="View Scientific Evidence list"
+              title="View Scientific Evidence list"
             >
               <FlaskConical size={16} />
               Scientific Evidence
@@ -999,22 +1101,19 @@ export default function Dashboard() {
                   ))}
                 </div>
               ) : (
-                /* User Projects Empty State */
-                <div className="rounded-lg border-2 border-dashed border-border bg-surface/50 p-12 text-center">
-                  <div className="mx-auto max-w-md">
-                    <FlaskConical size={48} className="mx-auto text-text-dim mb-4" />
-                    <h3 className="text-lg font-bold text-text-main mb-2">No user projects yet</h3>
-                    <p className="text-sm text-text-muted mb-6">
-                      Create a project notebook to manage multiple related experiments, files, or analytical runs under a single scientific objective.
-                    </p>
-                    <div className="flex flex-wrap justify-center gap-3">
-                      <Button variant="primary" className="gap-2" onClick={() => setProjectNotebookWizardOpen(true)}>
-                        <Plus size={16} /> Create Project
-                      </Button>
-                      <Button variant="outline" className="gap-2" onClick={() => handleSwitchMode('demo')}>
-                        Use Demo Project
-                      </Button>
-                    </div>
+                <div className="space-y-4">
+                  <EmptyStateCard
+                    type="generic"
+                    title="No User Projects Yet"
+                    description="Create a project notebook to manage multiple related experiments, files, or analytical runs under a single scientific objective."
+                  />
+                  <div className="flex flex-wrap justify-center gap-3">
+                    <Button variant="primary" className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => setProjectNotebookWizardOpen(true)}>
+                      <Plus size={16} /> Create Project
+                    </Button>
+                    <Button variant="outline" className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => handleSwitchMode('demo')}>
+                      Use Demo Project
+                    </Button>
                   </div>
                 </div>
               )}
@@ -1057,30 +1156,32 @@ export default function Dashboard() {
                   ))}
                 </div>
               ) : (
-                /* User Evidence Empty State */
-                <div className="rounded-lg border-2 border-dashed border-border bg-surface/50 p-12 text-center">
-                  <div className="mx-auto max-w-md">
-                    <FlaskConical size={48} className="mx-auto text-text-dim mb-4" />
-                    <h3 className="text-lg font-bold text-text-main mb-2">No scientific evidence yet</h3>
-                    <p className="text-sm text-text-muted mb-6">
-                      Upload XRD, XPS, FTIR, or Raman spectrum files to begin single-technique processing and reasoning.
-                    </p>
-                    <div className="flex flex-wrap justify-center gap-3">
-                      <Button variant="primary" className="gap-2" onClick={() => navigate('/workspace?action=upload&source=user_uploaded')}>
-                        <Plus size={16} /> Upload Evidence
-                      </Button>
-                      <Button variant="outline" className="gap-2" onClick={() => setCreateMenuOpen(true)}>
-                        <Plus size={16} /> Create Quick Experiment
-                      </Button>
-                      <Button variant="outline" className="gap-2" onClick={() => handleSwitchMode('demo')}>
-                        Use Demo Evidence
-                      </Button>
-                    </div>
+                <div className="space-y-4">
+                  <EmptyStateCard
+                    type="missing_evidence"
+                    title="No Scientific Evidence Yet"
+                    description="Upload XRD, XPS, FTIR, or Raman spectrum files to begin single-technique processing and reasoning."
+                  />
+                  <div className="flex flex-wrap justify-center gap-3">
+                    <Button variant="primary" className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => navigate('/workspace?action=upload&source=user_uploaded')}>
+                      <Plus size={16} /> Upload Evidence
+                    </Button>
+                    <Button variant="outline" className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => setCreateMenuOpen(true)}>
+                      <Plus size={16} /> Create Quick Experiment
+                    </Button>
+                    <Button variant="outline" className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => handleSwitchMode('demo')}>
+                      Use Demo Evidence
+                    </Button>
                   </div>
                 </div>
               )}
             </div>
           )}
+          </div>
+
+          <div className="lg:col-span-1 shrink-0">
+            <ActivityTimelineWidget />
+          </div>
         </div>
       </div>
     </DashboardLayout>

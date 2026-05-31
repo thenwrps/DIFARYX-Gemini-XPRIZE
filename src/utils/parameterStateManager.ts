@@ -238,6 +238,85 @@ export function writeParameterState(state: TechniqueParameterState): void {
 }
 
 /**
+ * Parameter Change History Entry Interface
+ */
+export interface ParameterHistoryEntry {
+  timestamp: string;
+  parameter: string;
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+/**
+ * Log parameter changes to history list in localStorage (capped at 50 entries)
+ */
+export function logParameterChange(
+  projectId: string,
+  technique: string,
+  parameter: string,
+  oldValue: unknown,
+  newValue: unknown
+): void {
+  // Prevent logging if values are equal (deep compare arrays or primitives)
+  if (oldValue === newValue || JSON.stringify(oldValue) === JSON.stringify(newValue)) return;
+  if (!canUseLocalStorage()) return;
+
+  const key = `difaryx-parameter-history-v1:${projectId}:${technique}`;
+  try {
+    const raw = window.localStorage.getItem(key);
+    let history: ParameterHistoryEntry[] = [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) history = parsed;
+    }
+
+    history.unshift({
+      timestamp: new Date().toISOString(),
+      parameter,
+      oldValue,
+      newValue,
+    });
+
+    if (history.length > 50) {
+      history = history.slice(0, 50);
+    }
+
+    window.localStorage.setItem(key, JSON.stringify(history));
+  } catch (error) {
+    console.warn('Failed to log parameter change:', error);
+  }
+}
+
+/**
+ * Read parameter history log from localStorage
+ */
+export function readParameterHistory(projectId: string, technique: string): ParameterHistoryEntry[] {
+  if (!canUseLocalStorage()) return [];
+  const key = `difaryx-parameter-history-v1:${projectId}:${technique}`;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    const validated = parsed.filter((entry: any) => {
+      return (
+        entry &&
+        typeof entry === 'object' &&
+        entry.parameter &&
+        entry.timestamp &&
+        !isNaN(Date.parse(entry.timestamp))
+      );
+    });
+
+    // Sort chronologically (latest first)
+    return validated.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Set a parameter override
  */
 export function setParameterOverride(
@@ -256,6 +335,9 @@ export function setParameterOverride(
   // Get previous value
   const previousValue = state.effectiveValues[parameterId];
   
+  // Log change
+  logParameterChange(projectId, technique, parameterId, previousValue, value);
+
   // Update overrides
   if (value === state.defaultValues[parameterId]) {
     // Value matches default, remove override
@@ -314,6 +396,9 @@ export function setParameterOverrides(
   Object.entries(overrides).forEach(([parameterId, value]) => {
     const previousValue = state.effectiveValues[parameterId];
     
+    // Log change
+    logParameterChange(projectId, technique, parameterId, previousValue, value);
+
     if (value === state.defaultValues[parameterId]) {
       delete state.overrides[parameterId];
       delete state.parameterProvenance[parameterId];
@@ -358,6 +443,9 @@ export function resetParameters(
 ): TechniqueParameterState {
   const state = readParameterState(projectId, technique, datasetId);
   
+  // Log change
+  logParameterChange(projectId, technique, 'all_parameters', 'overridden_values', 'reset_to_defaults');
+
   state.overrides = {};
   state.effectiveValues = { ...state.defaultValues };
   state.parameterProvenance = {};

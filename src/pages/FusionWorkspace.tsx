@@ -10,6 +10,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
+import { EmptyStateCard } from '../components/ui/EmptyStateCard';
 import { runFusionAnalysis } from '../agents/fusionAgent/runner';
 import { runXpsProcessing } from '../agents/xpsAgent/runner';
 import { runFtirProcessing } from '../agents/ftirAgent/runner';
@@ -242,16 +243,14 @@ export default function FusionWorkspace() {
       </div>
     </div>
   ) : (
-    <div className="bg-gray-50 rounded-lg border border-gray-200 p-8 text-center">
-      <Sparkles className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-      <p className="text-sm font-semibold text-gray-700">
-        {hasFusionBundle ? 'Run fusion to see results' : `${registryProject.title} fusion evidence is pending`}
-      </p>
-      {!hasFusionBundle && (
-        <p className="mt-2 text-xs text-gray-500">
-          Missing {missingFusionTechniques.map((technique) => technique.toUpperCase()).join(', ')} evidence.
-        </p>
-      )}
+    <div className="p-4">
+      <EmptyStateCard 
+        type={hasFusionBundle ? "not_executed" : "missing_evidence"} 
+        title={hasFusionBundle ? "Fusion Analysis Not Executed" : "Fusion Evidence Pending"} 
+        description={hasFusionBundle ? "Run fusion to see cross-technique results." : `Missing ${missingFusionTechniques.map((t) => t.toUpperCase()).join(', ')} evidence.`} 
+        actionText={hasFusionBundle ? "Run Fusion" : undefined}
+        onAction={hasFusionBundle ? handleRunFusion : undefined}
+      />
     </div>
   );
 
@@ -481,10 +480,11 @@ export default function FusionWorkspace() {
         {activeTab === 'contradictions' && (
           <div className="space-y-4">
             {fusionResult.contradictions.length === 0 ? (
-              <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-                <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto mb-3" />
-                <p className="text-sm text-gray-600">No contradictions detected</p>
-              </div>
+              <EmptyStateCard 
+                type="generic" 
+                title="No Contradictions Detected" 
+                description="Cross-technique review indicates consistent evidence boundaries. No conflicts identified." 
+              />
             ) : (
               fusionResult.contradictions.map(contradiction => (
                 <div key={contradiction.id} className="bg-white rounded-lg border border-gray-200 p-6">
@@ -529,11 +529,12 @@ export default function FusionWorkspace() {
       </div>
     </div>
   ) : (
-    <div className="h-full flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <Sparkles className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-        <p className="text-gray-600">Run fusion to see results</p>
-      </div>
+    <div className="h-full flex items-center justify-center bg-gray-50 p-4">
+      <EmptyStateCard 
+        type="not_executed" 
+        title="Fusion Results Not Loaded" 
+        description="Execute cross-technique fusion from the controls on the left." 
+      />
     </div>
   );
   

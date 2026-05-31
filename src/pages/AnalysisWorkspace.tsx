@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Card } from '../components/ui/Card';
+import { EmptyStateCard } from '../components/ui/EmptyStateCard';
 import { Graph } from '../components/ui/Graph';
 import {
   AnalysisFeature,
@@ -987,8 +988,12 @@ export function AnalysisWorkspaceHome() {
                 </div>
               ))}
               {recentSessions.length === 0 && (
-                <div className="px-3 py-6 text-center text-xs font-semibold text-text-muted">
-                  {userUploadMode ? 'No user_uploaded evidence sessions yet.' : 'No quick analysis sessions yet.'}
+                <div className="p-4">
+                  <EmptyStateCard
+                    type="not_executed"
+                    title={userUploadMode ? "No Local Evidence Sessions" : "No Quick Sessions"}
+                    description={userUploadMode ? "No user_uploaded evidence sessions yet." : "No quick analysis sessions yet."}
+                  />
                 </div>
               )}
             </div>
@@ -1750,8 +1755,12 @@ function AttachProjectPanel({ session, setSession }: { session: AnalysisSession;
           <Card className="rounded-lg bg-white p-4">
             <h3 className="text-sm font-bold text-text-main">Attach to existing project</h3>
             {existingUserProjects.length === 0 ? (
-              <div className="mt-4 rounded border border-dashed border-border bg-slate-50/50 p-4 text-center text-xs text-text-muted">
-                No active user projects found. Enter a name or chemical formula on the right to start your first project.
+              <div className="mt-4">
+                <EmptyStateCard
+                  type="generic"
+                  title="No Active User Projects"
+                  description="No active user projects found. Enter a name or chemical formula on the right to start your first project."
+                />
               </div>
             ) : (
               <>

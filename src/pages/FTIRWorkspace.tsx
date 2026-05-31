@@ -17,6 +17,7 @@ import {
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { EmptyStateCard } from '../components/ui/EmptyStateCard';
 import { Graph } from '../components/ui/Graph';
 import { formatChemicalFormula } from '../utils/chemicalFormula';
 import { useX7UniversalHook } from '../hooks/useX7UniversalHook';
@@ -392,8 +393,12 @@ export default function FTIRWorkspace() {
             </div>
 
             {detectedBands.length === 0 ? (
-              <div className="py-8 text-center text-xs text-text-muted">
-                No features mapped yet. Run peak detection to populate scientific assignments.
+              <div className="py-2">
+                <EmptyStateCard
+                  type="not_executed"
+                  title="No Features Mapped"
+                  description="No features mapped yet. Run peak detection to populate scientific assignments."
+                />
               </div>
             ) : (
               <>

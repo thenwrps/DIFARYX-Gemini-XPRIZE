@@ -45,6 +45,47 @@ const ProjectEvidenceRegistry = lazy(() =>
   }))
 );
 
+function PageLoadingIndicator({ message }: { message: string }) {
+  return (
+    <main className="flex min-h-screen bg-slate-50 text-slate-900 font-sans">
+      {/* Sidebar Skeleton */}
+      <aside className="hidden md:flex w-64 border-r border-slate-200 bg-white flex-col p-4 space-y-6 shrink-0">
+        <div className="h-8 w-28 bg-slate-100 animate-pulse rounded" />
+        <div className="space-y-3 flex-1 pt-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-10 bg-slate-100 animate-pulse rounded-md" />
+          ))}
+        </div>
+      </aside>
+
+      {/* Main Content Skeleton */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Topbar Skeleton */}
+        <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 shrink-0">
+          <div className="h-8 w-48 bg-slate-100 animate-pulse rounded" />
+          <div className="h-8 w-8 bg-slate-100 animate-pulse rounded-full" />
+        </header>
+
+        {/* Workspace/Content Area Skeleton with dynamic text */}
+        <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-4">
+          <div className="relative flex h-14 w-14 items-center justify-center">
+            {/* Spinning track */}
+            <div className="absolute inset-0 rounded-full border-[3px] border-slate-200" />
+            {/* Spinning arc */}
+            <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-blue-600 animate-spin" />
+          </div>
+          <h2 className="text-sm font-bold tracking-wide text-slate-600 animate-pulse">
+            {message}
+          </h2>
+          <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+            DIFARYX Scientific Workflow Intelligence
+          </p>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 function AppRouteLoading() {
   const path = typeof window !== "undefined" ? window.location.pathname : "/";
 
@@ -143,134 +184,134 @@ function App() {
               <Route path="/signin" element={<SignIn />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
 
-              <Route path="/dashboard" element={protectedRoute(<Dashboard />)} />
-              <Route path="/projects" element={protectedRoute(<Dashboard />)} />
+              <Route path="/dashboard" element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Dashboard..." />}><Dashboard /></Suspense>)} />
+              <Route path="/projects" element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Dashboard..." />}><Dashboard /></Suspense>)} />
 
               <Route
                 path="/project/:projectId"
-                element={protectedRoute(<ProjectDetail />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><ProjectDetail /></Suspense>)}
               />
 
               <Route
                 path="/project/:projectId/evidence"
-                element={protectedRoute(<ProjectEvidenceRegistry />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Scientific Evidence..." />}><ProjectEvidenceRegistry /></Suspense>)}
               />
 
               <Route
                 path="/analysis"
-                element={protectedRoute(<AnalysisWorkspaceHome />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><AnalysisWorkspaceHome /></Suspense>)}
               />
 
               <Route
                 path="/analysis/new"
-                element={protectedRoute(<AnalysisNew />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><AnalysisNew /></Suspense>)}
               />
 
               <Route
                 path="/analysis/session/:analysisId"
-                element={protectedRoute(<AnalysisSessionPage />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><AnalysisSessionPage /></Suspense>)}
               />
 
               <Route
                 path="/analysis/session/:analysisId/save"
-                element={protectedRoute(<AnalysisSessionPage />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><AnalysisSessionPage /></Suspense>)}
               />
 
               <Route
                 path="/analysis/session/:analysisId/attach"
-                element={protectedRoute(<AnalysisSessionPage />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><AnalysisSessionPage /></Suspense>)}
               />
 
               <Route
                 path="/analysis/session/:analysisId/export"
-                element={protectedRoute(<AnalysisSessionPage />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><AnalysisSessionPage /></Suspense>)}
               />
 
               <Route
                 path="/analysis/session/:analysisId/versions"
-                element={protectedRoute(<AnalysisSessionPage />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><AnalysisSessionPage /></Suspense>)}
               />
 
               <Route
                 path="/workspace"
-                element={protectedRoute(<WorkspaceLauncher />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><WorkspaceLauncher /></Suspense>)}
               />
 
               <Route
                 path="/workspace/multi"
-                element={protectedRoute(<MultiTechWorkspace />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><MultiTechWorkspace /></Suspense>)}
               />
 
               {/* Analysis Workspace alias - project-scoped entry that surfaces
                  technique selection and recent workspace history for the project. */}
               <Route
                 path="/workspace/analysis"
-                element={protectedRoute(<WorkspaceLauncher />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><WorkspaceLauncher /></Suspense>)}
               />
 
               <Route
                 path="/workspace/xrd"
-                element={protectedRoute(<XRDWorkspace />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><XRDWorkspace /></Suspense>)}
               />
 
               <Route
                 path="/workspace/xps"
-                element={protectedRoute(<XPSWorkspace />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><XPSWorkspace /></Suspense>)}
               />
 
               <Route
                 path="/workspace/ftir"
-                element={protectedRoute(<FTIRWorkspace />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><FTIRWorkspace /></Suspense>)}
               />
 
               <Route
                 path="/workspace/raman"
-                element={protectedRoute(<RamanWorkspace />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><RamanWorkspace /></Suspense>)}
               />
 
               <Route
                 path="/workspace/fusion"
-                element={protectedRoute(<FusionWorkspace />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><FusionWorkspace /></Suspense>)}
               />
 
               <Route
                 path="/workspace/:technique"
-                element={protectedRoute(<TechniqueWorkspace />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><TechniqueWorkspace /></Suspense>)}
               />
 
               <Route
                 path="/notebook"
-                element={protectedRoute(<NotebookLab />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Notebook..." />}><NotebookLab /></Suspense>)}
               />
 
               <Route
                 path="/reports"
-                element={protectedRoute(<ReportBuilder />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Report..." />}><ReportBuilder /></Suspense>)}
               />
 
               <Route
                 path="/report"
-                element={protectedRoute(<ReportBuilder />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Report..." />}><ReportBuilder /></Suspense>)}
               />
 
               <Route
                 path="/history"
-                element={protectedRoute(<HistoryPage />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><HistoryPage /></Suspense>)}
               />
 
               <Route
                 path="/settings"
-                element={protectedRoute(<SettingsPage />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Workspace..." />}><SettingsPage /></Suspense>)}
               />
 
               <Route
                 path="/agent"
-                element={protectedRoute(<AgentDemo />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Scientific Evidence..." />}><AgentDemo /></Suspense>)}
               />
 
               <Route
                 path="/demo/agent"
-                element={protectedRoute(<AgentDemo />)}
+                element={protectedRoute(<Suspense fallback={<PageLoadingIndicator message="Loading Scientific Evidence..." />}><AgentDemo /></Suspense>)}
               />
             </Routes>
           </Suspense>

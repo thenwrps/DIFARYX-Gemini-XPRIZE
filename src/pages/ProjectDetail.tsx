@@ -39,15 +39,14 @@ import {
   getProjectJobTypeLabel,
   getProjectJobTypeBadgeColor,
 } from '../utils/projectEvidence';
+import { ActivityTimelineWidget } from '../components/dashboard/ActivityTimelineWidget';
+import { formatClaimStatus as formatSharedClaimStatus, sanitizeScientificWording } from '../utils/claimBoundaryPresentation';
+import { EmptyStateCard } from '../components/ui/EmptyStateCard';
 
 /* ---------- helpers ---------- */
 
 function formatClaimStatus(status: string): string {
-  if (status === 'strongly_supported') return 'Supported assignment';
-  if (status === 'supported') return 'Requires validation';
-  if (status === 'partial') return 'Validation-limited';
-  if (status === 'inconclusive') return 'Publication-limited';
-  return 'Claim boundary';
+  return formatSharedClaimStatus(status);
 }
 
 function statusColor(status: string): string {
@@ -124,14 +123,14 @@ export default function ProjectDetail() {
     return (
       <DashboardLayout>
         <div className="p-6 h-full overflow-y-auto flex flex-col items-center justify-center">
-          <AlertTriangle size={32} className="mb-3 text-amber-500" />
-          <h2 className="text-lg font-bold text-text-main mb-1">Project Not Found</h2>
-          <p className="text-sm text-text-muted mb-4">
-            No project matches "{projectId}". Check the project ID or return to the dashboard.
-          </p>
+          <EmptyStateCard 
+            type="generic" 
+            title="Project Not Found" 
+            description={`No project matches "${projectId}". Check the project ID or return to the dashboard.`} 
+          />
           <Link
             to="/dashboard"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline mt-4"
           >
             <ArrowLeft size={14} /> Back to Dashboard
           </Link>
@@ -281,12 +280,12 @@ export default function ProjectDetail() {
                       yAxisLabel={graphLabels.yLabel}
                     />
                   ) : (
-                    <div className="flex h-full flex-col items-center justify-center rounded-md border border-dashed border-amber-500/30 bg-amber-500/5 px-4 text-center">
-                      <AlertTriangle size={20} className="mb-2 text-amber-600" />
-                      <p className="text-sm font-semibold text-text-main">Dataset required</p>
-                      <p className="mt-1 max-w-[240px] text-xs leading-relaxed text-text-muted">
-                        Load compatible data to generate evidence.
-                      </p>
+                    <div className="h-full flex items-center justify-center">
+                      <EmptyStateCard 
+                        type="missing_evidence" 
+                        title="Dataset Required" 
+                        description="Load compatible data to generate evidence." 
+                      />
                     </div>
                   )}
                 </div>
@@ -334,7 +333,7 @@ export default function ProjectDetail() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-md border border-border bg-surface px-3 py-2">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted mb-1">Primary Result</div>
-                  <div className="text-xs text-text-main font-medium">{insight.primaryResult}</div>
+                  <div className="text-xs text-text-main font-medium">{sanitizeScientificWording(insight.primaryResult)}</div>
                 </div>
                 <div className="rounded-md border border-border bg-surface px-3 py-2">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted mb-1">Confidence</div>
@@ -559,6 +558,9 @@ export default function ProjectDetail() {
                 <p className="text-[10px] text-text-dim">{project.reportReadiness.label}</p>
               </div>
             </Card>
+
+            {/* ── Provenance Timeline ── */}
+            <ActivityTimelineWidget projectId={project.id} />
 
             {/* ── Detected Peaks ── */}
             {project.xrdPeaks.length > 0 && (

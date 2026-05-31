@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowRight, BookOpen, CheckCircle2, FileText, LockKeyhol
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { EmptyStateCard } from '../components/ui/EmptyStateCard';
 import { Graph } from '../components/ui/Graph';
 import { useAuth } from '../contexts/AuthContext';
 import { LockedScientificContext } from '../components/locked-context/LockedScientificContext';
@@ -2090,16 +2091,14 @@ ${result.decision}
           {/* Left Panel: Adaptive technique grid */}
           <div className="min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden">
             {availableTechniques.length === 0 ? (
-              <Card className="flex h-full items-center justify-center p-8">
-                <div className="text-center">
-                  <AlertTriangle size={32} className="mx-auto mb-3 text-amber-600" />
-                  <h3 className="text-sm font-bold text-text-main">No processed technique data available.</h3>
-                  <p className="mt-2 text-xs text-text-muted">Add or process data before evidence review.</p>
-                  <Button variant="primary" size="sm" className="mt-4" onClick={() => setUploadPanelExpanded(true)}>
-                    Add Data
-                  </Button>
-                </div>
-              </Card>
+              <EmptyStateCard
+                type="missing_evidence"
+                title="No processed technique data available"
+                description="Add or process data before evidence review."
+                actionText="Add Data"
+                onAction={() => setUploadPanelExpanded(true)}
+                className="h-full min-h-[300px] bg-white"
+              />
             ) : (() => {
               const selectedTechniques = availableTechniques.filter(t => activeTechniques.has(t));
               const techniqueCount = selectedTechniques.length;

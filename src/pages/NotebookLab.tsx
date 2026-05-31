@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, BarChart3, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, FlaskConical, MoreHorizontal, Plus, Printer, Save, Share2, Target, X } from 'lucide-react';
+import { ArrowRight, BarChart3, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, FlaskConical, MoreHorizontal, Plus, Printer, Save, Share2, Target, X, RotateCcw } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -43,7 +43,10 @@ import {
   type RegistryProject,
 } from '../data/demoProjectRegistry';
 import { DemoExportFormat, exportDemoArtifact } from '../utils/demoExport';
+import { reproduceAnalysis } from '../utils/reproduceAnalysis';
 import { getRun, type AgentRun } from '../data/runModel';
+import { formatClaimStatus as formatSharedClaimStatus } from '../utils/claimBoundaryPresentation';
+import { EmptyStateCard } from '../components/ui/EmptyStateCard';
 import {
   NOTEBOOK_TEMPLATES,
   createNotebookEntryFromRefinement,
@@ -83,6 +86,7 @@ import {
 } from '../data/experimentConditionLock';
 import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
 import { createUploadedEvidenceRegistryProject } from '../utils/uploadedEvidenceProjectContext';
+import { ScientificConfidenceSummary } from '../components/ui/ScientificConfidenceSummary';
 import { ConnectedAccountStatus } from '../components/runtime/ConnectedAccountStatus';
 import { getRuntimeBadgeClass, getRuntimeBadgeLabel, requiresApproval } from '../runtime/difaryxRuntimeMode';
 import {
@@ -134,14 +138,7 @@ const NOTEBOOK_TABS = ['Objective / Context', 'Evidence', 'Interpretation', 'Val
 type ActiveNotebookTab = typeof NOTEBOOK_TABS[number];
 
 function formatClaimStatus(status: string): string {
-  switch (status) {
-    case 'strongly_supported': return 'Supported assignment with validation boundaries';
-    case 'supported': return 'Requires validation';
-    case 'partial': return 'Validation-limited';
-    case 'inconclusive': return 'Publication-limited';
-    case 'contradicted': return 'Claim boundary';
-    default: return status;
-  }
+  return formatSharedClaimStatus(status);
 }
 
 const NOTEBOOK_REFERENCE_CANDIDATE_BOUNDARY_LINES = [
@@ -845,7 +842,11 @@ function NotebookEmptyState({ email }: { email?: string }) {
                 <div className="mt-5 border-t border-slate-100 pt-4">
                   <h3 className="text-xs font-bold text-slate-700 mb-2">Available Drive Files:</h3>
                   {driveFiles.length === 0 ? (
-                    <p className="text-[11px] text-slate-400 italic">No files found inside folder.</p>
+                    <EmptyStateCard 
+                      type="generic" 
+                      title="No Drive Files" 
+                      description="No files found inside folder." 
+                    />
                   ) : (
                     <div className="space-y-1.5 max-h-48 overflow-y-auto">
                       {driveFiles.map((file) => (
@@ -936,12 +937,12 @@ function NotebookEmptyState({ email }: { email?: string }) {
                   </div>
                 </div>
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center text-slate-400">
-                  <FileText size={48} className="text-slate-300 mb-3" />
-                  <h3 className="font-bold text-slate-700">No active research data loaded</h3>
-                  <p className="text-xs text-slate-500 max-w-sm mt-1">
-                    Select a connection channel on the left to pull data from Gmail or Google Drive and verify crystal structures via Bragg's Law.
-                  </p>
+                <div className="h-full flex flex-col items-center justify-center p-6">
+                  <EmptyStateCard 
+                    type="missing_evidence" 
+                    title="No Active Research Data Loaded" 
+                    description="Select a connection channel on the left to pull data from Gmail or Google Drive and verify crystal structures via Bragg's Law." 
+                  />
                 </div>
               )}
             </Card>
@@ -2207,16 +2208,118 @@ ${approvalLedgerMarkdown}
                       <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={() => setMoreMenuOpen((open) => !open)}><MoreHorizontal size={12} /> More</Button>
                       {moreMenuOpen && (
                         <div className="absolute right-0 top-9 z-20 w-56 rounded-lg border border-border bg-white p-2 shadow-xl">
-                          <button type="button" onClick={() => { setIsEvidenceDrawerOpen(true); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><FlaskConical size={12} /> Evidence Trace</button>
-                          <button type="button" disabled={!selectedEvidenceDataset} onClick={() => { exportNotebookCsv('raw'); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400"><Download size={12} /> Export raw signal CSV</button>
-                          <button type="button" disabled={!selectedEvidenceDataset} onClick={() => { exportNotebookCsv('features'); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400"><Download size={12} /> Export features CSV</button>
-                          <button type="button" onClick={() => { exportNotebookCsv('summary'); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><Download size={12} /> Export summary CSV</button>
-                          <button type="button" onClick={() => { copyShareLink(); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover border-t border-border"><Share2 size={12} /> Share</button>
-                          <button type="button" onClick={() => { printReport(); setMoreMenuOpen(false); }} disabled={!hasMatchedNotebookData} title={!hasMatchedNotebookData ? 'Requires matched processing result before printing.' : undefined} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400"><Printer size={12} /> Print</button>
-                          <button type="button" onClick={() => { setObservationOpen(true); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><Plus size={12} /> Observe</button>
-                          <button type="button" onClick={() => { setAttachRunOpen(true); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><FileText size={12} /> Attach</button>
-                          <button type="button" onClick={() => { setContextDetailsOpen((open) => !open); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover border-t border-border"><Target size={12} /> Context Details</button>
-                          <button type="button" onClick={() => { setAuditTrailOpen((open) => !open); setMoreMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover"><BarChart3 size={12} /> Audit Trail</button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              reproduceAnalysis(
+                                currentProject.id,
+                                workflowNotebookEntry.workspaceParameters || {},
+                                selectedEvidenceTechnique.toLowerCase() as any,
+                                undefined,
+                                evidenceSnapshot.activeDataset?.id
+                              );
+                              setMoreMenuOpen(false);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-bold text-blue-700 bg-blue-50/50 hover:bg-blue-50 border-b border-border/50 mb-1 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="Reproduce the analysis workflow using historical parameters"
+                            title="Reproduce the analysis workflow using historical parameters"
+                          >
+                            <RotateCcw size={12} className="text-blue-700" />
+                            Reproduce Analysis
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setIsEvidenceDrawerOpen(true); setMoreMenuOpen(false); }}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="View evidence trace details"
+                            title="View evidence trace details"
+                          >
+                            <FlaskConical size={12} /> Evidence Trace
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!selectedEvidenceDataset}
+                            onClick={() => { exportNotebookCsv('raw'); setMoreMenuOpen(false); }}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="Export raw signal CSV data"
+                            title="Export raw signal CSV data"
+                          >
+                            <Download size={12} /> Export raw signal CSV
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!selectedEvidenceDataset}
+                            onClick={() => { exportNotebookCsv('features'); setMoreMenuOpen(false); }}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="Export detected features CSV data"
+                            title="Export detected features CSV data"
+                          >
+                            <Download size={12} /> Export features CSV
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { exportNotebookCsv('summary'); setMoreMenuOpen(false); }}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="Export summary CSV data"
+                            title="Export summary CSV data"
+                          >
+                            <Download size={12} /> Export summary CSV
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { copyShareLink(); setMoreMenuOpen(false); }}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover border-t border-border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="Copy notebook share link to clipboard"
+                            title="Copy notebook share link to clipboard"
+                          >
+                            <Share2 size={12} /> Share
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { printReport(); setMoreMenuOpen(false); }}
+                            disabled={!hasMatchedNotebookData}
+                            title={!hasMatchedNotebookData ? 'Requires matched processing result before printing.' : 'Print scientific report'}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-slate-400 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="Print scientific report"
+                          >
+                            <Printer size={12} /> Print
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setObservationOpen(true); setMoreMenuOpen(false); }}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="Add a researcher observation note"
+                            title="Add a researcher observation note"
+                          >
+                            <Plus size={12} /> Observe
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setAttachRunOpen(true); setMoreMenuOpen(false); }}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="Attach analytical signal runs to project notebook"
+                            title="Attach analytical signal runs to project notebook"
+                          >
+                            <FileText size={12} /> Attach
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setContextDetailsOpen((open) => !open); setMoreMenuOpen(false); }}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover border-t border-border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="View locked context and experimental details"
+                            title="View locked context and experimental details"
+                          >
+                            <Target size={12} /> Context Details
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setAuditTrailOpen((open) => !open); setMoreMenuOpen(false); }}
+                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-text-main hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                            aria-label="View validation ledger audit trail"
+                            title="View validation ledger audit trail"
+                          >
+                            <BarChart3 size={12} /> Audit Trail
+                          </button>
                         </div>
                       )}
                     </div>
@@ -2319,9 +2422,11 @@ ${approvalLedgerMarkdown}
                 <p className="mt-1 text-sm text-text-muted">Select saved processing data to link into this notebook.</p>
                 <div className="mt-4 max-h-72 space-y-2 overflow-y-auto">
                   {availableRuns.length === 0 && (
-                    <p className="rounded-md border border-border bg-background p-3 text-sm text-text-muted">
-                      No upstream processing data attached yet. Save processed evidence in a workspace, then attach it here.
-                    </p>
+                    <EmptyStateCard 
+                      type="missing_evidence" 
+                      title="No Upstream Processing Data" 
+                      description="Save processed evidence in a workspace, then attach it here." 
+                    />
                   )}
                   {availableRuns.slice().reverse().map((run) => {
                     const dataset = getDataset(run.datasetId);
@@ -2364,6 +2469,16 @@ ${approvalLedgerMarkdown}
               }
               return null;
             })()}
+
+            {/* Scientific Confidence Summary Component */}
+            <ScientificConfidenceSummary
+              claimStatus={registryProject?.claimStatus || 'partial'}
+              readinessPercent={registryProject?.reportReadiness || 30}
+              validationGaps={evidenceSnapshot.validationGaps}
+              availableTechniques={evidenceSnapshot.availableTechniques}
+              pendingTechniques={evidenceSnapshot.pendingTechniques}
+              className="mb-3"
+            />
 
             {activeNotebookTab === 'Objective / Context' && (() => {
               const lockedContext = getLockedContext(currentProject.id);
@@ -2990,7 +3105,11 @@ ${approvalLedgerMarkdown}
                       </div>
                     ))}
                     {evidenceSnapshot.validationGaps.length === 0 && (
-                      <p className="text-sm text-text-muted">No open validation gaps are registered for this project.</p>
+                      <EmptyStateCard 
+                        type="generic" 
+                        title="No Open Validation Gaps" 
+                        description="No open validation gaps are registered for this project." 
+                      />
                     )}
                   </div>
                 </div>
@@ -3010,7 +3129,11 @@ ${approvalLedgerMarkdown}
                   {hasMatchedNotebookData ? (
                     <div className="space-y-1">
                       {evidenceSnapshot.pendingTechniques.length === 0 ? (
-                        <p className="text-xs text-text-muted">All linked technique evidence is marked ready for this project.</p>
+                        <EmptyStateCard 
+                          type="generic" 
+                          title="No Pending Techniques" 
+                          description="All linked technique evidence is marked ready for this project." 
+                        />
                       ) : evidenceSnapshot.pendingTechniques.map((technique) => (
                         <div key={`missing-${technique}`} className="flex items-start gap-2 rounded border border-border bg-background px-2 py-1 text-xs">
                           <span className="font-bold text-text-main w-14 shrink-0">{technique}</span>
@@ -3231,20 +3354,11 @@ ${approvalLedgerMarkdown}
             </section>
 
             {!hasMatchedNotebookData && (
-              <section className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-                <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Notebook status</div>
-                <h3 className="mt-1 text-base font-bold text-text-main">No matched processing result</h3>
-                <p className="mt-2 text-sm leading-relaxed text-text-muted">
-                  This project does not yet have a matched deterministic XRD processing result. Notebook discussion, report preview, and export remain validation pending until compatible evidence is processed.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {['Requires dataset', 'No matched processing result', 'Evidence not generated'].map((badge) => (
-                    <span key={badge} className="rounded-full border border-amber-500/30 bg-background px-3 py-1 text-xs font-semibold text-amber-700">
-                      {badge}
-                    </span>
-                  ))}
-                </div>
-              </section>
+              <EmptyStateCard 
+                type="not_executed" 
+                title="No Matched Processing Result" 
+                description="This project does not yet have a matched deterministic XRD processing result. Notebook discussion, report preview, and export remain validation pending until compatible evidence is processed." 
+              />
             )}
 
             <details className="rounded-xl border border-border bg-surface">
@@ -3439,9 +3553,13 @@ ${approvalLedgerMarkdown}
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled
-                    title="Report route is not enabled in this demo. Export-ready sections are generated from notebook entries."
+                    title="Navigate to the report page for this project."
                     className="gap-2"
+                    onClick={() => {
+                      const entryId = workflowNotebookEntry?.id ? `&entry=${workflowNotebookEntry.id}` : '';
+                      const templateParam = templateMode ? `&template=${templateMode}` : '';
+                      navigate(`/reports?project=${currentProject.id}&mode=demo${templateParam}${entryId}`);
+                    }}
                   >
                     <Download size={14} /> Export Report Section
                   </Button>
@@ -3655,18 +3773,20 @@ ${approvalLedgerMarkdown}
                 <Button
                   variant="outline"
                   disabled={!hasMatchedNotebookData}
-                  title={!hasMatchedNotebookData ? 'Requires matched processing result before export.' : undefined}
-                  className="gap-2"
+                  title={!hasMatchedNotebookData ? 'Requires matched processing result before export.' : "Export notebook content in Markdown format"}
+                  className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
                   onClick={() => exportNotebook('md')}
+                  aria-label="Export notebook content in Markdown format"
                 >
                   <Download size={14} /> Export Markdown
                 </Button>
                 <Button
                   variant="outline"
                   disabled={!hasMatchedNotebookData}
-                  title={!hasMatchedNotebookData ? 'Requires matched processing result before export.' : undefined}
-                  className="gap-2"
+                  title={!hasMatchedNotebookData ? 'Requires matched processing result before export.' : "Export notebook snapshot as a PNG image"}
+                  className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
                   onClick={() => exportNotebook('png')}
+                  aria-label="Export notebook snapshot as a PNG image"
                 >
                   <Download size={14} /> Export PNG Snapshot
                 </Button>
@@ -3698,7 +3818,7 @@ ${approvalLedgerMarkdown}
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-4">
                   <div className="text-xs text-text-muted">
-                    Short conclusion: {hasMatchedNotebookData ? 'Supported assignment with validation boundaries.' : 'No matched processing result.'}
+                    Short conclusion: {hasMatchedNotebookData ? formatClaimStatus(notebook.claimStatus) : 'No matched processing result.'}
                   </div>
                   <div className={`text-sm font-bold ${
                     notebook.claimStatus === 'strongly_supported' ? 'text-emerald-600' :
@@ -3852,8 +3972,9 @@ ${approvalLedgerMarkdown}
               <button
                 onClick={() => exportNotebook('md')}
                 disabled={!hasMatchedNotebookData}
-                title={!hasMatchedNotebookData ? 'Requires matched processing result before export.' : undefined}
-                className="rounded-md border border-border bg-surface p-3 text-left text-sm font-semibold text-text-main hover:bg-surface-hover transition-colors"
+                title={!hasMatchedNotebookData ? 'Requires matched processing result before export.' : "Export notebook content in Markdown format"}
+                className="rounded-md border border-border bg-surface p-3 text-left text-sm font-semibold text-text-main hover:bg-surface-hover transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                aria-label="Export notebook content in Markdown format"
               >
                 <FileText size={14} className="inline mr-1" /> Export Markdown
               </button>

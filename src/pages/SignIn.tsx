@@ -16,6 +16,7 @@ export default function SignIn() {
   const navigate = useNavigate();
   const location = useLocation();
   const { signIn } = useAuth();
+  const googleConfigured = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID);
   const [emailMode, setEmailMode] = useState(false);
   const [createMode, setCreateMode] = useState(false);
   const [name, setName] = useState("");
@@ -159,8 +160,13 @@ export default function SignIn() {
                   <div className="space-y-3">
                     <Button
                       variant="outline"
-                      className="h-12 w-full justify-center gap-3 border-slate-200 bg-white text-base font-semibold text-slate-800 hover:border-blue-300 hover:bg-blue-50/60"
+                      className={`h-12 w-full justify-center gap-3 border-slate-200 bg-white text-base font-semibold text-slate-800 ${
+                        !googleConfigured
+                          ? "opacity-50 cursor-not-allowed"
+                          : "hover:border-blue-300 hover:bg-blue-50/60"
+                      }`}
                       onClick={handleGoogleLogin}
+                      disabled={!googleConfigured}
                     >
                       <svg
                         viewBox="0 0 24 24"
@@ -186,6 +192,11 @@ export default function SignIn() {
                       </svg>
                       Continue with Google
                     </Button>
+                    {!googleConfigured && (
+                      <p className="text-center text-[10px] font-semibold text-amber-600 bg-amber-50 rounded border border-amber-200/50 py-1.5 px-2">
+                        Google authentication is not configured in this demo build.
+                      </p>
+                    )}
 
                     <Button
                       variant="outline"

@@ -1,6 +1,6 @@
 # DIFARYX Reasoning Engine - Universal Validation Report
 
-**Generated:** 2026-05-29T01:13:28.114Z
+**Generated:** 2026-05-30T07:46:07.281Z
 **Engine Version:** 1.0.0
 **Scenarios:** 5
 **Assertions:** 19/19 passed
@@ -22,7 +22,7 @@
 
 **Material System:** TiO2
 **Techniques Analyzed:** XRD, XPS, FTIR, Raman
-**Processing Time:** 10.7 ms
+**Processing Time:** 7.7 ms
 
 ### Confidence Score Breakdown
 
@@ -73,7 +73,7 @@
 
 **Material System:** TiO2
 **Techniques Analyzed:** XRD, FTIR, Raman
-**Processing Time:** 1.0 ms
+**Processing Time:** 1.4 ms
 
 ### Confidence Score Breakdown
 
@@ -124,7 +124,7 @@
 
 **Material System:** TiO2
 **Techniques Analyzed:** XRD, XPS, FTIR, Raman
-**Processing Time:** 1.5 ms
+**Processing Time:** 3.6 ms
 
 ### Confidence Score Breakdown
 
@@ -179,7 +179,7 @@
 
 **Material System:** TiO2
 **Techniques Analyzed:** XRD, XPS, FTIR, Raman
-**Processing Time:** 1.0 ms
+**Processing Time:** 0.7 ms
 
 ### Confidence Score Breakdown
 
@@ -232,7 +232,7 @@
 
 **Material System:** LiFePO4
 **Techniques Analyzed:** XRD, XPS, FTIR
-**Processing Time:** 0.6 ms
+**Processing Time:** 0.5 ms
 
 ### Confidence Score Breakdown
 
