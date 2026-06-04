@@ -5,8 +5,28 @@
  * LLMs receive these packets and cannot modify or generate new data.
  */
 
-import type { AgentEvidencePacket, ToolResult } from './types';
+import type { AgentEvidencePacket, ToolResult, XpsElementEvidence } from './types';
 import type { DemoDataset, DemoProject, Technique } from '../../data/demoProjects';
+
+/**
+ * Convert XPS element-focused evidence into fusion-consumable detectedFeatures
+ * entries tagged as the 'oxidation-state' category. Deterministic; uses the
+ * region-window midpoint as a representative binding-energy position when no
+ * per-state position is available.
+ */
+export function xpsOxidationStateFeatures(
+  evidence: XpsElementEvidence,
+): AgentEvidencePacket['detectedFeatures'] {
+  const window = evidence.regionWindow;
+  const midpoint = window ? (window.min + window.max) / 2 : 0;
+  return evidence.candidateStates.map((state) => ({
+    position: Number(midpoint.toFixed(1)),
+    intensity: Math.round(state.confidence * 100),
+    assignment: state.label,
+    confidence: state.confidence,
+    category: 'oxidation-state',
+  }));
+}
 
 /**
  * Build evidence packet for XRD context from deterministic tools.
@@ -98,6 +118,7 @@ export function buildGenericEvidencePacket(
   featureCount: number,
   baseConfidence: number,
   toolTrace: ToolResult[],
+  xpsElementEvidence?: XpsElementEvidence,
 ): AgentEvidencePacket {
   const uncertaintyFlags: string[] = [];
   const signalQuality: 'high' | 'medium' | 'low' =
@@ -150,6 +171,23 @@ export function buildGenericEvidencePacket(
     );
   }
 
+  // XPS element-focused evidence: append oxidation-state features (fusion-
+  // consumable) and attach the structured evidence to the packet.
+  const elementEvidence = context === 'xps' ? xpsElementEvidence : undefined;
+  const oxidationFeatures = elementEvidence ? xpsOxidationStateFeatures(elementEvidence) : [];
+  const detectedFeatures = [...features.slice(0, featureCount), ...oxidationFeatures];
+
+  const processingNotes = [
+    `Deterministic ${context.toUpperCase()} feature detection`,
+    'Evidence treated as supportive, not standalone phase claim',
+    'Fused with material context for interpretation',
+  ];
+  if (elementEvidence) {
+    processingNotes.push(
+      `XPS element-focused evidence for ${elementEvidence.selectedElement}: ${elementEvidence.candidateStates.length} candidate oxidation state(s) treated as supportive context, not a standalone claim`,
+    );
+  }
+
   return {
     context,
     datasetId: dataset.id,
@@ -159,7 +197,7 @@ export function buildGenericEvidencePacket(
       featureCount,
       signalQuality,
     },
-    detectedFeatures: features.slice(0, featureCount),
+    detectedFeatures,
     candidates: [
       {
         label: `${context.toUpperCase()} evidence consistent with ${project.material}`,
@@ -172,12 +210,9 @@ export function buildGenericEvidencePacket(
     ],
     fusedScore: baseConfidence / 100,
     uncertaintyFlags,
-    processingNotes: [
-      `Deterministic ${context.toUpperCase()} feature detection`,
-      'Evidence treated as supportive, not standalone phase claim',
-      'Fused with material context for interpretation',
-    ],
+    processingNotes,
     toolTrace,
+    ...(elementEvidence ? { xpsElementEvidence: elementEvidence } : {}),
   };
 }
 
@@ -193,6 +228,7 @@ export function buildEvidencePacket(
   featureCount: number,
   baseConfidence: number,
   toolTrace: ToolResult[],
+  xpsElementEvidence?: XpsElementEvidence,
 ): AgentEvidencePacket {
   if (context === 'XRD' && xrdAnalysis) {
     return buildXRDEvidencePacket(dataset, project, xrdAnalysis, toolTrace);
@@ -205,5 +241,6 @@ export function buildEvidencePacket(
     featureCount,
     baseConfidence,
     toolTrace,
+    xpsElementEvidence,
   );
 }

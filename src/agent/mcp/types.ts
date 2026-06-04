@@ -63,8 +63,10 @@ export interface AgentEvidencePacket {
     intensity: number;
     assignment?: string;
     confidence?: number;
+    /** Feature category, e.g. 'oxidation-state' for XPS element-focused evidence. */
+    category?: string;
   }>;
-  
+
   candidates: Array<{
     label: string;
     score: number;
@@ -73,12 +75,38 @@ export interface AgentEvidencePacket {
     missingFeatures: string[];
     unexplainedFeatures: string[];
   }>;
-  
+
   fusedScore: number;
   uncertaintyFlags: string[];
   processingNotes: string[];
-  
+
   toolTrace: ToolResult[];
+
+  /**
+   * Optional XPS element-focused evidence (Phase 1 — Agent Evidence Packet
+   * Integration). Present only for XPS runs where the user inspected an element
+   * via the Element Selection Analysis view. Optional → non-breaking for
+   * XRD/FTIR/Raman and the LLM contract.
+   */
+  xpsElementEvidence?: XpsElementEvidence;
+}
+
+/**
+ * Element-focused XPS evidence derived deterministically from the XPS Element
+ * Selection Analysis view (oxidation-state candidates, satellites, region,
+ * caveats). Evidence-bound only; carries no positive-confirmation claims.
+ */
+export interface XpsElementEvidence {
+  selectedElement: string;
+  candidateStates: Array<{
+    label: string;
+    /** 0..1 numeric confidence (deterministic mapping from high/medium/low). */
+    confidence: number;
+    matchedPeaks: number;
+  }>;
+  satellitePresent: boolean;
+  regionWindow?: { min: number; max: number };
+  caveats: string[];
 }
 
 /**

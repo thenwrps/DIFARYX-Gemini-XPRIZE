@@ -12,6 +12,11 @@
 
 import type { XpsDataset, XpsPeak, XpsChemicalStateMatch } from '../../data/xpsDemoData';
 import type { XpsParameters } from '../../types/parameters';
+import {
+  XPS_REFERENCE_DATA,
+  getRegionWindowByValue,
+  type XpsCoreLevelReference,
+} from '../../data/xpsReferenceData';
 
 // ============================================================================
 // Type Definitions
@@ -41,6 +46,12 @@ export interface XpsProcessingParams {
   // Chemical state assignment
   bindingEnergyTolerance?: number;
   useIntensity?: boolean;
+
+  // Region focus (e.g. 'Survey' | 'Cu 2p' | 'Fe 2p' | ...). 'Survey'/undefined
+  // = authoritative full-range processing. A specific element region filters
+  // the detected peaks to that core-level window (a strict subset of the same
+  // survey detection — never a divergent peak set).
+  region?: string;
 }
 
 export interface XpsProcessingResult {
@@ -235,134 +246,68 @@ interface XpsReference {
   source: string;
 }
 
-const XPS_REFERENCE_DATABASE: XpsReference[] = [
-  // Copper references
-  {
-    element: 'Cu',
-    orbital: '2p3/2',
-    state: 'Cu⁺',
-    bindingEnergy: 932.5,
-    tolerance: 0.3,
-    diagnosticWeight: 1.0,
-    isPrimary: true,
-    satelliteExpected: false,
-    source: 'NIST XPS',
-  },
-  {
-    element: 'Cu',
-    orbital: '2p3/2',
-    state: 'Cu²⁺',
-    bindingEnergy: 933.6,
-    tolerance: 0.3,
-    diagnosticWeight: 1.0,
-    isPrimary: true,
-    satelliteExpected: true,
-    satelliteRange: [940, 945],
-    source: 'NIST XPS',
-  },
-  {
-    element: 'Cu',
-    orbital: '2p1/2',
-    state: 'Cu⁺',
-    bindingEnergy: 952.3,
-    tolerance: 0.3,
-    diagnosticWeight: 0.8,
-    isPrimary: false,
-    satelliteExpected: false,
-    source: 'NIST XPS',
-  },
-  {
-    element: 'Cu',
-    orbital: '2p1/2',
-    state: 'Cu²⁺',
-    bindingEnergy: 953.4,
-    tolerance: 0.3,
-    diagnosticWeight: 0.8,
-    isPrimary: false,
-    satelliteExpected: false,
-    source: 'NIST XPS',
-  },
-  // Cobalt ferrite surface-state references
-  {
-    element: 'Co',
-    orbital: '2p3/2',
-    state: 'Co(II/III)',
-    bindingEnergy: 780.0,
-    tolerance: 0.5,
-    diagnosticWeight: 1.0,
-    isPrimary: true,
-    satelliteExpected: true,
-    satelliteRange: [785, 790],
-    source: 'bounded demo reference',
-  },
-  {
-    element: 'Co',
-    orbital: '2p1/2',
-    state: 'Co(II/III)',
-    bindingEnergy: 795.5,
-    tolerance: 0.5,
-    diagnosticWeight: 0.8,
-    isPrimary: false,
-    satelliteExpected: false,
-    source: 'bounded demo reference',
-  },
-  {
-    element: 'Fe',
-    orbital: '2p3/2',
-    state: 'Fe(III)',
-    bindingEnergy: 710.8,
-    tolerance: 0.5,
-    diagnosticWeight: 1.0,
-    isPrimary: true,
-    satelliteExpected: false,
-    source: 'bounded demo reference',
-  },
-  {
-    element: 'Fe',
-    orbital: '2p1/2',
-    state: 'Fe(III)',
-    bindingEnergy: 724.4,
-    tolerance: 0.5,
-    diagnosticWeight: 0.8,
-    isPrimary: false,
-    satelliteExpected: false,
-    source: 'bounded demo reference',
-  },
-  // Carbon references
-  {
-    element: 'C',
-    orbital: '1s',
-    state: 'C(0)',
-    bindingEnergy: 284.8,
-    tolerance: 0.3,
-    diagnosticWeight: 1.0,
-    isPrimary: true,
-    satelliteExpected: false,
-    source: 'NIST XPS',
-  },
-  {
-    element: 'C',
-    orbital: '1s',
-    state: 'C(+2)',
-    bindingEnergy: 286.5,
-    tolerance: 0.3,
-    diagnosticWeight: 0.9,
-    isPrimary: true,
-    satelliteExpected: false,
-    source: 'NIST XPS',
-  },
-  {
-    element: 'C',
-    orbital: '1s',
-    state: 'C(+4)',
-    bindingEnergy: 288.2,
-    tolerance: 0.3,
-    diagnosticWeight: 0.9,
-    isPrimary: true,
-    satelliteExpected: false,
-    source: 'NIST XPS',
-  },
-];
+/**
+ * Format a runner-facing chemical-state label from canonical (element,
+ * oxidationState). Keeps the existing display notation (Cu⁺, Cu²⁺, Fe³⁺,
+ * Co(II/III), C(0)/C(+2)/C(+4), O²⁻) so downstream summaries are unchanged.
+ */
+function formatStateLabel(element: string, oxidationState: string): string {
+  if (element === 'C') {
+    const carbonMap: Record<string, string> = {
+      '0': 'C(0)',
+      '2+': 'C(+2)',
+      '4+': 'C(+4)',
+    };
+    return carbonMap[oxidationState] ?? `C ${oxidationState}`;
+  }
+  if (oxidationState === '2+/3+') return `${element}(II/III)`;
+  const superscript: Record<string, string> = {
+    '0': '⁰',
+    '1+': '⁺',
+    '2+': '²⁺',
+    '3+': '³⁺',
+    '4+': '⁴⁺',
+    '2-': '²⁻',
+  };
+  return `${element}${superscript[oxidationState] ?? oxidationState}`;
+}
+
+/**
+ * Derive the runner's peak-matching reference database from the canonical
+ * XPS_REFERENCE_DATA (single source of truth — no parallel reference table).
+ * Runner-specific fields (diagnosticWeight, isPrimary, satelliteExpected,
+ * satelliteRange) are derived deterministically from the canonical entry.
+ */
+function buildReferenceDatabaseFromCanonical(
+  refs: XpsCoreLevelReference[]
+): XpsReference[] {
+  return refs.map((ref) => {
+    const isPrimary = ref.coreLevel.endsWith('3/2') || ref.coreLevel === '1s';
+    const satelliteExpected =
+      ref.satelliteOffset != null && ref.satelliteIntensity != null;
+    const satelliteRange: [number, number] | undefined = satelliteExpected
+      ? [
+          Number((ref.bindingEnergy + (ref.satelliteOffset as number) - 2.5).toFixed(1)),
+          Number((ref.bindingEnergy + (ref.satelliteOffset as number) + 2.5).toFixed(1)),
+        ]
+      : undefined;
+    return {
+      element: ref.element,
+      orbital: ref.coreLevel,
+      state: formatStateLabel(ref.element, ref.oxidationState),
+      bindingEnergy: ref.bindingEnergy,
+      tolerance: ref.uncertainty,
+      diagnosticWeight: isPrimary ? 1.0 : 0.8,
+      isPrimary,
+      satelliteExpected,
+      satelliteRange,
+      source: ref.literatureSource,
+    };
+  });
+}
+
+const XPS_REFERENCE_DATABASE: XpsReference[] =
+  buildReferenceDatabaseFromCanonical(XPS_REFERENCE_DATA);
 
 interface PeakMatch {
   peak: XpsPeak;
@@ -377,7 +322,7 @@ interface SatelliteEvidence {
   intensity: number;
 }
 
-interface StateAggregation {
+export interface StateAggregation {
   element: string;
   state: string;
   matchedOrbitals: string[];
@@ -480,13 +425,13 @@ function aggregateByState(matches: PeakMatch[], allPeaks: XpsPeak[]): StateAggre
       agg.hasPrimary = true;
     }
     
-    // Track spin-orbit partner (for Cu: if we have both 2p3/2 and 2p1/2)
-    if (match.reference.element === 'Cu') {
-      const has2p3_2 = agg.matchedOrbitals.includes('2p3/2');
-      const has2p1_2 = agg.matchedOrbitals.includes('2p1/2');
-      if (has2p3_2 && has2p1_2) {
-        agg.hasSpinOrbitPartner = true;
-      }
+    // Track spin-orbit partner doublet detection for any element (e.g., 2p3/2 and 2p1/2, 3d5/2 and 3d3/2, 4f7/2 and 4f5/2)
+    const orbitals = agg.matchedOrbitals;
+    const has2pDoublet = orbitals.includes('2p3/2') && orbitals.includes('2p1/2');
+    const has3dDoublet = orbitals.includes('3d5/2') && orbitals.includes('3d3/2');
+    const has4fDoublet = orbitals.includes('4f7/2') && orbitals.includes('4f5/2');
+    if (has2pDoublet || has3dDoublet || has4fDoublet) {
+      agg.hasSpinOrbitPartner = true;
     }
     
     // Check satellite support for Cu²⁺
@@ -575,21 +520,24 @@ function generateScientificSummary(stateAggregations: StateAggregation[]): strin
     return 'No chemical state assignments; insufficient peak matches';
   }
   
+  // Group elements first
+  const elementsFound = Array.from(new Set(stateAggregations.map(a => a.element)));
+  
   // Sort by total score (dominant state first)
   const sorted = [...stateAggregations].sort((a, b) => b.totalScore - a.totalScore);
   
   const dominant = sorted[0];
   const minor = sorted.slice(1);
   
-  let summary = '';
+  let summary = `Survey XPS scan indicates presence of: ${elementsFound.join(', ')}. `;
   
   // Use per-state confidence
   if (dominant.confidence === 'low') {
-    summary = `Tentative assignment: ${dominant.state}`;
+    summary += `Tentative assignment: ${dominant.state}`;
   } else if (dominant.confidence === 'medium') {
-    summary = `${dominant.state} likely present`;
+    summary += `${dominant.state} likely present`;
   } else {
-    summary = `${dominant.state} dominant`;
+    summary += `${dominant.state} dominant`;
   }
   
   // Add satellite evidence for Cu²⁺
@@ -767,7 +715,24 @@ export function runXpsProcessing(
   // Step 4: Peak Detection
   let peaks = detectPeaks(bindingEnergy, smoothedIntensity, peakProminence, peakMinDistance);
   processingSteps.push(`Peak detection: ${peaks.length} peaks found`);
-  
+
+  // Step 4b: Region focus (survey-first). Survey = authoritative full set. A
+  // specific element region keeps the SAME detected peaks but filters to that
+  // core-level window (strict subset — never a divergent peak set).
+  const region = params?.region;
+  const regionWindow = region ? getRegionWindowByValue(region) : undefined;
+  if (regionWindow) {
+    const before = peaks.length;
+    peaks = peaks.filter(
+      (p) => p.bindingEnergy >= regionWindow.min && p.bindingEnergy <= regionWindow.max
+    );
+    processingSteps.push(
+      `Region focus: ${region} (${regionWindow.min}-${regionWindow.max} eV) → ${peaks.length}/${before} peaks in region`
+    );
+  } else if (region && region !== 'Survey') {
+    processingSteps.push(`Region focus: ${region} (no canonical window; survey set retained)`);
+  }
+
   // Step 5: Peak Fitting
   peaks = fitPeaks(peaks, peakModel);
   processingSteps.push(`Peak fitting: ${peakModel} model`);
@@ -813,6 +778,7 @@ export function runXpsProcessing(
       fittingMaxIterations,
       bindingEnergyTolerance,
       useIntensity,
+      region: region ?? 'Survey',
     },
   };
 }
