@@ -45,6 +45,7 @@ interface GraphProps {
   /** Optional axis labels for uploaded or externally mapped signals */
   xAxisLabel?: string;
   yAxisLabel?: string;
+  onChartClick?: (x: number, y: number) => void;
 }
 
 // ── Internal data types ──────────────────────────────────────────────
@@ -325,12 +326,16 @@ function PeakMarkerDot(props: {
   cy?: number;
   payload?: ExternalSpectrumPoint;
   peakMarkers: PeakMarker[];
+  type?: SpectrumType;
 }) {
-  const { cx, cy, payload, peakMarkers } = props;
+  const { cx, cy, payload, peakMarkers, type = 'xrd' } = props;
   if (!cx || !cy || !payload) return null;
 
+  // Technique-specific threshold for peak matching (in degrees 2-theta, eV, or cm-1)
+  const threshold = type === 'xrd' ? 0.15 : type === 'xps' ? 0.5 : type === 'ftir' ? 5.0 : 2.0;
+
   const marker = peakMarkers.find(
-    (m) => Math.abs(m.position - payload.x) < 0.15,
+    (m) => Math.abs(m.position - payload.x) < threshold,
   );
   if (!marker) return null;
 
@@ -370,6 +375,7 @@ export function Graph({
   peakMarkers,
   xAxisLabel,
   yAxisLabel,
+  onChartClick,
 }: GraphProps) {
   const useExternal = !!externalData && externalData.length > 0;
 
@@ -420,7 +426,22 @@ export function Graph({
     return (
       <div className="w-full" style={containerStyle}>
         <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
-          <LineChart data={externalChartData} margin={{ top: 18, right: 24, bottom: 24, left: 24 }}>
+          <LineChart
+            data={externalChartData}
+            margin={{ top: 18, right: 24, bottom: 24, left: 24 }}
+            onClick={(nextState: any) => {
+              if (nextState && nextState.activeLabel !== undefined && onChartClick) {
+                const clickedX = Number(nextState.activeLabel);
+                const activePayload = nextState.activePayload;
+                let clickedY = 0;
+                if (activePayload && activePayload.length > 0) {
+                  const obsObj = activePayload.find((p: any) => p.dataKey === 'observed' || p.name === 'observed');
+                  clickedY = obsObj ? Number(obsObj.value) : Number(activePayload[0].value);
+                }
+                onChartClick(clickedX, clickedY);
+              }
+            }}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} />
             <XAxis
               dataKey="x"
@@ -558,6 +579,7 @@ export function Graph({
                         key={`dot-${dotProps.index}`}
                         {...dotProps}
                         peakMarkers={markers}
+                        type={type}
                       />
                     )
                   : false
@@ -586,7 +608,22 @@ export function Graph({
   return (
     <div className="w-full" style={containerStyle}>
       <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
-        <LineChart data={internalData} margin={{ top: 18, right: 24, bottom: 24, left: 24 }}>
+        <LineChart
+          data={internalData}
+          margin={{ top: 18, right: 24, bottom: 24, left: 24 }}
+          onClick={(nextState: any) => {
+            if (nextState && nextState.activeLabel !== undefined && onChartClick) {
+              const clickedX = Number(nextState.activeLabel);
+              const activePayload = nextState.activePayload;
+              let clickedY = 0;
+              if (activePayload && activePayload.length > 0) {
+                const obsObj = activePayload.find((p: any) => p.dataKey === 'observed' || p.name === 'observed');
+                clickedY = obsObj ? Number(obsObj.value) : Number(activePayload[0].value);
+              }
+              onChartClick(clickedX, clickedY);
+            }
+          }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} />
           <XAxis
             dataKey="x"

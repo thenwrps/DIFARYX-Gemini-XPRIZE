@@ -52,7 +52,8 @@ import {
   type XRDParameterOption,
 } from '../../config/xrdParameterOptions';
 import { ParameterControlField } from './ParameterControlField';
-import { TechniqueEvidenceRail } from './TechniqueEvidenceRail';
+import { TechniqueEvidenceRail, MetadataRow } from './TechniqueEvidenceRail';
+import { PeriodicTablePicker } from './PeriodicTablePicker';
 import {
   getAnalysisSession,
   getStatusLabel,
@@ -100,6 +101,10 @@ import {
 } from '../../data/uploadedSignalRuns';
 import { RawFileUpload } from './RawFileUpload';
 import { RawFileUploadModal } from './RawFileUploadModal';
+import { XpsElementAnalysisPanel } from './xps/XpsElementAnalysisPanel';
+import { listReferenceElements, getElementRegionWindow } from '../../data/xpsReferenceData';
+import { saveXpsElementEvidence } from '../../data/xpsElementEvidence';
+import type { XpsElementEvidence } from '../../agent/mcp/types';
 import { runXrdPhaseIdentificationAgent, preprocess_xrd, detect_xrd_peaks, type XrdProcessingParams } from '../../agents/xrdAgent/runner';
 import { getXrdProcessingParams, getXrdParameterSnapshot, xrdToFlatParameters, flatToXrdParameters } from '../../utils/xrdParameterAdapter';
 import {
@@ -1022,13 +1027,48 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     if (technique !== 'xrd') return [];
     const uploadedRunId = routeContext.uploadedRunId ?? quickAnalysisSession?.uploadedRunId ?? null;
     const uploadedRun = uploadedRunId ? getUploadedRunById(uploadedRunId) : null;
+    let points: { x: number; y: number }[] = [];
     if (uploadedRun?.technique === 'XRD' && uploadedRun.points?.length > 0) {
-      return uploadedRun.points.map(p => ({ x: p.x, y: p.y }));
+      points = uploadedRun.points.map(p => ({ x: p.x, y: p.y }));
+    } else if (graphData?.data) {
+      points = graphData.data.map(p => ({ x: p.x, y: p.y }));
     }
-    if (graphData?.data) {
-      return graphData.data.map(p => ({ x: p.x, y: p.y }));
+    
+    if (points.length === 0) return [];
+
+    points.sort((a, b) => a.x - b.x);
+
+    // Bin and average points with nearly identical X values to handle multi-scan files
+    // and guarantee strictly monotonically increasing X for physical algorithms
+    const deduplicatedPoints: { x: number; y: number }[] = [];
+    let currentBin: { xSum: number; ySum: number; count: number } | null = null;
+    const BIN_SIZE = 0.005;
+
+    for (const p of points) {
+      if (!currentBin) {
+        currentBin = { xSum: p.x, ySum: p.y, count: 1 };
+      } else {
+        if (p.x - (currentBin.xSum / currentBin.count) < BIN_SIZE) {
+          currentBin.xSum += p.x;
+          currentBin.ySum += p.y;
+          currentBin.count += 1;
+        } else {
+          deduplicatedPoints.push({
+            x: currentBin.xSum / currentBin.count,
+            y: currentBin.ySum / currentBin.count
+          });
+          currentBin = { xSum: p.x, ySum: p.y, count: 1 };
+        }
+      }
     }
-    return [];
+    if (currentBin) {
+      deduplicatedPoints.push({
+        x: currentBin.xSum / currentBin.count,
+        y: currentBin.ySum / currentBin.count
+      });
+    }
+
+    return deduplicatedPoints;
   }, [technique, routeContext.uploadedRunId, quickAnalysisSession?.uploadedRunId, graphData?.data]);
 
   const processedXrdData = useMemo(() => {
@@ -1064,7 +1104,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       } else if (smoothingMethod === 'moving_average') {
         methodMapped = 'Moving Average';
       }
-      processed = applySmoothing(processed, methodMapped);
+      processed = applySmoothing(processed, methodMapped, xrdParameters.smoothing.windowSize, xrdParameters.smoothing.polynomialOrder);
     }
 
     return processed;
@@ -1077,6 +1117,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     xrdParameters.baseline.lambda,
     xrdParameters.smoothing.method,
     xrdParameters.smoothing.windowSize,
+    xrdParameters.smoothing.polynomialOrder,
   ]);
   const xrdHasFiniteSignal = useMemo(() => {
     if (technique !== 'xrd') return false;
@@ -1112,6 +1153,8 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     [isQuickMode, isUploadedContext, uploadedContextKey, technique, quickSessionKey, projectId, project],
   );
   const [activeCenterTab, setActiveCenterTab] = useState(config.centerTabs[0].id);
+  // XPS element-selection (survey-first view-layer focus; no recalculation).
+  const [selectedElement, setSelectedElement] = useState<string | null>(null);
   const [activeRightTab, setActiveRightTab] = useState<RightTab>('Evidence');
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
 
@@ -1128,38 +1171,94 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       ...prev,
       autoMode: false,
     }));
+  };
 
-    // Scroll the corresponding parameter into view on the next tick
-    setTimeout(() => {
-      if (technique === 'xrd') {
-        const getXrdPanelIdForStep = (sid: string): string => {
-          if (sid === 'baseline') return 'baseline';
-          if (sid === 'smooth') return 'smooth';
-          if (sid === 'peaks') return 'peaks';
-          if (sid === 'fit') return 'fit';
-          if (sid === 'match') return 'match_ref';
-          if (sid === 'refinement') return 'boundary';
-          return sid;
-        };
-        const panelId = getXrdPanelIdForStep(stepId);
-        const element = document.getElementById(`param-panel-${panelId}`);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-      } else {
-        const affectedControls = config.parameters.filter((c) => c.affectedStepIds.includes(stepId));
-        if (affectedControls.length > 0) {
-          const element = document.getElementById(`param-control-${affectedControls[0].id}`);
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
-        }
-      }
-    }, 100);
+  const handleMarkStepDone = (stepId: string) => {
+    setSessionState((prev) => ({
+      ...prev,
+      pipelineStates: markStepsDone(prev.pipelineStates, [stepId]),
+    }));
   };
 
   const [activeGraphTool, setActiveGraphTool] = useState<GraphToolId>('pan');
   const [isGraphActionsOpen, setIsGraphActionsOpen] = useState(false);
+
+  // Manual peak selection configuration (specifically for FTIR)
+  const manualPeaksStorageKey = `difaryx-manual-peaks:${technique}:${projectId || quickSessionKey || 'standalone'}`;
+  const [ftirPeakConfig, setFtirPeakConfig] = useState<{
+    isManual: boolean;
+    peaks: Array<{ position: number; intensity: number; label: string }>;
+  }>(() => {
+    if (typeof window === 'undefined') return { isManual: false, peaks: [] };
+    try {
+      const stored = window.localStorage.getItem(manualPeaksStorageKey);
+      return stored ? JSON.parse(stored) : { isManual: false, peaks: [] };
+    } catch {
+      return { isManual: false, peaks: [] };
+    }
+  });
+
+  // Sync manual peaks configuration to localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(manualPeaksStorageKey, JSON.stringify(ftirPeakConfig));
+  }, [ftirPeakConfig, manualPeaksStorageKey]);
+
+  const handleChartClick = (clickedX: number, clickedY: number) => {
+    if (technique !== 'ftir' || activeGraphTool !== 'select') return;
+
+    const dataPoints = graphData?.data || [];
+    if (dataPoints.length === 0) return;
+
+    // Find the closest point in the spectrum data
+    let closestPt = dataPoints[0];
+    let minDistance = Math.abs(dataPoints[0].x - clickedX);
+
+    for (let i = 1; i < dataPoints.length; i++) {
+      const dist = Math.abs(dataPoints[i].x - clickedX);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestPt = dataPoints[i];
+      }
+    }
+
+    if (minDistance > 100) return;
+
+    // Initialize with auto-detected peaks if transitioning to manual mode for the first time
+    let currentPeaks = ftirPeakConfig.isManual
+      ? [...ftirPeakConfig.peaks]
+      : [...(graphData?.peaks || [])];
+
+    const tolerance = 25; // 25 cm-1 proximity tolerance
+    const existingIndex = currentPeaks.findIndex(
+      (p) => Math.abs(p.position - closestPt.x) < tolerance
+    );
+
+    if (existingIndex > -1) {
+      // Toggle off: remove peak
+      const removed = currentPeaks.splice(existingIndex, 1)[0];
+      setSessionState((prev) =>
+        addLog(prev, `[peaks] Manually removed peak near ${removed.position.toFixed(0)} cm⁻¹`),
+      );
+    } else {
+      // Toggle on: add peak
+      currentPeaks.push({
+        position: Number(closestPt.x.toFixed(1)),
+        intensity: closestPt.y, // y is observed transmittance
+        label: 'Manual Peak',
+      });
+      currentPeaks.sort((a, b) => b.position - a.position);
+      setSessionState((prev) =>
+        addLog(prev, `[peaks] Manually added peak at ${closestPt.x.toFixed(0)} cm⁻¹`),
+      );
+    }
+
+    setFtirPeakConfig({
+      isManual: true,
+      peaks: currentPeaks,
+    });
+  };
+
   const [sessionState, setSessionState] = useState(() =>
     buildDefaultSession(sessionStorageKey, config, hasProjectEvidence, Boolean(project), quickAnalysisSession),
   );
@@ -1211,6 +1310,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     setActiveCenterTab(config.centerTabs[0].id);
     setActiveRightTab('Evidence');
     setIsGraphActionsOpen(false);
+    setSelectedElement(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [technique]);
 
@@ -1352,9 +1452,21 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         detail: `Intensity ${feature.intensity}`,
       }))
     : projectFeatureRows;
-  const featureRows = isUploadedContext
-    ? getQuickFeatureRows(quickAnalysisSession, snapshotFeatureRows)
-    : isQuickMode ? getQuickFeatureRows(quickAnalysisSession, projectFeatureRows) : projectFeatureRows;
+
+  const ftirManualFeatureRows = useMemo(() => {
+    if (technique !== 'ftir' || !ftirPeakConfig.isManual) return null;
+    return ftirPeakConfig.peaks.map((p) => ({
+      label: p.label || 'Manual Peak',
+      value: `${p.position.toFixed(1)}`,
+      detail: `Intensity ${p.intensity.toFixed(2)}`,
+    }));
+  }, [technique, ftirPeakConfig]);
+
+  const featureRows = (technique === 'ftir' && ftirPeakConfig.isManual && ftirManualFeatureRows)
+    ? ftirManualFeatureRows
+    : (isUploadedContext
+        ? getQuickFeatureRows(quickAnalysisSession, snapshotFeatureRows)
+        : isQuickMode ? getQuickFeatureRows(quickAnalysisSession, projectFeatureRows) : projectFeatureRows);
 
   const [industryFilter, setIndustryFilter] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -1408,6 +1520,97 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       extractedFeatures: updatedFeatures
     });
   }, [industryFilter, routeContext.uploadedRunId, isUploadedContext, technique]);
+
+  // Synchronize manual FTIR peaks back to the analysis session and uploaded run
+  useEffect(() => {
+    if (technique !== 'ftir') return;
+
+    const isManual = ftirPeakConfig.isManual;
+    const activePeaks = isManual ? ftirPeakConfig.peaks : (graphData?.peaks || []);
+
+    const matched = identifyMaterialFeatures(
+      activePeaks.map(p => ({ position: p.position, intensity: p.intensity })),
+      'FTIR',
+      industryFilter
+    );
+
+    // 1. Sync to Uploaded Runs list in local storage
+    const uploadedRunId = routeContext.uploadedRunId || quickAnalysisSession?.uploadedRunId;
+    if (uploadedRunId) {
+      const uploadedRun = getUploadedRunById(uploadedRunId);
+      if (uploadedRun) {
+        const updatedFeatures = activePeaks.map((p, index) => {
+          const match = matched[index];
+          const label = (match && match.assignment !== 'Unassigned') ? match.assignment : (p.label || 'Peak');
+          return {
+            id: `ftir-${isManual ? 'manual' : 'auto'}-${index}`,
+            technique: 'FTIR' as const,
+            label: `${label} (${match?.confidence ?? 100}%)`,
+            position: p.position,
+            intensity: p.intensity,
+            relativeIntensity: p.intensity,
+            context: label
+          };
+        });
+        
+        updateUploadedRunProcessingResults(uploadedRunId, {
+          extractedFeatures: updatedFeatures
+        });
+      }
+    }
+
+    // 2. Sync to Quick Analysis Session in local storage
+    const activeSessionId = quickAnalysisSession?.analysisId || querySessionId;
+    if (activeSessionId) {
+      const session = getAnalysisSession(activeSessionId);
+      if (session) {
+        const updatedMarkers = activePeaks.map((p, index) => {
+          const match = matched[index];
+          const label = (match && match.assignment !== 'Unassigned') ? match.assignment : (p.label || 'Peak');
+          return {
+            position: p.position,
+            intensity: p.intensity,
+            label: `${label} (${match?.confidence ?? 100}%)`
+          };
+        });
+        
+        const updatedFeatures = activePeaks.map((p, index) => {
+          const match = matched[index];
+          const label = (match && match.assignment !== 'Unassigned') ? match.assignment : (p.label || 'Peak');
+          return {
+            id: `ftir-${isManual ? 'manual' : 'auto'}-${index}`,
+            label: `${label} (${match?.confidence ?? 100}%)`,
+            values: {
+              wavenumber: `${p.position.toFixed(1)} cm-1`,
+              intensity: p.intensity.toFixed(2),
+              assignment: label,
+              confidence: String(match?.confidence ?? 100)
+            }
+          };
+        });
+
+        saveAnalysisSession({
+          ...session,
+          extractedFeatures: updatedFeatures,
+          graphData: {
+            ...session.graphData,
+            markers: updatedMarkers
+          }
+        });
+      }
+    }
+  }, [
+    ftirPeakConfig.isManual,
+    ftirPeakConfig.peaks,
+    graphData?.peaks,
+    industryFilter,
+    technique,
+    routeContext.uploadedRunId,
+    quickAnalysisSession?.uploadedRunId,
+    quickAnalysisSession?.analysisId,
+    querySessionId
+  ]);
+
 
   // Auto-run peak detection and phase matching for XRD when parameters or industryFilter changes
   useEffect(() => {
@@ -1517,18 +1720,22 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   ]);
 
   const mappedPeakMarkers = useMemo(() => {
-    if (!graphData?.peaks || graphData.peaks.length === 0) return [];
+    const peaksToMap = (technique === 'ftir' && ftirPeakConfig.isManual)
+      ? ftirPeakConfig.peaks.map(p => ({ ...p, role: 'selected' as const }))
+      : (graphData?.peaks || []);
+
+    if (peaksToMap.length === 0) return [];
     if (technique !== 'xrd' && technique !== 'ftir' && technique !== 'raman') {
-      return graphData.peaks;
+      return peaksToMap;
     }
 
     const matched = identifyMaterialFeatures(
-      graphData.peaks,
+      peaksToMap,
       technique.toUpperCase() as 'XRD' | 'FTIR' | 'RAMAN',
       industryFilter
     );
 
-    return graphData.peaks.map((peak, index) => {
+    return peaksToMap.map((peak, index) => {
       const match = matched[index];
       if (match && match.assignment !== 'Unassigned') {
         return {
@@ -1541,7 +1748,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         label: peak.label || 'Unassigned',
       };
     });
-  }, [graphData?.peaks, technique, industryFilter]);
+  }, [graphData?.peaks, ftirPeakConfig, technique, industryFilter]);
 
   const mappedFeatureRows = useMemo(() => {
     if (!featureRows || featureRows.length === 0) return [];
@@ -1570,6 +1777,56 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       return row;
     });
   }, [featureRows, technique, industryFilter]);
+
+  // ── XPS element-selection analysis (survey-first, view-layer) ──
+  // Authoritative survey spectrum points reused by the element sub-view.
+  const xpsSpectrumPoints = useMemo<{ x: number; y: number }[]>(() => {
+    if (technique !== 'xps' || !graphData?.data) return [];
+    return graphData.data.map((p) => ({ x: p.x, y: p.y }));
+  }, [technique, graphData?.data]);
+
+  // Current XPS processing parameters (calibration, background, region...).
+  const xpsProcessingParams = useMemo(
+    () => (technique === 'xps' && projectId ? getXpsProcessingParams(projectId) : undefined),
+    [technique, projectId, sessionState.parameters],
+  );
+
+  // Elements detected in the survey = canonical elements whose core-level window
+  // contains at least one detected survey feature.
+  const detectedXpsElements = useMemo<string[]>(() => {
+    if (technique !== 'xps') return [];
+    const positions = mappedFeatureRows
+      .map((row) => parseFloat(String(row.value)))
+      .filter((v) => Number.isFinite(v));
+    if (positions.length === 0) return [];
+    return listReferenceElements().filter((element) => {
+      const window = getElementRegionWindow(element);
+      return window ? positions.some((p) => p >= window.min && p <= window.max) : false;
+    });
+  }, [technique, mappedFeatureRows]);
+
+  const handleElementSelect = (element: string) => {
+    setSelectedElement(element);
+    setActiveCenterTab('element-analysis');
+    setSessionState((prev) => addLog(prev, `[element] Focused ${element} core-level region from survey.`));
+  };
+
+  const handleBackToSurvey = () => {
+    setSelectedElement(null);
+    setActiveCenterTab(config.centerTabs[0].id);
+  };
+
+  // Persist element-focused XPS evidence for the agent reasoning layer.
+  const handleElementEvidence = (evidence: XpsElementEvidence) => {
+    saveXpsElementEvidence(projectId, evidence);
+    setSessionState((prev) =>
+      addLog(
+        prev,
+        `[element] Captured ${evidence.selectedElement} oxidation-state evidence (${evidence.candidateStates.length} candidate state${evidence.candidateStates.length === 1 ? '' : 's'}) for agent reasoning.`,
+      ),
+    );
+  };
+
   const demoLinkSuffix = project && effectiveWorkspaceMode !== 'user' ? '&mode=demo' : '';
   const evidenceRouteSearch = isUploadedContext
     ? buildEvidenceRouteSearch(routeContext)
@@ -1664,14 +1921,18 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     });
   };
 
-  const applyParameters = () => {
+  const applyParameters = (overrideAffectedSteps?: string[]) => {
+    const stepsToMark = overrideAffectedSteps || (sessionState.lastAffectedStepIds.length > 0
+      ? sessionState.lastAffectedStepIds
+      : config.pipeline.slice(0, 3).map((step) => step.id));
+
     setSessionState((prev) =>
       addLog(
         {
           ...prev,
           dirty: false,
           pendingRecalculation: true,
-          pipelineStates: markAffectedSteps(prev.pipelineStates, previewAffectedSteps, 'active', 'pending'),
+          pipelineStates: markAffectedSteps(prev.pipelineStates, stepsToMark, 'active', 'pending'),
         },
         'Parameters applied to processing session.',
       ),
@@ -2544,34 +2805,9 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
           >
             {formatChemicalFormula(datasetLabel)}
           </span>
-          <span className="ml-1 shrink-0 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-            {config.fullName}
-          </span>
-          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusBadgeClass(datasetStatus)}`}>
-            {datasetStatus}
-          </span>
-          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${getRuntimeBadgeClass(runtimeContext)}`}>
-            {getRuntimeBadgeLabel(runtimeContext, 'source')}
-          </span>
-          {(isQuickMode || isUploadedContext) && (
-            <>
-              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-700">
-                Session ID: {quickAnalysisSession?.analysisId ?? querySessionId ?? quickSessionKey}
-              </span>
-              <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                Project: Not attached
-              </span>
-              <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                {quickStatusLabel}
-              </span>
-            </>
-          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {/* Backend Status Badges */}
-          <BackendStatusBadge type="XRD" status={xrdStatus} />
-          <BackendStatusBadge type="Agent" status={agentStatus} />
 
           <Link
             to={isQuickMode ? '/workspace' : '/workspace'}
@@ -2650,6 +2886,86 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
           exportPath={analysisReturnPath}
           onStepClick={handleStepClick}
           selectedStepId={selectedStepId}
+          extraMetadata={config.id === 'xrd' ? [
+            { 
+              label: 'Identity', 
+              value: (
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-bold text-text-main leading-tight">{xrdDatasetContext.identitySource}</span>
+                  <span className="text-[9px] font-medium text-text-muted leading-tight">{xrdDatasetContext.identityConfidence}</span>
+                </div>
+              ) 
+            },
+            { label: 'Analysis mode', value: industryFilter === 'All' ? 'Standard' : industryFilter }
+          ] : undefined}
+          datasetEditor={config.id === 'xrd' && (
+            <div>
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-primary">Dataset Context</p>
+              <div className="grid grid-cols-1 gap-1">
+                <XRDTextField
+                  label="Sample name"
+                  value={xrdDatasetContext.sampleName ?? ''}
+                  onChange={(sampleName) => setXrdDatasetContext(current => ({ ...current, sampleName: sampleName || undefined }))}
+                  placeholder="e.g. CoFe2O4/SBA-15"
+                  variant="compact"
+                />
+                <XRDTextField
+                  label="Material class"
+                  value={xrdDatasetContext.materialClass ?? ''}
+                  onChange={(materialClass) => setXrdDatasetContext(current => ({ ...current, materialClass: materialClass || undefined }))}
+                  placeholder="e.g. supported spinel ferrite catalyst"
+                  variant="compact"
+                />
+                <PeriodicTablePicker
+                  label="Known elements"
+                  value={xrdDatasetContext.knownElements.join(', ')}
+                  onChange={(value) => setXrdDatasetContext(current => ({ ...current, knownElements: parseXrdListInput(value) }))}
+                  placeholder="e.g. Co, Fe, O, Si"
+                  variant="compact"
+                />
+                <XRDTextField
+                  label="Declared phases"
+                  value={xrdDatasetContext.declaredPhases.join(', ')}
+                  onChange={(value) => setXrdDatasetContext(current => ({ ...current, declaredPhases: parseXrdListInput(value) }))}
+                  placeholder="e.g. CoFe2O4, SBA-15"
+                  variant="compact"
+                />
+                <XRDSelectField
+                  label="Reference source"
+                  value={xrdDatasetContext.referenceSource}
+                  options={XRD_REFERENCE_SOURCE_OPTIONS}
+                  onChange={(referenceSource) => {
+                    setXrdDatasetContext(current => ({ ...current, referenceSource }));
+                    setXrdParameters(current => ({
+                      ...current,
+                      referenceMatch: { ...current.referenceMatch, referenceSource },
+                    }));
+                  }}
+                  variant="compact"
+                />
+                <XRDSelectField
+                  label="Analysis mode"
+                  value={industryFilter}
+                  options={[
+                    { value: "All", label: "All Compounds (Standard)" },
+                    { value: "Active Pharmaceutical Ingredients (APIs)", label: "APIs" },
+                    { value: "Organic Chemistry", label: "Organic Chemistry" },
+                    { value: "Polymers & Macromolecules", label: "Polymers & Macromolecules" },
+                    { value: "Polymer Science", label: "Polymer Science" },
+                    { value: "Energy Storage", label: "Energy Storage" },
+                    { value: "Semiconductors", label: "Semiconductors" },
+                    { value: "Solid State Physics", label: "Solid State Physics" },
+                    { value: "Zeolites", label: "Zeolites" },
+                    { value: "Catalysts", label: "Catalysts" },
+                    { value: "Minerals", label: "Minerals" },
+                    { value: "Inorganic Chemistry", label: "Inorganic Chemistry" },
+                  ]}
+                  onChange={handleIndustryFilterChange}
+                  variant="compact"
+                />
+              </div>
+            </div>
+          )}
         />
 
         <main
@@ -2744,19 +3060,126 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
               </div>
             </div>
 
-            {activeCenterTab === config.centerTabs[0].id && graphData ? (
-              <div className="min-h-[420px] flex-1 p-2">
-                <Graph
-                  type={technique}
-                  height="100%"
-                  externalData={technique === 'xrd' && processedXrdData ? processedXrdData : graphData.data}
-                  peakMarkers={mappedPeakMarkers}
-                  xAxisLabel={graphData.xLabel}
-                  yAxisLabel={graphData.yLabel}
-                  showBackground={false}
-                  showCalculated={false}
-                  showResidual={false}
+            {technique === 'xps' && activeCenterTab === 'element-analysis' ? (
+              selectedElement ? (
+                <XpsElementAnalysisPanel
+                  element={selectedElement}
+                  spectrumPoints={xpsSpectrumPoints}
+                  processingParams={xpsProcessingParams}
+                  onBackToSurvey={handleBackToSurvey}
+                  onElementEvidence={handleElementEvidence}
                 />
+              ) : (
+                <div className="flex-1 min-h-[300px] flex flex-col items-center justify-center p-8 text-center">
+                  <p className="text-sm font-bold text-text-main">No element selected</p>
+                  <p className="mt-1 max-w-sm text-xs text-text-muted">
+                    Open the Spectrum tab and select a detected element from the survey to focus its
+                    core-level region.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveCenterTab(config.centerTabs[0].id)}
+                    className="mt-4 inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-text-main hover:bg-surface-hover"
+                  >
+                    Go to Survey
+                  </button>
+                </div>
+              )
+            ) : activeCenterTab === config.centerTabs[0].id && graphData ? (
+              <div className="min-h-[420px] flex-1 p-2 flex flex-col">
+                {technique === 'xps' && detectedXpsElements.length > 0 && (
+                  <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded border border-border bg-surface-hover/30 px-2 py-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                      Detected elements
+                    </span>
+                    {detectedXpsElements.map((element) => (
+                      <button
+                        key={element}
+                        type="button"
+                        onClick={() => handleElementSelect(element)}
+                        className="rounded-full border border-border bg-surface px-2.5 py-0.5 text-[11px] font-semibold text-text-main transition-colors hover:border-primary hover:bg-primary/10"
+                        title={`Element selection analysis: ${element}`}
+                      >
+                        {element}
+                      </button>
+                    ))}
+                    <span className="ml-auto text-[10px] italic text-text-muted">
+                      Survey remains the authoritative scan
+                    </span>
+                  </div>
+                )}
+
+                {technique === 'ftir' && (
+                  <div className="mb-2 flex flex-wrap items-center gap-2 rounded border border-red-100 bg-red-50/50 px-2.5 py-1.5 dark:border-red-950/20 dark:bg-red-950/5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-red-700 dark:text-red-400">
+                      Manual Peak Selection
+                    </span>
+                    <span className="text-[11px] text-text-muted">
+                      {activeGraphTool === 'select'
+                        ? '🟢 Click on the spectrum to toggle peak markers.'
+                        : '💡 Select the pointer tool (Pointer icon) above to edit peaks.'}
+                    </span>
+                    
+                    <div className="ml-auto flex items-center gap-1.5">
+                      {ftirPeakConfig.isManual && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[9.5px] font-bold text-red-800 uppercase tracking-wide dark:bg-red-900/25 dark:text-red-300">
+                          {ftirPeakConfig.peaks.length} peaks
+                        </span>
+                      )}
+                      
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFtirPeakConfig({
+                            isManual: true,
+                            peaks: []
+                          });
+                          setSessionState((prev) =>
+                            addLog(prev, '[peaks] Cleared all manual peaks'),
+                          );
+                        }}
+                        className="rounded border border-red-200 bg-white px-2 py-0.5 text-[10px] font-bold text-red-700 transition-colors hover:bg-red-50"
+                        title="Clear all manual peaks"
+                      >
+                        Clear Peaks
+                      </button>
+                      
+                      {ftirPeakConfig.isManual && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFtirPeakConfig({
+                              isManual: false,
+                              peaks: []
+                            });
+                            setSessionState((prev) =>
+                              addLog(prev, '[peaks] Reset to automatically detected peaks'),
+                            );
+                          }}
+                          className="rounded border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-700 transition-colors hover:bg-slate-50"
+                          title="Reset to automatically detected peaks"
+                        >
+                          Reset to Auto
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex-1 min-h-0">
+                  <Graph
+                    type={technique}
+                    height="100%"
+                    externalData={technique === 'xrd' && processedXrdData ? processedXrdData : graphData.data}
+                    peakMarkers={mappedPeakMarkers}
+                    xAxisLabel={graphData.xLabel}
+                    yAxisLabel={graphData.yLabel}
+                    showBackground={false}
+                    showCalculated={false}
+                    showResidual={false}
+                    onChartClick={handleChartClick}
+                  />
+                </div>
               </div>
             ) : activeCenterTab === config.centerTabs[0].id ? (
               <div className="flex-1 min-h-[420px] bg-background/25 p-8 flex flex-col justify-center overflow-y-auto">
@@ -2951,34 +3374,6 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
 
             {activeRightTab === 'Parameters' && (
               <>
-                {/* Analysis Mode / Industry Dropdown */}
-                <div className="mb-3 rounded border border-border bg-background p-2.5 shadow-sm">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label htmlFor="industry-selector" className="block text-[10px] font-bold uppercase tracking-wider text-text-main">
-                      Analysis Mode / Industry
-                    </label>
-                    <span className="rounded bg-primary/10 px-1 py-0.5 text-[9px] font-bold text-primary uppercase">Unified</span>
-                  </div>
-                  <select
-                    id="industry-selector"
-                    value={industryFilter}
-                    onChange={(e) => handleIndustryFilterChange(e.target.value)}
-                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-semibold text-text-main focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="All">All Compounds & Analytical Fields (Standard)</option>
-                    <option value="Active Pharmaceutical Ingredients (APIs)">Active Pharmaceutical Ingredients (APIs)</option>
-                    <option value="Organic Chemistry">Organic Chemistry</option>
-                    <option value="Polymers & Macromolecules">Polymers & Macromolecules</option>
-                    <option value="Polymer Science">Polymer Science</option>
-                    <option value="Energy Storage">Energy Storage</option>
-                    <option value="Semiconductors">Semiconductors</option>
-                    <option value="Solid State Physics">Solid State Physics</option>
-                    <option value="Zeolites">Zeolites</option>
-                    <option value="Catalysts">Catalysts</option>
-                    <option value="Minerals">Minerals</option>
-                    <option value="Inorganic Chemistry">Inorganic Chemistry</option>
-                  </select>
-                </div>
 
                 <ParametersPanel
                   config={config}
@@ -2990,6 +3385,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                   onReprocess={reprocess}
                   onReset={resetParameters}
                   onSavePreset={savePreset}
+                  onMarkStepDone={handleMarkStepDone}
                   processingStateLabel={processingStateLabel}
                   sharedOverrideCount={sharedOverrideCount}
                   xrdParameters={xrdParameters}
@@ -3003,6 +3399,8 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                   onXrdDatasetContextChange={setXrdDatasetContext}
                   onXrdValidationStatusChange={set7E4ValidationStatus}
                   selectedStepId={selectedStepId}
+                  industryFilter={industryFilter}
+                  onIndustryFilterChange={handleIndustryFilterChange}
                 />
               </>
             )}
@@ -3532,6 +3930,7 @@ function ParametersPanel({
   onReprocess,
   onReset,
   onSavePreset,
+  onMarkStepDone,
   processingStateLabel,
   sharedOverrideCount,
   xrdParameters,
@@ -3545,16 +3944,19 @@ function ParametersPanel({
   onXrdDatasetContextChange,
   onXrdValidationStatusChange,
   selectedStepId = null,
+  industryFilter,
+  onIndustryFilterChange,
 }: {
   config: TechniqueWorkspaceConfig;
   sessionState: WorkspaceSessionState;
   affectedStepLabels: string[];
   onChange: (control: TechniqueParameterControl, value: TechniqueParameterValue) => void;
   onToggleCheckbox: (control: TechniqueParameterControl, option: string) => void;
-  onApply: () => void;
+  onApply: (overrideAffectedSteps?: string[]) => void;
   onReprocess: () => void;
   onReset: () => void;
   onSavePreset: () => void;
+  onMarkStepDone: (stepId: string) => void;
   processingStateLabel: string;
   sharedOverrideCount: number;
   xrdParameters: XRDParameters;
@@ -3568,6 +3970,8 @@ function ParametersPanel({
   onXrdDatasetContextChange: React.Dispatch<React.SetStateAction<XRDDatasetContext>>;
   onXrdValidationStatusChange: (status: boolean) => void;
   selectedStepId?: string | null;
+  industryFilter: string;
+  onIndustryFilterChange: (val: string) => void;
 }) {
   if (config.id === 'xrd') {
     return (
@@ -3579,6 +3983,7 @@ function ParametersPanel({
         onReprocess={onReprocess}
         onReset={onReset}
         onSavePreset={onSavePreset}
+        onMarkStepDone={onMarkStepDone}
         processingStateLabel={processingStateLabel}
         sharedOverrideCount={sharedOverrideCount}
         parameters={xrdParameters}
@@ -3592,6 +3997,8 @@ function ParametersPanel({
         onDatasetContextChange={onXrdDatasetContextChange}
         onValidationStatusChange={onXrdValidationStatusChange}
         selectedStepId={selectedStepId}
+        industryFilter={industryFilter}
+        onIndustryFilterChange={onIndustryFilterChange}
       />
     );
   }
@@ -3599,13 +4006,7 @@ function ParametersPanel({
   // Sort parameters: if selectedStepId is active, put affected ones first
   const sortedParameters = React.useMemo(() => {
     if (!selectedStepId) return config.parameters;
-    return [...config.parameters].sort((a, b) => {
-      const aAffected = a.affectedStepIds.includes(selectedStepId);
-      const bAffected = b.affectedStepIds.includes(selectedStepId);
-      if (aAffected && !bAffected) return -1;
-      if (!aAffected && bAffected) return 1;
-      return 0;
-    });
+    return config.parameters.filter((p) => p.affectedStepIds.includes(selectedStepId));
   }, [config.parameters, selectedStepId]);
 
   return (
@@ -3642,9 +4043,21 @@ function ParametersPanel({
 
       <Panel title="Actions" icon={<Play size={13} />}>
         <div className="grid grid-cols-2 gap-2">
+          {selectedStepId && (
+            <button
+              type="button"
+              onClick={() => {
+                onApply([selectedStepId]);
+                onMarkStepDone(selectedStepId);
+              }}
+              className="col-span-2 h-8 rounded bg-green-600 px-2 text-[11px] font-bold text-white hover:bg-green-700"
+            >
+              Save & Mark as Done
+            </button>
+          )}
           <button
             type="button"
-            onClick={onApply}
+            onClick={() => onApply()}
             className="h-8 rounded bg-primary px-2 text-[11px] font-bold text-white hover:bg-primary/90"
           >
             Apply Parameters
@@ -3835,6 +4248,7 @@ function XRDParametersPanel({
   onReprocess,
   onReset,
   onSavePreset,
+  onMarkStepDone,
   processingStateLabel,
   sharedOverrideCount,
   parameters,
@@ -3848,14 +4262,17 @@ function XRDParametersPanel({
   onDatasetContextChange,
   onValidationStatusChange,
   selectedStepId = null,
+  industryFilter,
+  onIndustryFilterChange,
 }: {
   config: TechniqueWorkspaceConfig;
   sessionState: WorkspaceSessionState;
   affectedStepLabels: string[];
-  onApply: () => void;
+  onApply: (overrideAffectedSteps?: string[]) => void;
   onReprocess: () => void;
   onReset: () => void;
   onSavePreset: () => void;
+  onMarkStepDone: (stepId: string) => void;
   processingStateLabel: string;
   sharedOverrideCount: number;
   parameters: XRDParameters;
@@ -3869,6 +4286,8 @@ function XRDParametersPanel({
   onDatasetContextChange: React.Dispatch<React.SetStateAction<XRDDatasetContext>>;
   onValidationStatusChange: (status: boolean) => void;
   selectedStepId?: string | null;
+  industryFilter: string;
+  onIndustryFilterChange: (val: string) => void;
 }) {
   const readiness = getXrdReadinessState({
     hasSignal: hasFiniteSignal,
@@ -4082,61 +4501,6 @@ function XRDParametersPanel({
 
   const allPanels = [
     {
-      id: 'dataset',
-      element: (
-        <Panel key="dataset" title="Dataset Binding Status" icon={<Database size={13} />}>
-          <XRDStatusText tone="info">Dataset context is user-declared.</XRDStatusText>
-          <div className="mt-1.5">
-            <XRDStatusText tone="neutral">New XRD controls remain local frontend state in this phase.</XRDStatusText>
-          </div>
-          <div className="mt-2 space-y-1">
-            <Metric label="Identity source" value={datasetContext.identitySource} />
-            <Metric label="Identity confidence" value={datasetContext.identityConfidence} />
-            <Metric label="Reference binding" value={datasetContext.referenceSetId || 'Reference set required'} />
-          </div>
-          <p className="mt-2 text-[10px] font-bold uppercase tracking-wide text-text-main">Dataset Context</p>
-          <div className="mt-1.5 grid grid-cols-1 gap-2">
-            <XRDTextField
-              label="Sample name"
-              value={datasetContext.sampleName ?? ''}
-              onChange={(sampleName) => updateDatasetField('sampleName', sampleName || undefined)}
-              placeholder="e.g. CoFe2O4/SBA-15"
-            />
-            <XRDTextField
-              label="Material class"
-              value={datasetContext.materialClass ?? ''}
-              onChange={(materialClass) => updateDatasetField('materialClass', materialClass || undefined)}
-              placeholder="e.g. supported spinel ferrite catalyst"
-            />
-            <XRDTextField
-              label="Known elements"
-              value={datasetContext.knownElements.join(', ')}
-              onChange={updateKnownElements}
-              placeholder="e.g. Co, Fe, O, Si"
-            />
-            <XRDTextField
-              label="Declared phases"
-              value={datasetContext.declaredPhases.join(', ')}
-              onChange={updateDeclaredPhases}
-              placeholder="e.g. CoFe2O4, SBA-15"
-            />
-            <XRDSelectField
-              label="Reference source"
-              value={datasetContext.referenceSource}
-              options={XRD_REFERENCE_SOURCE_OPTIONS}
-              onChange={updateReferenceSource}
-            />
-            <XRDTextField
-              label="Reference set id"
-              value={datasetContext.referenceSetId ?? ''}
-              onChange={updateReferenceSetId}
-              placeholder="Reference set id"
-            />
-          </div>
-        </Panel>
-      ),
-    },
-    {
       id: 'readiness',
       element: (
         <XRDReadinessPanel
@@ -4319,11 +4683,61 @@ function XRDParametersPanel({
               step={1}
               onChange={(maxIterations) => updateParameterStage('peakFitting', { maxIterations })}
             />
+            
+            <div className="col-span-2 flex items-center justify-between border-t border-border pt-2 mt-1">
+              <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Refinement Constraints</span>
+            </div>
+            <div className="col-span-2">
+              <XRDToggleField
+                label="Refine FWHM"
+                checked={parameters.peakFitting.refineFWHM ?? true}
+                onChange={(refineFWHM) => updateParameterStage('peakFitting', { refineFWHM })}
+              />
+            </div>
+            <div className="col-span-2">
+              <XRDToggleField
+                label="Refine peak shape (eta)"
+                checked={parameters.peakFitting.refineShape ?? true}
+                onChange={(refineShape) => updateParameterStage('peakFitting', { refineShape })}
+              />
+            </div>
+
+            <div className="col-span-2 flex items-center justify-between border-t border-border pt-2 mt-1">
+              <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Microstructural Analysis</span>
+            </div>
             <div className="col-span-2">
               <XRDToggleField
                 label="Calculate crystallite size"
                 checked={parameters.peakFitting.calculateCrystalliteSize}
                 onChange={(calculateCrystalliteSize) => updateParameterStage('peakFitting', { calculateCrystalliteSize })}
+              />
+            </div>
+            {parameters.peakFitting.calculateCrystalliteSize && (
+              <>
+                <XRDNumberField
+                  label="Scherrer Constant (K)"
+                  value={parameters.peakFitting.scherrerConstant ?? 0.89}
+                  min={0.5}
+                  max={1.5}
+                  step={0.01}
+                  onChange={(scherrerConstant) => updateParameterStage('peakFitting', { scherrerConstant })}
+                />
+                <XRDNumberField
+                  label="Instrumental broadening"
+                  value={parameters.peakFitting.instrumentalBroadening ?? 0.05}
+                  min={0}
+                  max={2}
+                  step={0.01}
+                  unit="deg"
+                  onChange={(instrumentalBroadening) => updateParameterStage('peakFitting', { instrumentalBroadening })}
+                />
+              </>
+            )}
+            <div className="col-span-2">
+              <XRDToggleField
+                label="Calculate microstrain"
+                checked={parameters.peakFitting.calculateMicrostrain ?? false}
+                onChange={(calculateMicrostrain) => updateParameterStage('peakFitting', { calculateMicrostrain })}
               />
             </div>
           </div>
@@ -4338,7 +4752,6 @@ function XRDParametersPanel({
           enabled={parameters.referenceMatch.enabled}
           matchMode={parameters.referenceMatch.matchMode}
           referenceSource={parameters.referenceMatch.referenceSource}
-          referenceSetId={parameters.referenceMatch.referenceSetId}
           candidatePhaseIds={parameters.referenceMatch.candidatePhaseIds}
           toleranceTwoTheta={parameters.referenceMatch.toleranceTwoTheta}
           minMatchedPeaks={parameters.referenceMatch.minMatchedPeaks}
@@ -4351,10 +4764,18 @@ function XRDParametersPanel({
           allowPhasePurityClaim={parameters.referenceMatch.allowPhasePurityClaim}
           matchModeOptions={XRD_MATCH_MODE_OPTIONS}
           referenceSourceOptions={XRD_REFERENCE_SOURCE_OPTIONS}
+          analysisMode={industryFilter}
+          analysisModeOptions={[
+            { value: 'All', label: 'Standard' },
+            { value: 'Semiconductors', label: 'Semiconductors' },
+            { value: 'Energy Storage', label: 'Energy Storage' },
+            { value: 'Pharmaceuticals', label: 'Pharmaceuticals' },
+            { value: 'Advanced Ceramics', label: 'Advanced Ceramics' },
+          ]}
           onEnabledChange={(enabled) => updateParameterStage('referenceMatch', { enabled })}
           onMatchModeChange={(matchMode) => updateParameterStage('referenceMatch', { matchMode: matchMode as XRDMatchMode })}
           onReferenceSourceChange={updateReferenceSource}
-          onReferenceSetIdChange={updateReferenceSetId}
+          onAnalysisModeChange={onIndustryFilterChange}
           onCandidatePhaseIdsChange={updateCandidatePhaseIds}
           onToleranceTwoThetaChange={(toleranceTwoTheta) => updateParameterStage('referenceMatch', { toleranceTwoTheta })}
           onMinMatchedPeaksChange={(minMatchedPeaks) => updateParameterStage('referenceMatch', { minMatchedPeaks })}
@@ -4452,9 +4873,21 @@ function XRDParametersPanel({
             <Metric label="Preset" value={sessionState.presetSavedLabel ? `Saved ${sessionState.presetSavedLabel}` : 'No preset saved'} />
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
+            {selectedStepId && (
+              <button
+                type="button"
+                onClick={() => {
+                  onApply([selectedStepId]);
+                  onMarkStepDone(selectedStepId);
+                }}
+                className="col-span-2 h-8 rounded bg-green-600 px-2 text-[11px] font-bold text-white hover:bg-green-700"
+              >
+                Save & Mark as Done
+              </button>
+            )}
             <button
               type="button"
-              onClick={onApply}
+              onClick={() => onApply()}
               className="h-8 rounded bg-primary px-2 text-[11px] font-bold text-white hover:bg-primary/90"
             >
               Apply Parameters
@@ -4508,7 +4941,6 @@ function XRDParametersPanel({
   };
 
   const panelsOrder = [
-    'dataset',
     'readiness',
     'range_radiation',
     'baseline',
@@ -4522,13 +4954,14 @@ function XRDParametersPanel({
     'history',
   ];
 
-  const sortedPanels = [...allPanels].sort((a, b) => {
-    const aMatched = getPanelStepMatch(a.id, selectedStepId);
-    const bMatched = getPanelStepMatch(b.id, selectedStepId);
-    if (aMatched && !bMatched) return -1;
-    if (!aMatched && bMatched) return 1;
-    return panelsOrder.indexOf(a.id) - panelsOrder.indexOf(b.id);
-  });
+  const sortedPanels = React.useMemo(() => {
+    if (!selectedStepId) {
+      return [...allPanels].sort((a, b) => panelsOrder.indexOf(a.id) - panelsOrder.indexOf(b.id));
+    }
+    return allPanels.filter(
+      (p) => getPanelStepMatch(p.id, selectedStepId) || p.id === 'legacy'
+    ).sort((a, b) => panelsOrder.indexOf(a.id) - panelsOrder.indexOf(b.id));
+  }, [allPanels, selectedStepId]);
 
   return (
     <div className="space-y-2">
@@ -4566,12 +4999,29 @@ function XRDTextField({
   value,
   onChange,
   placeholder,
+  variant = 'default',
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  variant?: 'default' | 'compact';
 }) {
+  if (variant === 'compact') {
+    return (
+      <label className="block">
+        <XRDFieldLabel label={label} />
+        <input
+          type="text"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="mt-0.5 h-7 w-full rounded border border-border bg-white px-2 text-xs font-semibold text-text-main placeholder:font-medium placeholder:text-text-muted focus:border-primary focus:outline-none"
+        />
+      </label>
+    );
+  }
+
   return (
     <label className="block rounded border border-border bg-background px-2 py-1.5">
       <XRDFieldLabel label={label} />
@@ -4624,12 +5074,33 @@ function XRDSelectField<TValue extends string>({
   value,
   options,
   onChange,
+  variant = 'default',
 }: {
   label: string;
   value: TValue;
   options: XRDParameterOption<TValue>[];
   onChange: (value: TValue) => void;
+  variant?: 'default' | 'compact';
 }) {
+  if (variant === 'compact') {
+    return (
+      <label className="block">
+        <XRDFieldLabel label={label} />
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value as TValue)}
+          className="mt-0.5 h-7 w-full rounded border border-border bg-white px-2 text-xs font-semibold text-text-main focus:border-primary focus:outline-none"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
   return (
     <label className="block rounded border border-border bg-background px-2 py-1.5">
       <XRDFieldLabel label={label} />

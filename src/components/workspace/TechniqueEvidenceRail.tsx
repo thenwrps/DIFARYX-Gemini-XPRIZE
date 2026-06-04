@@ -22,6 +22,7 @@ interface DatasetRailState {
 interface TechniqueEvidenceRailProps {
   config: TechniqueWorkspaceConfig;
   dataset: DatasetRailState;
+  extraMetadata?: { label: string; value: React.ReactNode }[];
   pipelineStates: Record<string, PipelineStepState>;
   autoMode: boolean;
   onToggleAutoMode: () => void;
@@ -33,6 +34,7 @@ interface TechniqueEvidenceRailProps {
   exportPath: string;
   onStepClick?: (stepId: string) => void;
   selectedStepId?: string | null;
+  datasetEditor?: React.ReactNode;
 }
 
 function statusBadgeClass(status: string) {
@@ -70,9 +72,9 @@ function formatStateLabel(state: PipelineStepState) {
   return 'pending';
 }
 
-function MetadataRow({ label, value }: { label: string; value: React.ReactNode }) {
+export function MetadataRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[74px_minmax(0,1fr)] gap-2 border-b border-border/60 py-1.5 last:border-b-0">
+    <div className="grid grid-cols-[68px_minmax(0,1fr)] gap-2 border-b border-border/60 py-1 last:border-b-0">
       <dt className="text-[10px] font-bold uppercase tracking-wide text-text-muted">{label}</dt>
       <dd className="min-w-0 break-words text-[11px] font-semibold leading-relaxed text-text-main">{value}</dd>
     </div>
@@ -82,7 +84,9 @@ function MetadataRow({ label, value }: { label: string; value: React.ReactNode }
 function DatasetTab({
   config,
   dataset,
-}: Pick<TechniqueEvidenceRailProps, 'config' | 'dataset'>) {
+  extraMetadata,
+  datasetEditor,
+}: Pick<TechniqueEvidenceRailProps, 'config' | 'dataset' | 'datasetEditor' | 'extraMetadata'>) {
   return (
     <div className="space-y-3">
       <div className="rounded border border-border bg-background p-2">
@@ -107,22 +111,36 @@ function DatasetTab({
 
       <dl className="rounded border border-border bg-background px-2">
         <MetadataRow label="Session ID" value={dataset.sessionId} />
-        <MetadataRow label="Technique" value={`${config.label} / ${config.fullName}`} />
+        <MetadataRow label="Technique" value={
+          <div className="flex flex-col gap-0.5">
+            <span className="font-bold text-text-main leading-tight">{config.label}</span>
+            <span className="text-[9px] font-medium text-text-muted leading-tight">{config.fullName}</span>
+          </div>
+        } />
         <MetadataRow label="Source" value={dataset.source} />
-        <MetadataRow label="Parse state" value={dataset.parseState} />
-        <MetadataRow label="Processing" value={dataset.processingState} />
+        <MetadataRow label="Status" value={
+          <div className="flex flex-col gap-0.5">
+            <span className="font-bold text-text-main leading-tight">{dataset.parseState}</span>
+            <span className="text-[9px] font-medium text-text-muted leading-tight">{dataset.processingState}</span>
+          </div>
+        } />
         <MetadataRow label="Project" value={dataset.projectAttachment} />
-        <MetadataRow label="State" value={dataset.lifecycleState} />
-        <MetadataRow label="Local" value={`${dataset.permissionState} / ${dataset.saveState}`} />
+        <MetadataRow label="State" value={
+          <div className="flex flex-col gap-0.5">
+            <span className="font-bold text-text-main leading-tight">{dataset.lifecycleState}</span>
+            <span className="text-[9px] font-medium text-text-muted leading-tight">{dataset.permissionState} &middot; {dataset.saveState}</span>
+          </div>
+        } />
+        {extraMetadata?.map((item, index) => (
+          <MetadataRow key={`extra-${index}`} label={item.label} value={item.value} />
+        ))}
       </dl>
 
-      <div className="flex flex-wrap gap-1.5">
-        {[dataset.parseState, dataset.processingState, dataset.lifecycleState, dataset.saveState].map((status, index) => (
-          <span key={`${status}-${index}`} className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusBadgeClass(status)}`}>
-            {status}
-          </span>
-        ))}
-      </div>
+      {datasetEditor && (
+        <div className="pt-2">
+          {datasetEditor}
+        </div>
+      )}
     </div>
   );
 }

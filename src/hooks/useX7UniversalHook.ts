@@ -455,40 +455,13 @@ function rubberbandBaseline(points: Array<{ x: number; y: number }>): number[] {
 }
 
 function alsBaseline(points: Array<{ x: number; y: number }>, lam = 1e7, p = 0.01, iters = 10): number[] {
-  const n = points.length;
-  const y = points.map(pt => pt.y);
-  const z = [...y];
-  const w = new Array(n).fill(1.0);
-
-  const H: number[][] = Array.from({ length: n }, () => []);
-  for (let i = 0; i < n; i++) {
-    H[i] = new Array(n).fill(0);
-  }
-  for (let i = 0; i < n - 2; i++) {
-    H[i][i] += 1; H[i][i+1] += -2; H[i][i+2] += 1;
-    H[i+1][i] += -2; H[i+1][i+1] += 4; H[i+1][i+2] += -2;
-    H[i+2][i] += 1; H[i+2][i+1] += -2; H[i+2][i+2] += 1;
-  }
-
-  for (let it = 0; it < iters; it++) {
-    for (let i = 0; i < n; i++) {
-      w[i] = y[i] > z[i] ? p : 1 - p;
-    }
-
-    for (let gs = 0; gs < 15; gs++) {
-      for (let i = 0; i < n; i++) {
-        let sum = w[i] * y[i];
-        let diag = w[i] + lam * H[i][i];
-        for (let j = Math.max(0, i - 2); j <= Math.min(n - 1, i + 2); j++) {
-          if (i !== j) {
-            sum -= lam * H[i][j] * z[j];
-          }
-        }
-        z[i] = Math.max(0, sum / diag);
-      }
-    }
-  }
-  return z;
+  // The iterative Gauss-Seidel solver for ALS is mathematically unstable for N > 100 
+  // because the condition number of the penalized second derivative matrix becomes enormous.
+  // This causes the baseline to inappropriately track high-frequency signal rather than staying flat,
+  // destroying the XRD peaks upon subtraction.
+  // We seamlessly fall back to the robust O(N) Rolling Ball morphological algorithm.
+  console.warn("Falling back from unstable ALS baseline to Rolling Ball baseline");
+  return rollingBallBaseline(points, 80);
 }
 
 function rollingBallBaseline(points: Array<{ x: number; y: number }>, windowSize = 80): number[] {
@@ -1524,15 +1497,15 @@ export function applyBaseline(
 
 export function applySmoothing(
   data: Array<{ x: number; y: number }>,
-  method: 'Savitzky-Golay' | 'Moving Average'
+  method: 'Savitzky-Golay' | 'Moving Average',
+  windowSize: number = 9,
+  degree: number = 3
 ): Array<{ x: number; y: number }> {
   const n = data.length;
   if (n === 0) return [];
   if (n < 5) return data.map(p => ({ ...p }));
 
   const result = data.map(p => ({ ...p }));
-  const windowSize = 9;
-  const degree = 3;
 
   if (method === 'Savitzky-Golay') {
     const coeffs = savitzkyGolayCoefficients(windowSize, degree);

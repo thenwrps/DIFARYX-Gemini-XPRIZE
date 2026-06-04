@@ -47,6 +47,12 @@ import type {
 } from '../data/demoProjects';
 import { generateRunId, saveRun, type AgentRun } from '../data/runModel';
 import { buildEvidencePacket } from '../agent/mcp/evidencePacket';
+import type { XpsElementEvidence } from '../agent/mcp/types';
+import { readLatestXpsElementEvidence } from '../data/xpsElementEvidence';
+import {
+  xpsOxidationStatePeakInputs,
+  detectXpsXrdOxidationContradiction,
+} from '../engines/fusionEngine/xpsOxidationEvidence';
 import { callReasoningAPI } from '../server/api/reasoning';
 import { getProviderStatus } from '../server/llm/router';
 import type { ReasoningOutput, ToolResult } from '../agent/mcp/types';
@@ -131,6 +137,7 @@ import {
   formatLiteratureSearchTrace,
 } from '../types/researchEvidence';
 import { buildClaimBoundaryArtifact } from '../utils/claimBoundaryArtifact';
+import { sanitizeScientificWording } from '../utils/claimBoundaryPresentation';
 
 type TechniqueContext = Technique;
 type AgentMode = 'deterministic' | 'guided' | 'autonomous';
@@ -1320,6 +1327,7 @@ function createDecisionResult(
   option: DatasetOption,
   xrdAnalysis: ReturnType<typeof runXrdPhaseIdentificationAgent> | null,
   llmOutput: ReasoningOutput | null = null,
+  xpsElementEvidence: XpsElementEvidence | null = null,
 ): DecisionResult {
   const { project, dataset } = option;
   const config = CONTEXT_CONFIG[context];
@@ -1334,6 +1342,13 @@ function createDecisionResult(
   } else {
     // Use dataset features
     peakInputs = convertDatasetFeaturesToPeakInput(dataset);
+  }
+
+  // XPS element-focused oxidation-state evidence feeds the fusion engine as
+  // additional evidence nodes, so it participates in candidate support scoring
+  // and contradiction detection (not only in agent basis text).
+  if (context === 'XPS' && xpsElementEvidence) {
+    peakInputs = [...peakInputs, ...xpsOxidationStatePeakInputs(xpsElementEvidence)];
   }
 
   // Create evidence nodes using central fusionEngine function
@@ -2080,6 +2095,9 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         timestamp: entry.timestamp,
       }));
 
+      const xpsElementEvidence =
+        context === 'XPS' ? readLatestXpsElementEvidence(project.id)?.evidence ?? undefined : undefined;
+
       const packet = buildEvidencePacket(
         context,
         dataset,
@@ -2088,6 +2106,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         featureCount,
         baseConfidence,
         mcpToolTrace,
+        xpsElementEvidence,
       );
 
       const response = await callReasoningAPI({
@@ -2174,7 +2193,80 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     fallbackUsed = false,
     lit: LiteratureRunData | null = null,
   ) => {
-    const decision = createDecisionResult(context, option, xrdResult, llmOutput);
+    // XPS element-focused evidence (persisted from the Element Selection
+    // Analysis view) feeds fusion scoring + contradiction detection.
+    const xpsElementEvidence =
+      context === 'XPS' ? readLatestXpsElementEvidence(option.project.id)?.evidence ?? null : null;
+
+    const decision = createDecisionResult(context, option, xrdResult, llmOutput, xpsElementEvidence);
+
+    // Collected XPS↔XRD oxidation-state contradictions, surfaced into the claim
+    // boundary (hasContradictions) below as well as the basis/limitations.
+    const xpsContradictions: string[] = [];
+
+    // ── Enrich with persisted XPS element-focused evidence (hedged, additive) ──
+    if (context === 'XPS' && xpsElementEvidence) {
+      const ev = xpsElementEvidence;
+      const xpsBasis: string[] = [];
+      xpsBasis.push(`XPS element-focused analysis indicates ${ev.selectedElement}-containing regions.`);
+      if (ev.candidateStates.length > 0) {
+        const stateLabels = ev.candidateStates.map((s) => s.label).join(', ');
+        xpsBasis.push(`Candidate electronic states include ${stateLabels}.`);
+      }
+      if (ev.satellitePresent) {
+        xpsBasis.push(
+          'Satellite features are present and should be considered during interpretation.',
+        );
+      }
+      decision.basis = [...decision.basis, ...xpsBasis.map(sanitizeScientificWording)];
+
+      if (ev.regionWindow) {
+        decision.limitations = [
+          ...decision.limitations,
+          `XPS evidence is region-focused (${ev.regionWindow.min}-${ev.regionWindow.max} eV) and surface-sensitive; consistent with, but not standalone confirmation of, bulk composition.`,
+        ];
+      }
+
+      // Cross-technique contradiction: XPS oxidation states vs XRD primary phase.
+      const xrdPrimaryPhase = xrdBackendEvidence?.primaryPhase ?? option.project.material;
+      const contradiction = detectXpsXrdOxidationContradiction(ev, xrdPrimaryPhase);
+      if (contradiction.hasContradiction) {
+        xpsContradictions.push(...contradiction.messages);
+        decision.limitations = [
+          ...decision.limitations,
+          ...contradiction.messages.map(sanitizeScientificWording),
+        ];
+        // Participate in fusion reasoning outputs (reasoning trace / Conflicts).
+        decision.reasoningTrace = [
+          ...decision.reasoningTrace,
+          {
+            claimId: 'xps-xrd-oxidation-consistency',
+            status: 'partial',
+            evidenceIds: ev.candidateStates.map(
+              (_s, i) => `xps-oxidation-${ev.selectedElement}-${i}`,
+            ),
+            contradictingEvidenceIds: contradiction.conflictingStates.map(
+              (_s, i) => `xps-oxidation-conflict-${i}`,
+            ),
+            group: 'cross-technique',
+            isExclusiveConflict: false,
+            categoryConflict: true,
+            conceptMatch: false,
+            conceptConflict: true,
+            isDominant: false,
+          },
+        ];
+        decision.detailRows = [
+          ...decision.detailRows,
+          {
+            Claim: 'xps-xrd-oxidation-consistency',
+            Review: 'Contradiction flagged',
+            Evidence: `${contradiction.conflictingStates.join(', ') || 'oxidation-state'} vs ${xrdPrimaryPhase}`,
+            Conflicts: 'Yes',
+          },
+        ];
+      }
+    }
 
     // ── Enrich with persisted XRD backend evidence (additive, non-breaking) ──
     if (context === 'XRD' && xrdBackendEvidence) {
@@ -2300,7 +2392,8 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       technique: context,
       provider: reasoningProvider,
       confidence: llmOutput ? llmOutput.confidence : 0.6,
-      contradictions: llmOutput?.rejectedAlternatives ?? [],
+      // XPS↔XRD oxidation-state contradictions participate in hasContradictions.
+      contradictions: [...(llmOutput?.rejectedAlternatives ?? []), ...xpsContradictions],
       missingValidation,
     });
 
