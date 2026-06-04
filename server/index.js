@@ -99,6 +99,60 @@ Rules:
 `;
 }
 
+let cachedGeminiModels = null;
+
+async function getSupportedGeminiModel(requestedModel) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return requestedModel;
+
+  if (requestedModel !== "gemini-1.5-flash" && requestedModel !== "gemini-1.5-pro-latest" && requestedModel !== "gemini-1.5-pro") {
+    return requestedModel;
+  }
+
+  if (!cachedGeminiModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data && Array.isArray(data.models)) {
+        cachedGeminiModels = data.models.map(m => m.name.replace("models/", ""));
+        console.log("Auto-detected available Gemini models:", cachedGeminiModels);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch available Gemini models list, using static fallback list:", err.message);
+    }
+  }
+
+  const modelsList = cachedGeminiModels || [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-1.5-flash"
+  ];
+
+  const preferences = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-latest"
+  ];
+
+  for (const pref of preferences) {
+    if (modelsList.includes(pref)) {
+      console.log(`Mapping requested model ${requestedModel} -> ${pref}`);
+      return pref;
+    }
+  }
+
+  const flashModel = modelsList.find(m => m.includes("flash") && !m.includes("image") && !m.includes("tts"));
+  if (flashModel) {
+    console.log(`Mapping requested model ${requestedModel} -> ${flashModel} (first available flash)`);
+    return flashModel;
+  }
+
+  return modelsList[0] || requestedModel;
+}
+
 async function runGeminiReasoning(prompt, modelName = "gemini-1.5-flash") {
   // If GOOGLE_CLOUD_PROJECT is configured, try using Vertex AI
   if (process.env.GOOGLE_CLOUD_PROJECT && VertexAI) {
@@ -133,9 +187,11 @@ async function runGeminiReasoning(prompt, modelName = "gemini-1.5-flash") {
     throw new Error("Vertex AI (GOOGLE_CLOUD_PROJECT) or GEMINI_API_KEY is missing.");
   }
 
-  console.log("Using standard Gemini API for reasoning:", modelName);
+  const resolvedModel = await getSupportedGeminiModel(modelName);
+
+  console.log("Using standard Gemini API for reasoning:", resolvedModel);
   const model = genAI.getGenerativeModel({
-    model: modelName
+    model: resolvedModel
   });
 
   const result = await model.generateContent(prompt);

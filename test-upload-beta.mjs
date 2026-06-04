@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
 import { transformWithOxc } from 'vite';
 
-const source = await readFile(new URL('./src/data/uploadedSignalRuns.ts', import.meta.url), 'utf8');
+const rawSource = await readFile(new URL('./src/data/uploadedSignalRuns.ts', import.meta.url), 'utf8');
+const source = rawSource.replace("import { identifyMaterialFeatures } from '../hooks/useX7UniversalHook';", "const identifyMaterialFeatures = () => [];");
 const transformed = await transformWithOxc(source, 'uploadedSignalRuns.ts', {
   lang: 'ts',
 });
