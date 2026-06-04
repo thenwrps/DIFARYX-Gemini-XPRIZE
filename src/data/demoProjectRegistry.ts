@@ -23,6 +23,7 @@ import {
   type Technique,
   type SpectrumPoint,
 } from './demoProjects';
+import { identifyMaterialFeatures } from '../hooks/useX7UniversalHook';
 
 // ── Canonical types ─────────────────────────────────────────────────
 
@@ -951,19 +952,63 @@ export function normalizeRegistryProjectId(id: string | null | undefined): strin
 
 export function getRegistryProject(id: string | null | undefined): RegistryProject {
   const normalizedId = normalizeRegistryProjectId(id);
+  let project: RegistryProject;
+
   if (!normalizedId) {
-    return (
+    project = (
+      demoProjectRegistry.find((p) => p.id === DEFAULT_REGISTRY_PROJECT_ID) ||
+      demoProjectRegistry[0]
+    );
+  } else {
+    const found = demoProjectRegistry.find((p) => p.id === normalizedId);
+    project = found || (
       demoProjectRegistry.find((p) => p.id === DEFAULT_REGISTRY_PROJECT_ID) ||
       demoProjectRegistry[0]
     );
   }
-  const found = demoProjectRegistry.find((p) => p.id === normalizedId);
-  if (found) return found;
-  // Fallback: default project with a note via console; UI consumer may show banner.
-  return (
-    demoProjectRegistry.find((p) => p.id === DEFAULT_REGISTRY_PROJECT_ID) ||
-    demoProjectRegistry[0]
-  );
+
+  // Return a decorated copy so we do not pollute static memory permanently across sessions
+  const decoratedProject = { ...project };
+
+  if (typeof window !== 'undefined') {
+    const manualKey = `difaryx-manual-peaks:ftir:${decoratedProject.id}`;
+    const stored = window.localStorage.getItem(manualKey);
+    if (stored) {
+      try {
+        const config = JSON.parse(stored);
+        if (config.isManual && Array.isArray(config.peaks)) {
+          const industryFilter = window.localStorage.getItem('difaryx_selected_industry_mode') || 'All';
+          const matched = identifyMaterialFeatures(
+            config.peaks.map((p: any) => ({ position: p.position, intensity: p.intensity })),
+            'FTIR',
+            industryFilter
+          );
+
+          decoratedProject.evidenceResults = decoratedProject.evidenceResults.map((e) => {
+            if (e.techniqueId === 'ftir') {
+              const findings = config.peaks.map((p: any, idx: number) => {
+                const match = matched[idx];
+                const label = (match && match.assignment !== 'Unassigned') ? match.assignment : (p.label || 'Manual Peak');
+                return `${label}: ${p.position.toFixed(1)} cm⁻¹ (Intensity: ${p.intensity.toFixed(2)})`;
+              });
+
+              return {
+                ...e,
+                findings,
+                summary: `Manual FTIR peak selection: ${config.peaks.length} bands mapped to functional groups.`,
+                supportsClaim: config.peaks.length > 0,
+              };
+            }
+            return e;
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to parse manual FTIR peaks in getRegistryProject:', err);
+      }
+    }
+  }
+
+  return decoratedProject;
 }
 
 export function isKnownProjectId(id: string | null | undefined): boolean {

@@ -1,5 +1,7 @@
 export type Technique = 'XRD' | 'XPS' | 'FTIR' | 'Raman' | 'Unknown';
 
+import { identifyMaterialFeatures } from '../hooks/useX7UniversalHook';
+
 export type EvidenceQualityState =
   | 'ready'
   | 'needs_mapping'
@@ -188,6 +190,103 @@ export function inferTechniqueFromFileName(fileName: string): Technique {
   return 'Unknown';
 }
 
+export function inferTechnique(
+  fileName: string,
+  points: Array<{ x: number; y: number }>,
+  headerText?: string
+): Technique {
+  const fromName = inferTechniqueFromFileName(fileName);
+  if (fromName !== 'Unknown') return fromName;
+
+  if (headerText) {
+    const lowerHeader = headerText.toLowerCase();
+    if (/2theta|2-theta|theta|angle|deg|diffraction/i.test(lowerHeader)) return 'XRD';
+    if (/binding\s*energy|be\s*\(ev\)/i.test(lowerHeader)) return 'XPS';
+    if (/wavenumber|cm-1|cm\^-1/i.test(lowerHeader)) {
+      if (/raman/i.test(lowerHeader)) return 'Raman';
+      return 'FTIR';
+    }
+    if (/raman\s*shift/i.test(lowerHeader)) return 'Raman';
+  }
+
+  if (points && points.length > 0) {
+    const xValues = points.map((p) => p.x);
+    const minX = Math.min(...xValues);
+    const maxX = Math.max(...xValues);
+
+    if (maxX > 5 && maxX < 130) {
+      return 'XRD';
+    }
+    if (maxX >= 130 && maxX < 1500) {
+      return 'XPS';
+    }
+    if (maxX >= 1500 && maxX <= 4500) {
+      return 'FTIR';
+    }
+  }
+
+  return 'Unknown';
+}
+
+export function checkTechniqueCompatibility(
+  points: Array<{ x: number; y: number }>,
+  technique: Technique,
+  suggestedTechnique: Technique
+): { compatible: boolean; message?: string } {
+  if (points.length === 0) {
+    return { compatible: false, message: 'The file contains no data points.' };
+  }
+
+  if (suggestedTechnique !== 'Unknown' && suggestedTechnique !== technique) {
+    return {
+      compatible: false,
+      message: `Technique mismatch: The file is identified as containing ${suggestedTechnique} data, but the active workspace is configured for ${technique}.`
+    };
+  }
+
+  const xValues = points.map((p) => p.x);
+  const minX = Math.min(...xValues);
+  const maxX = Math.max(...xValues);
+
+  if (technique === 'XRD') {
+    if (maxX > 150) {
+      return {
+        compatible: false,
+        message: `X-axis range incompatibility: XRD scans typically operate in the 2-theta range (5° to 100°). The uploaded file contains values up to ${maxX.toFixed(1)}, which is too high for XRD.`
+      };
+    }
+  }
+
+  if (technique === 'XPS') {
+    if (maxX < 150) {
+      return {
+        compatible: false,
+        message: `X-axis range incompatibility: XPS scans typically operate in the binding energy range (200 eV to 1100 eV). The uploaded file's maximum value of ${maxX.toFixed(1)} eV is too low for XPS.`
+      };
+    }
+  }
+
+  if (technique === 'FTIR') {
+    if (minX < 150 || maxX < 300) {
+      return {
+        compatible: false,
+        message: `X-axis range incompatibility: FTIR scans operate in wavenumbers (typically 400 to 4000 cm⁻¹). The uploaded file contains values down to ${minX.toFixed(1)}, which is too low for FTIR.`
+      };
+    }
+  }
+
+  if (technique === 'Raman') {
+    if (minX < 0 || maxX < 100) {
+      return {
+        compatible: false,
+        message: `X-axis range incompatibility: Raman shift scans typically operate in the 100 to 3200 cm⁻¹ range. The uploaded file contains values down to ${minX.toFixed(1)}, which is too low for Raman.`
+      };
+    }
+  }
+
+  return { compatible: true };
+}
+
 function generateMockFtirFileContent(): string {
   const points = [];
   for (let x = 400; x <= 4000; x += 4) {
@@ -302,6 +401,7 @@ export function parseUploadedSignalText(fileName: string, text: string): ParsedU
     };
   }
 
+  const headerLines = fileText.split(/\r?\n/).slice(0, 3).join('\n');
   return {
     ok: true,
     fileName,
@@ -316,7 +416,7 @@ export function parseUploadedSignalText(fileName: string, text: string): ParsedU
       yColumn: 2,
       summary: 'Using first numeric column as X and second numeric column as Y.',
     },
-    suggestedTechnique: inferTechniqueFromFileName(fileName),
+    suggestedTechnique: inferTechnique(fileName, points, headerLines),
     warnings: ignoredRows > 0 ? [`${ignoredRows} header, comment, or nonnumeric row${ignoredRows === 1 ? '' : 's'} ignored.`] : [],
   };
 }
@@ -369,6 +469,22 @@ function getTechniqueContext(technique: Technique, position: number): string {
       position >= 925 && position <= 965 ? 'possible Cu 2p region' :
       position >= 99 && position <= 105 ? 'possible Si 2p region' :
       position >= 160 && position <= 170 ? 'possible S 2p region' :
+      position >= 396 && position <= 408 ? 'possible N 1s region' :
+      position >= 71 && position <= 76 ? 'possible Al 2p region' :
+      position >= 128 && position <= 135 ? 'possible P 2p region' :
+      position >= 197 && position <= 203 ? 'possible Cl 2p region' :
+      position >= 1070 && position <= 1073 ? 'possible Na 1s region' :
+      position >= 291 && position <= 297 ? 'possible K 2p region' :
+      position >= 345 && position <= 353 ? 'possible Ca 2p region' :
+      position >= 1020 && position <= 1046 ? 'possible Zn 2p region' :
+      position >= 683 && position <= 687 ? 'possible F 1s region' :
+      position >= 49 && position <= 53 ? 'possible Mg 2p region' :
+      position >= 452 && position <= 466 ? 'possible Ti 2p region' :
+      position >= 572 && position <= 588 ? 'possible Cr 2p region' :
+      position >= 640 && position <= 656 ? 'possible Mn 2p region' :
+      position >= 851 && position <= 875 ? 'possible Ni 2p region' :
+      position >= 82 && position <= 90 ? 'possible Au 4f region' :
+      position >= 366 && position <= 371 ? 'possible Ag 3d region' :
       'binding-energy region';
 
     return `${coreRegion}; calibration and peak fitting are required before oxidation-state claims.`;
@@ -518,8 +634,41 @@ export function createUploadedSignalRun(input: {
   points: UploadedSignalPoint[];
 }): UploadedSignalRun {
   const createdAt = new Date().toISOString();
-  const extractedFeatures = extractTechniqueFeatures(input.points, input.technique);
-  const evidenceQuality = evaluateEvidenceQuality(input.points, extractedFeatures);
+  
+  // Ensure points are sorted by X ascending to prevent baseline/smoothing corruption
+  const sortedPoints = [...input.points].sort((a, b) => a.x - b.x);
+
+  // Bin and average points with nearly identical X values to handle multi-scan files
+  const deduplicatedPoints: { x: number; y: number }[] = [];
+  let currentBin: { xSum: number; ySum: number; count: number } | null = null;
+  const BIN_SIZE = 0.005;
+
+  for (const p of sortedPoints) {
+    if (!currentBin) {
+      currentBin = { xSum: p.x, ySum: p.y, count: 1 };
+    } else {
+      if (p.x - (currentBin.xSum / currentBin.count) < BIN_SIZE) {
+        currentBin.xSum += p.x;
+        currentBin.ySum += p.y;
+        currentBin.count += 1;
+      } else {
+        deduplicatedPoints.push({
+          x: currentBin.xSum / currentBin.count,
+          y: currentBin.ySum / currentBin.count
+        });
+        currentBin = { xSum: p.x, ySum: p.y, count: 1 };
+      }
+    }
+  }
+  if (currentBin) {
+    deduplicatedPoints.push({
+      x: currentBin.xSum / currentBin.count,
+      y: currentBin.ySum / currentBin.count
+    });
+  }
+
+  const extractedFeatures = extractTechniqueFeatures(deduplicatedPoints, input.technique);
+  const evidenceQuality = evaluateEvidenceQuality(deduplicatedPoints, extractedFeatures);
   const claimBoundary = [
     CLAIM_BOUNDARY_BY_TECHNIQUE[input.technique],
     BOUNDED_INTERPRETATION_MESSAGE,
@@ -540,7 +689,7 @@ export function createUploadedSignalRun(input: {
     sampleIdentity: input.sampleIdentity.trim(),
     xAxisLabel: input.xAxisLabel.trim(),
     yAxisLabel: input.yAxisLabel.trim(),
-    points: input.points,
+    points: deduplicatedPoints,
     extractedFeatures,
     evidenceQuality,
     claimBoundary,
@@ -725,10 +874,44 @@ export function updateUploadedRunProcessingResults(
   }
 }
 
-/**
- * Get uploaded run by ID
- */
 export function getUploadedRunById(runId: string): UploadedSignalRun | null {
   const runs = readUploadedSignalRuns();
-  return runs.find((r) => r.id === runId) || null;
+  const run = runs.find((r) => r.id === runId) || null;
+  if (!run) return null;
+
+  if (run.technique === 'FTIR' && typeof window !== 'undefined') {
+    const manualKey = `difaryx-manual-peaks:ftir:${run.id}`;
+    const stored = window.localStorage.getItem(manualKey);
+    if (stored) {
+      try {
+        const config = JSON.parse(stored);
+        if (config.isManual && Array.isArray(config.peaks)) {
+          const industryFilter = window.localStorage.getItem('difaryx_selected_industry_mode') || 'All';
+          const matched = identifyMaterialFeatures(
+            config.peaks.map((p: any) => ({ position: p.position, intensity: p.intensity })),
+            'FTIR',
+            industryFilter
+          );
+
+          run.extractedFeatures = config.peaks.map((p: any, idx: number) => {
+            const match = matched[idx];
+            const label = (match && match.assignment !== 'Unassigned') ? match.assignment : (p.label || 'Manual Peak');
+            return {
+              id: `ftir-manual-${idx}`,
+              technique: 'FTIR' as const,
+              label: `${label} (${match?.confidence ?? 100}%)`,
+              position: p.position,
+              intensity: p.intensity,
+              relativeIntensity: p.intensity,
+              context: label,
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to parse manual peaks in getUploadedRunById:', err);
+      }
+    }
+  }
+
+  return run;
 }

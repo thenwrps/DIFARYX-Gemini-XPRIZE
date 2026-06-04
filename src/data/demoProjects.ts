@@ -1,4 +1,5 @@
 import type { ExperimentConditionLock } from './experimentConditionLock';
+import { identifyMaterialFeatures } from '../hooks/useX7UniversalHook';
 
 export type Technique = 'XRD' | 'XPS' | 'FTIR' | 'Raman';
 
@@ -1319,10 +1320,43 @@ export function getLocalDatasets(projectId?: string) {
   return projectId ? datasets.filter((dataset) => dataset.projectId === projectId) : datasets;
 }
 
+function applyManualFtirPeaksToDataset(dataset: DemoDataset): DemoDataset {
+  if (dataset.technique === 'FTIR' && typeof window !== 'undefined') {
+    const key = `difaryx-manual-peaks:ftir:${dataset.projectId || dataset.id || 'standalone'}`;
+    const stored = window.localStorage.getItem(key);
+    if (stored) {
+      try {
+        const config = JSON.parse(stored);
+        if (config.isManual && Array.isArray(config.peaks)) {
+          const industryFilter = window.localStorage.getItem('difaryx_selected_industry_mode') || 'All';
+          const matched = identifyMaterialFeatures(
+            config.peaks.map((p: any) => ({ position: p.position, intensity: p.intensity })),
+            'FTIR',
+            industryFilter
+          );
+
+          dataset.detectedFeatures = config.peaks.map((p: any, idx: number) => {
+            const match = matched[idx];
+            const label = (match && match.assignment !== 'Unassigned') ? match.assignment : (p.label || 'Manual Peak');
+            return {
+              position: p.position,
+              intensity: p.intensity,
+              label: `${label} (${match?.confidence ?? 100}%)`,
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to parse manual peaks for dataset:', err);
+      }
+    }
+  }
+  return dataset;
+}
+
 export function getProjectDatasets(projectId: string) {
   const project = getProject(projectId);
-  if (!project) return getLocalDatasets(projectId);
-  return [...getBuiltInDatasets(project), ...getLocalDatasets(projectId)];
+  const datasets = !project ? getLocalDatasets(projectId) : [...getBuiltInDatasets(project), ...getLocalDatasets(projectId)];
+  return datasets.map(applyManualFtirPeaksToDataset);
 }
 
 export function getDatasetsByTechnique(projectId: string, technique: Technique) {
@@ -1333,11 +1367,11 @@ export function getDataset(datasetId?: string | null) {
   if (!datasetId) return null;
 
   const localDataset = getLocalDatasets().find((dataset) => dataset.id === datasetId);
-  if (localDataset) return localDataset;
+  if (localDataset) return applyManualFtirPeaksToDataset(localDataset);
 
   for (const project of demoProjects) {
     const dataset = getProjectDatasets(project.id).find((item) => item.id === datasetId);
-    if (dataset) return dataset;
+    if (dataset) return applyManualFtirPeaksToDataset(dataset);
   }
 
   return null;

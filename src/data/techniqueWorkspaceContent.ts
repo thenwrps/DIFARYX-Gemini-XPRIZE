@@ -1,6 +1,20 @@
 import type { TechniqueId } from './demoProjectRegistry';
+import { getCalibrationStandards, listReferenceRegions } from './xpsReferenceData';
 
 export type TechniqueWorkspaceId = Exclude<TechniqueId, 'multi'>;
+
+// XPS dropdown options derived from the canonical reference module
+// (single source of truth — no hardcoded reference list in the UI config).
+const XPS_CALIBRATION_OPTIONS: string[] = [
+  ...getCalibrationStandards().map((s) => s.label),
+  'Custom',
+];
+const XPS_CALIBRATION_DEFAULT: string = getCalibrationStandards()[0]?.label ?? 'Custom';
+const XPS_REGION_OPTIONS: string[] = [
+  'Survey',
+  ...listReferenceRegions().map((r) => r.value),
+  'Custom',
+];
 
 export interface TechniqueWorkspaceTab {
   id: string;
@@ -179,6 +193,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       { id: 'chemical-states', label: 'Chemical States' },
       { id: 'fit', label: 'Fit' },
       { id: 'assignment', label: 'Assignment' },
+      { id: 'element-analysis', label: 'Element Analysis' },
     ],
     pipeline: [
       { id: 'background-subtraction', label: 'Baseline', summary: 'Background model prepared for core-level regions.' },
@@ -193,8 +208,8 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
         id: 'energyCalibrationReference',
         label: 'Energy calibration reference',
         type: 'select',
-        defaultValue: 'C 1s 284.8 eV',
-        options: ['C 1s 284.8 eV', 'Au 4f7/2', 'Custom'],
+        defaultValue: XPS_CALIBRATION_DEFAULT,
+        options: XPS_CALIBRATION_OPTIONS,
         affectedStepIds: ['background-subtraction', 'peak-fitting'],
       },
       {
@@ -218,7 +233,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
         label: 'Region selection',
         type: 'select',
         defaultValue: 'Survey',
-        options: ['Survey', 'Cu 2p', 'Fe 2p', 'O 1s', 'Custom'],
+        options: XPS_REGION_OPTIONS,
         affectedStepIds: ['peak-detection', 'peak-fitting'],
       },
       {

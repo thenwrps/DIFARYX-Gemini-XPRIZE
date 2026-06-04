@@ -1,5 +1,6 @@
 import { demoProjects } from './demoProjects';
 import { normalizeRegistryProjectId } from './demoProjectRegistry';
+import { identifyMaterialFeatures } from '../hooks/useX7UniversalHook';
 
 export type AnalysisTechnique = 'xrd' | 'xps' | 'ftir' | 'raman';
 
@@ -803,7 +804,55 @@ export function getAnalysisSessions(options?: GetAnalysisSessionsOptions): Analy
 
 export function getAnalysisSession(analysisId: string | undefined): AnalysisSession | null {
   if (!analysisId) return null;
-  return getAnalysisSessions().find((session) => session.analysisId === analysisId) ?? null;
+  const session = getAnalysisSessions().find((session) => session.analysisId === analysisId) ?? null;
+  if (!session) return null;
+
+  if (session.technique === 'ftir' && typeof window !== 'undefined') {
+    const manualKey = `difaryx-manual-peaks:ftir:${session.analysisId}`;
+    const stored = window.localStorage.getItem(manualKey) || (session.uploadedRunId ? window.localStorage.getItem(`difaryx-manual-peaks:ftir:${session.uploadedRunId}`) : null);
+    if (stored) {
+      try {
+        const config = JSON.parse(stored);
+        if (config.isManual && Array.isArray(config.peaks)) {
+          const industryFilter = window.localStorage.getItem('difaryx_selected_industry_mode') || 'All';
+          const matched = identifyMaterialFeatures(
+            config.peaks.map((p: any) => ({ position: p.position, intensity: p.intensity })),
+            'FTIR',
+            industryFilter
+          );
+
+          session.graphData.markers = config.peaks.map((p: any, idx: number) => {
+            const match = matched[idx];
+            const label = (match && match.assignment !== 'Unassigned') ? match.assignment : (p.label || 'Manual Peak');
+            return {
+              position: p.position,
+              intensity: p.intensity,
+              label: `${label} (${match?.confidence ?? 100}%)`,
+            };
+          });
+
+          session.extractedFeatures = config.peaks.map((p: any, idx: number) => {
+            const match = matched[idx];
+            const label = (match && match.assignment !== 'Unassigned') ? match.assignment : (p.label || 'Manual Peak');
+            return {
+              id: `ftir-manual-${idx}`,
+              label: `${label} (${match?.confidence ?? 100}%)`,
+              values: {
+                wavenumber: `${p.position.toFixed(1)} cm-1`,
+                intensity: p.intensity.toFixed(2),
+                assignment: label,
+                confidence: String(match?.confidence ?? 100),
+              },
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to parse manual peaks in getAnalysisSession:', err);
+      }
+    }
+  }
+
+  return session;
 }
 
 export function saveAnalysisSession(session: AnalysisSession): AnalysisSession {
