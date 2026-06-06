@@ -4,6 +4,10 @@ import {
   type WorkspaceMode,
 } from './workspaceMode';
 import { buildEvidenceContextQuery, parseEvidenceContext } from './evidenceContext';
+import {
+  readLastUploadedContext,
+  saveLastUploadedContext,
+} from './uploadedContextStore';
 
 interface RouteAuthUserLike {
   provider?: string | null;
@@ -65,13 +69,39 @@ export function getEvidenceRouteContext({
   const projectId = firstParam(params, ['project', 'project_id']);
   const technique = canonicalContext?.technique ?? params.get('technique');
   const isDemoExplicit = params.get('mode') === 'demo';
-  const isUploadedContext = Boolean(
+
+  // ── Refresh-restore: if the URL has no uploaded-context params but we have a
+  //    stored context from a previous session, restore it automatically so that
+  //    a plain refresh does not wipe the uploaded workspace.
+  const urlHasUploadedContext = Boolean(
     canonicalContext?.mode === 'uploaded' ||
       rawSource === 'user_uploaded' ||
       rawSource === 'uploaded-beta' ||
       rawSource === 'quick_analysis' ||
       sessionId ||
       uploadedRunId,
+  );
+  const urlHasDemoOrProjectContext = Boolean(
+    rawSource === 'demo_preloaded' ||
+      params.get('mode') === 'demo' ||
+      (params.get('project') && !uploadedRunId && !sessionId),
+  );
+  const stored = !urlHasUploadedContext && !urlHasDemoOrProjectContext
+    ? readLastUploadedContext()
+    : null;
+
+  const effectiveSessionId = sessionId ?? stored?.sessionId ?? null;
+  const effectiveUploadedRunId = uploadedRunId ?? stored?.uploadedRunId ?? null;
+  const effectiveTechnique = technique ?? stored?.technique ?? null;
+  const effectiveSource = rawSource ?? (stored ? 'user_uploaded' : null);
+
+  const isUploadedContext = Boolean(
+    canonicalContext?.mode === 'uploaded' ||
+      effectiveSource === 'user_uploaded' ||
+      effectiveSource === 'uploaded-beta' ||
+      effectiveSource === 'quick_analysis' ||
+      effectiveSessionId ||
+      effectiveUploadedRunId,
   );
   const isGoogleConnectedContext = Boolean(
     rawSource === 'google_drive_connected' ||
@@ -89,14 +119,24 @@ export function getEvidenceRouteContext({
           ? 'demo_preloaded'
           : null;
 
+  // Persist the context whenever we have valid uploaded IDs (including first-load from URL)
+  if (isUploadedContext && effectiveSessionId && effectiveUploadedRunId) {
+    saveLastUploadedContext({
+      sessionId: effectiveSessionId,
+      uploadedRunId: effectiveUploadedRunId,
+      technique: effectiveTechnique ?? 'xrd',
+      projectId: projectId ?? stored?.projectId,
+    });
+  }
+
   return {
     source: isUploadedContext ? 'user_uploaded' : rawSource,
     sourceMode,
-    sessionId,
-    uploadedRunId,
+    sessionId: effectiveSessionId,
+    uploadedRunId: effectiveUploadedRunId,
     driveFileId,
     projectId,
-    technique,
+    technique: effectiveTechnique,
     isUploadedContext,
     isGoogleConnectedContext,
     isDemoExplicit,
