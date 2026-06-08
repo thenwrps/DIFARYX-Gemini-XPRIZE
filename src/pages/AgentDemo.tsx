@@ -1403,7 +1403,7 @@ function createDecisionResult(
   const detailRows = llmOutput
     ? [
         { Metric: 'Conclusion', Value: llmOutput.primaryResult, Status: 'AI Generated' },
-        { Metric: 'Engine', Value: llmOutput.metadata?.model || 'unknown', Status: llmOutput.metadata?.fallbackUsed ? 'Fallback' : 'Connected' },
+        { Metric: 'Engine', Value: llmOutput.metadata?.model || 'unknown', Status: (llmOutput.metadata as any)?.fallbackUsed ? 'Fallback' : 'Connected' },
         { Metric: 'Duration', Value: `${llmOutput.metadata?.durationMs || 0}ms`, Status: 'Complete' },
       ]
     : fusionResult.reasoningTrace.map((trace, index) => ({
@@ -1417,7 +1417,7 @@ function createDecisionResult(
     runId: generateRunId(),
     primaryResult: llmOutput ? llmOutput.primaryResult : fusionResult.conclusion,
     subtitle: llmOutput
-      ? `${config.label} - AI-Assisted Reasoning${llmOutput.metadata?.fallbackUsed ? ' (Fallback)' : ''}`
+      ? `${config.label} - AI-Assisted Reasoning${(llmOutput.metadata as any)?.fallbackUsed ? ' (Fallback)' : ''}`
       : `${config.label} - Fusion Engine Interpretation`,
     reasoningTrace: fusionResult.reasoningTrace,
     conclusion: llmOutput ? llmOutput.primaryResult : fusionResult.conclusion,
@@ -2074,7 +2074,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
 
       let baseConfidence = 50;
       if (context === 'XRD') {
-        baseConfidence = xrdAnalysis?.candidates[0]?.score ? Math.round(xrdAnalysis.candidates[0].score * 100) : project.confidence;
+        baseConfidence = xrdAnalysis?.candidates[0]?.score ? Math.round(xrdAnalysis.candidates[0].score * 100) : 50;
       } else {
         const techEvidence = project.evidence.find((item) =>
           item.toLowerCase().includes(context.toLowerCase())

@@ -27,6 +27,27 @@ interface PeakMarker {
   role?: 'selected' | 'linked';
 }
 
+const TOOLTIP_CONTENT_STYLE = {
+  backgroundColor: '#0f172a',
+  borderColor: 'rgba(148,163,184,0.25)',
+  borderRadius: '8px',
+  color: '#e2e8f0',
+  boxShadow: '0 12px 30px rgba(15,23,42,0.35)',
+};
+const TOOLTIP_ITEM_STYLE = { color: '#e2e8f0' };
+const TOOLTIP_LABEL_STYLE = { color: '#cbd5e1' };
+
+const HEIGHT_CLASSES: Record<string, string> = {
+  '100%': 'h-full min-h-[120px]',
+  '150': 'h-[150px] min-h-[150px]',
+  '200': 'h-[200px] min-h-[200px]',
+  '250': 'h-[250px] min-h-[250px]',
+  '300': 'h-[300px] min-h-[300px]',
+  '350': 'h-[350px] min-h-[350px]',
+  '400': 'h-[400px] min-h-[400px]',
+  '500': 'h-[500px] min-h-[500px]',
+};
+
 // ── Component props ──────────────────────────────────────────────────
 
 interface GraphProps {
@@ -329,7 +350,7 @@ function PeakMarkerDot(props: {
   type?: SpectrumType;
 }) {
   const { cx, cy, payload, peakMarkers, type = 'xrd' } = props;
-  if (!cx || !cy || !payload) return null;
+  if (cx == null || cy == null || !payload) return null;
 
   // Technique-specific threshold for peak matching (in degrees 2-theta, eV, or cm-1)
   const threshold = type === 'xrd' ? 0.15 : type === 'xps' ? 0.5 : type === 'ftir' ? 5.0 : 2.0;
@@ -347,16 +368,33 @@ function PeakMarkerDot(props: {
   );
 }
 
+// ── Shared onClick handler for LineChart ─────────────────────────────
+
+function handleChartClick(
+  nextState: Record<string, unknown> | undefined,
+  onChartClick: ((x: number, y: number) => void) | undefined,
+) {
+  if (!nextState || nextState.activeLabel === undefined || !onChartClick) return;
+  const clickedX = Number(nextState.activeLabel);
+  const activePayload = nextState.activePayload as Array<Record<string, unknown>> | undefined;
+  let clickedY = 0;
+  if (activePayload && activePayload.length > 0) {
+    const obsObj = activePayload.find((p: Record<string, unknown>) => p.dataKey === 'observed' || p.name === 'observed');
+    clickedY = obsObj ? Number((obsObj as Record<string, unknown>).value) : Number((activePayload[0] as Record<string, unknown>).value);
+  }
+  onChartClick(clickedX, clickedY);
+}
+
 // ── Main Component ───────────────────────────────────────────────────
 
 function getLabeledMarkerPositions(type: SpectrumType, markers: PeakMarker[]) {
-  if (type !== 'xrd' || markers.length <= 3) {
-    return new Set(markers.filter((marker) => marker.label && marker.role === 'selected').map((marker) => marker.position));
+  const selectedWithLabels = markers.filter((marker) => marker.label && marker.role === 'selected');
+  if (type !== 'xrd' || selectedWithLabels.length <= 3) {
+    return new Set(selectedWithLabels.map((marker) => marker.position));
   }
 
   return new Set(
-    [...markers]
-      .filter((marker) => marker.label)
+    [...selectedWithLabels]
       .sort((a, b) => b.intensity - a.intensity)
       .slice(0, 3)
       .map((marker) => marker.position),
@@ -393,13 +431,19 @@ export function Graph({
   const displayYLabel = yAxisLabel ?? settings.yLabel;
 
   if (useExternal) {
-    // External data rendering mode
-    const yValues = externalChartData.map((d) => d.observed);
-    const xValues = externalChartData.map((d) => d.x);
-    const xMin = Math.min(...xValues);
-    const xMax = Math.max(...xValues);
-    const yMin = Math.min(...yValues);
-    const yMax = Math.max(...yValues);
+    // External data rendering mode — use reduce to avoid stack overflow on large datasets
+    let xMin = Infinity;
+    let xMax = -Infinity;
+    let yMin = Infinity;
+    let yMax = -Infinity;
+    for (let i = 0; i < externalChartData.length; i++) {
+      const xi = externalChartData[i].x;
+      const yi = externalChartData[i].observed;
+      if (xi < xMin) xMin = xi;
+      if (xi > xMax) xMax = xi;
+      if (yi < yMin) yMin = yi;
+      if (yi > yMax) yMax = yi;
+    }
     const yPadding = (yMax - yMin) * 0.1 || 5;
     let yDomain: [number, number] = [
       yMin - yPadding,
@@ -417,30 +461,23 @@ export function Graph({
     const markers = peakMarkers ?? [];
     const labeledMarkerPositions = getLabeledMarkerPositions(type, markers);
     const resolvedHeight = height !== undefined ? height : 400;
-    const containerStyle = {
-      width: '100%',
-      height: typeof resolvedHeight === 'number' ? `${resolvedHeight}px` : resolvedHeight,
-      minHeight: typeof resolvedHeight === 'number' ? `${resolvedHeight}px` : (resolvedHeight === '100%' ? '120px' : '300px'),
-    };
+
+    // Guard: if external data is empty or domain is invalid, render nothing
+    if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || xMin === xMax) {
+      return (
+        <div className={`w-full ${HEIGHT_CLASSES[String(resolvedHeight)] || 'h-[400px] min-h-[400px]'}`}>
+          <div className="flex h-full items-center justify-center text-xs text-text-muted">No data</div>
+        </div>
+      );
+    }
 
     return (
-      <div className="w-full" style={containerStyle}>
+      <div className={`w-full ${HEIGHT_CLASSES[String(resolvedHeight)] || 'h-[400px] min-h-[400px]'}`}>
         <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
           <LineChart
             data={externalChartData}
             margin={{ top: 18, right: 24, bottom: 24, left: 24 }}
-            onClick={(nextState: any) => {
-              if (nextState && nextState.activeLabel !== undefined && onChartClick) {
-                const clickedX = Number(nextState.activeLabel);
-                const activePayload = nextState.activePayload;
-                let clickedY = 0;
-                if (activePayload && activePayload.length > 0) {
-                  const obsObj = activePayload.find((p: any) => p.dataKey === 'observed' || p.name === 'observed');
-                  clickedY = obsObj ? Number(obsObj.value) : Number(activePayload[0].value);
-                }
-                onChartClick(clickedX, clickedY);
-              }
-            }}
+            onClick={(nextState: Record<string, unknown> | undefined) => handleChartClick(nextState, onChartClick)}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} />
             <XAxis
@@ -470,48 +507,42 @@ export function Graph({
                 tooltipNames[String(name)] ?? name,
               ]}
               labelFormatter={(value) => `${displayXLabel}: ${Number(value).toFixed(2)}`}
-              contentStyle={{
-                backgroundColor: '#0f172a',
-                borderColor: 'rgba(148,163,184,0.25)',
-                borderRadius: '8px',
-                color: '#e2e8f0',
-                boxShadow: '0 12px 30px rgba(15,23,42,0.35)',
-              }}
-              itemStyle={{ color: '#e2e8f0' }}
-              labelStyle={{ color: '#cbd5e1' }}
+              contentStyle={TOOLTIP_CONTENT_STYLE}
+              itemStyle={TOOLTIP_ITEM_STYLE}
+              labelStyle={TOOLTIP_LABEL_STYLE}
             />
             {showLegend && (
-            <Legend
-              formatter={(value, entry) => {
-                // Get technique-specific legend name or fall back to default
-                const overrides = techniqueLegendOverrides[type];
-                const name = (overrides && overrides[String(value)]) || legendNames[String(value)] || value;
-                // Apply hierarchy: Observed (bold), Fitted (medium), Baseline/Reference (faint)
-                if (value === 'observed') {
-                  return <span style={{ fontWeight: 700, opacity: 1 }}>{name}</span>;
-                } else if (value === 'calculated') {
-                  return <span style={{ fontWeight: 600, opacity: 0.9 }}>{name}</span>;
-                } else if (value === 'baseline' || value === 'referencePeaks') {
-                  return <span style={{ fontWeight: 500, opacity: 0.6 }}>{name}</span>;
-                }
-                return name;
-              }}
-              wrapperStyle={{
-                paddingTop: '20px',
-                fontSize: '13px',
-                fontWeight: 600,
-                letterSpacing: '0.02em',
-              }}
-              iconType="line"
-              iconSize={24}
-            />
+              <Legend
+                formatter={(value) => {
+                  // Get technique-specific legend name or fall back to default
+                  const overrides = techniqueLegendOverrides[type];
+                  const name = (overrides && overrides[String(value)]) || legendNames[String(value)] || value;
+                  // Apply hierarchy: Observed (bold), Fitted (medium), Baseline/Reference (faint)
+                  if (value === 'observed') {
+                    return <span className="font-bold opacity-100">{name}</span>;
+                  } else if (value === 'calculated') {
+                    return <span className="font-semibold opacity-90">{name}</span>;
+                  } else if (value === 'baseline' || value === 'referencePeaks') {
+                    return <span className="font-medium opacity-60">{name}</span>;
+                  }
+                  return name;
+                }}
+                wrapperStyle={{
+                  paddingTop: '20px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  letterSpacing: '0.02em',
+                }}
+                iconType="line"
+                iconSize={24}
+              />
             )}
 
             {/* Reference peak sticks for bounded visual review */}
             {markers.map((m, i) => {
               const isSelected = m.role === 'selected';
               const isLinked = m.role === 'linked';
-              
+
               return (
                 <ReferenceLine
                   key={`peak-stick-${i}`}
@@ -522,13 +553,13 @@ export function Graph({
                   label={
                     m.label && labeledMarkerPositions.has(m.position)
                       ? {
-                          value: m.label,
-                          position: 'top',
-                          fill: '#3b82f6',
-                          fontSize: 9,
-                          fontWeight: 600,
-                          offset: 12,
-                        }
+                        value: m.label,
+                        position: 'top',
+                        fill: '#3b82f6',
+                        fontSize: 9,
+                        fontWeight: 600,
+                        offset: 12,
+                      }
                       : undefined
                   }
                 />
@@ -574,14 +605,14 @@ export function Graph({
               strokeWidth={2.5}
               dot={
                 markers.length > 0
-                  ? (dotProps: any) => (
-                      <PeakMarkerDot
-                        key={`dot-${dotProps.index}`}
-                        {...dotProps}
-                        peakMarkers={markers}
-                        type={type}
-                      />
-                    )
+                  ? (dotProps: Record<string, unknown>) => (
+                    <PeakMarkerDot
+                      key={`dot-${dotProps.index}`}
+                      {...dotProps}
+                      peakMarkers={markers}
+                      type={type}
+                    />
+                  )
                   : false
               }
               isAnimationActive={false}
@@ -599,30 +630,14 @@ export function Graph({
     : settings.yDomain;
 
   const resolvedHeight = height !== undefined ? height : 400;
-  const containerStyle = {
-    width: '100%',
-    height: typeof resolvedHeight === 'number' ? `${resolvedHeight}px` : resolvedHeight,
-    minHeight: typeof resolvedHeight === 'number' ? `${resolvedHeight}px` : (resolvedHeight === '100%' ? '120px' : '300px'),
-  };
 
   return (
-    <div className="w-full" style={containerStyle}>
+    <div className={`w-full ${HEIGHT_CLASSES[String(resolvedHeight)] || 'h-[400px] min-h-[400px]'}`}>
       <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
         <LineChart
           data={internalData}
           margin={{ top: 18, right: 24, bottom: 24, left: 24 }}
-          onClick={(nextState: any) => {
-            if (nextState && nextState.activeLabel !== undefined && onChartClick) {
-              const clickedX = Number(nextState.activeLabel);
-              const activePayload = nextState.activePayload;
-              let clickedY = 0;
-              if (activePayload && activePayload.length > 0) {
-                const obsObj = activePayload.find((p: any) => p.dataKey === 'observed' || p.name === 'observed');
-                clickedY = obsObj ? Number(obsObj.value) : Number(activePayload[0].value);
-              }
-              onChartClick(clickedX, clickedY);
-            }
-          }}
+          onClick={(nextState: Record<string, unknown> | undefined) => handleChartClick(nextState, onChartClick)}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} />
           <XAxis
@@ -663,21 +678,21 @@ export function Graph({
             labelStyle={{ color: '#cbd5e1' }}
           />
           {showLegend && (
-          <Legend
-            formatter={(value) => {
-              // Get technique-specific legend name or fall back to default
-              const overrides = techniqueLegendOverrides[type];
-              return (overrides && overrides[String(value)]) || legendNames[String(value)] || value;
-            }}
-            wrapperStyle={{
-              paddingTop: '16px',
-              fontSize: '13px',
-              fontWeight: 600,
-              letterSpacing: '0.01em',
-            }}
-            iconType="line"
-            iconSize={20}
-          />
+            <Legend
+              formatter={(value: string | number) => {
+                // Get technique-specific legend name or fall back to default
+                const overrides = techniqueLegendOverrides[type];
+                return (overrides && overrides[String(value)]) || legendNames[String(value)] || String(value);
+              }}
+              wrapperStyle={{
+                paddingTop: '16px',
+                fontSize: '13px',
+                fontWeight: 600,
+                letterSpacing: '0.01em',
+              }}
+              iconType="line"
+              iconSize={20}
+            />
           )}
 
           {showResidual && (

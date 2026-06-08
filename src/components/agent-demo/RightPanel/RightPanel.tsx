@@ -1344,7 +1344,7 @@ function EvidenceUsedCard({
       }
     });
   } else if (evidenceWorkspace) {
-    evidenceSources.push(evidenceWorkspace.technique.toUpperCase());
+    evidenceSources.push(evidenceWorkspace.focusedTechnique.toUpperCase());
   } else if (agentContext.primaryTechnique) {
     evidenceSources.push(agentContext.primaryTechnique.toUpperCase());
   }

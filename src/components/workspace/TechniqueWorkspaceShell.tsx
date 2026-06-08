@@ -551,8 +551,8 @@ function buildDefaultSession(
         message: quickSession
           ? `${config.label} quick analysis session ${quickSession.analysisId} loaded.`
           : hasProject
-          ? `${config.label} workspace loaded from project registry.`
-          : `${config.label} standalone workspace initialized.`,
+            ? `${config.label} workspace loaded from project registry.`
+            : `${config.label} standalone workspace initialized.`,
       },
     ].slice(0, 12),
     dirty: false,
@@ -691,9 +691,14 @@ function buildQuickGraphData(session: AnalysisSession | null, uploadedRuns: Uplo
   }
 
   const markers = session.graphData.markers;
-  const markerPositions = markers.map((marker) => marker.position);
-  const min = Math.min(...markerPositions, session.technique === 'xps' ? 0 : session.technique === 'ftir' ? 400 : 10);
-  const max = Math.max(...markerPositions, session.technique === 'xps' ? 1000 : session.technique === 'ftir' ? 4000 : session.technique === 'raman' ? 3200 : 80);
+  const defaultMin = session.technique === 'xps' ? 0 : session.technique === 'ftir' ? 400 : 10;
+  const defaultMax = session.technique === 'xps' ? 1000 : session.technique === 'ftir' ? 4000 : session.technique === 'raman' ? 3200 : 80;
+  let min = defaultMin;
+  let max = defaultMax;
+  for (const marker of markers) {
+    if (marker.position < min) min = marker.position;
+    if (marker.position > max) max = marker.position;
+  }
   const span = Math.max(1, max - min);
   const points = Array.from({ length: 240 }, (_, index) => {
     const x = min + (span * index) / 239;
@@ -917,32 +922,32 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   const datasetLabel = isUploadedContext
     ? snapshotDataset?.fileName || evidenceSnapshot?.activeDataset?.fileName || quickAnalysisSession?.fileName || fileName || 'Uploaded dataset'
     : isQuickMode
-    ? quickAnalysisSession?.fileName || fileName || 'Uploaded dataset'
-    : snapshotDataset?.fileName || getDatasetLabel(project, technique);
+      ? quickAnalysisSession?.fileName || fileName || 'Uploaded dataset'
+      : snapshotDataset?.fileName || getDatasetLabel(project, technique);
   const datasetStatus = isUploadedContext
     ? quickAnalysisSession ? getStatusLabel(quickAnalysisSession.status) : evidenceSnapshot?.activeDataset ? 'Available' : 'Metadata only'
     : isQuickMode
-    ? quickAnalysisSession ? getStatusLabel(quickAnalysisSession.status) : 'Processing'
-    : focusedEvidence?.status || (project ? 'Required' : 'Standalone');
+      ? quickAnalysisSession ? getStatusLabel(quickAnalysisSession.status) : 'Processing'
+      : focusedEvidence?.status || (project ? 'Required' : 'Standalone');
   const runtimeContext = isUploadedContext
     ? {
-        sourceMode: evidenceSnapshot?.sourceMode ?? 'user_uploaded',
-        runtimeMode: evidenceSnapshot?.runtimeMode ?? 'demo',
-        permissionMode: evidenceSnapshot?.permissionMode ?? 'read_only',
-        sourceLabel: evidenceSnapshot?.sourceLabel ?? 'User-uploaded evidence',
-        approvalStatus: evidenceSnapshot?.approvalStatus ?? 'not_required',
-      } as const
+      sourceMode: evidenceSnapshot?.sourceMode ?? 'user_uploaded',
+      runtimeMode: evidenceSnapshot?.runtimeMode ?? 'demo',
+      permissionMode: evidenceSnapshot?.permissionMode ?? 'read_only',
+      sourceLabel: evidenceSnapshot?.sourceLabel ?? 'User-uploaded evidence',
+      approvalStatus: evidenceSnapshot?.approvalStatus ?? 'not_required',
+    } as const
     : isQuickMode
-    ? getRuntimeContextForEvidenceSource('user_uploaded')
-    : effectiveWorkspaceMode === 'user' && !project
       ? getRuntimeContextForEvidenceSource('user_uploaded')
-    : {
-        sourceMode: evidenceSnapshot?.sourceMode ?? 'demo_preloaded',
-        runtimeMode: evidenceSnapshot?.runtimeMode ?? 'demo',
-        permissionMode: evidenceSnapshot?.permissionMode ?? 'read_only',
-        sourceLabel: evidenceSnapshot?.sourceLabel ?? 'Demo evidence',
-        approvalStatus: evidenceSnapshot?.approvalStatus ?? 'not_required',
-      } as const;
+      : effectiveWorkspaceMode === 'user' && !project
+        ? getRuntimeContextForEvidenceSource('user_uploaded')
+        : {
+          sourceMode: evidenceSnapshot?.sourceMode ?? 'demo_preloaded',
+          runtimeMode: evidenceSnapshot?.runtimeMode ?? 'demo',
+          permissionMode: evidenceSnapshot?.permissionMode ?? 'read_only',
+          sourceLabel: evidenceSnapshot?.sourceLabel ?? 'Demo evidence',
+          approvalStatus: evidenceSnapshot?.approvalStatus ?? 'not_required',
+        } as const;
 
   // XRD Backend integration state (XRD workspace only)
   const isXrdBackendEnabled = technique === 'xrd';
@@ -980,8 +985,8 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       projectId: undefined,
       projectName: undefined,
       status: run.evidenceQuality.canInterpret ? 'completed' : 'needs-review',
-      processingState: techLower === 'xrd' && run.evidenceQuality.canInterpret 
-        ? 'XRD parsed / processed from local upload' 
+      processingState: techLower === 'xrd' && run.evidenceQuality.canInterpret
+        ? 'XRD parsed / processed from local upload'
         : `${run.technique} provenance-only upload - processing adapter pending`,
       processingLog: [
         `User-uploaded evidence session ${created.analysisId} created from ${run.fileName}`,
@@ -999,7 +1004,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     nextParams.set('sessionId', session.analysisId);
     nextParams.set('technique', techLower);
     setSearchParams(nextParams);
-    
+
     triggerReRead();
     setIsUploadModalOpen(false);
   };
@@ -1033,7 +1038,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     } else if (graphData?.data) {
       points = graphData.data.map(p => ({ x: p.x, y: p.y }));
     }
-    
+
     if (points.length === 0) return [];
 
     points.sort((a, b) => a.x - b.x);
@@ -1142,14 +1147,14 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     ? `difaryx-technique-session:${technique}:quick:${quickSessionKey}`
     : isUploadedContext
       ? `difaryx-technique-session:${technique}:uploaded:${uploadedContextKey}`
-    : `difaryx-technique-session:${technique}:${projectId ?? 'standalone'}:${getTraceId(project, technique)}`,
+      : `difaryx-technique-session:${technique}:${projectId ?? 'standalone'}:${getTraceId(project, technique)}`,
     [isQuickMode, isUploadedContext, uploadedContextKey, technique, quickSessionKey, projectId, project],
   );
   const paneLayoutStorageKey = useMemo(() => isQuickMode
     ? `difaryx-technique-pane-layout:${technique}:quick:${quickSessionKey}`
     : isUploadedContext
       ? `difaryx-technique-pane-layout:${technique}:uploaded:${uploadedContextKey}`
-    : `difaryx-technique-pane-layout:${technique}:${projectId ?? 'standalone'}:${getTraceId(project, technique)}`,
+      : `difaryx-technique-pane-layout:${technique}:${projectId ?? 'standalone'}:${getTraceId(project, technique)}`,
     [isQuickMode, isUploadedContext, uploadedContextKey, technique, quickSessionKey, projectId, project],
   );
   const [activeCenterTab, setActiveCenterTab] = useState(config.centerTabs[0].id);
@@ -1165,7 +1170,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   const handleStepClick = (stepId: string) => {
     setSelectedStepId(stepId);
     setActiveRightTab('Parameters');
-    
+
     // Automatically turn off Auto mode to allow manual parameter tuning
     setSessionState((prev) => ({
       ...prev,
@@ -1447,10 +1452,10 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   const projectFeatureRows = getFeatureRows(project, focusedEvidence, technique);
   const snapshotFeatureRows = snapshotDataset
     ? snapshotDataset.detectedFeatures.map((feature) => ({
-        label: feature.label,
-        value: `${feature.position}`,
-        detail: `Intensity ${feature.intensity}`,
-      }))
+      label: feature.label,
+      value: `${feature.position}`,
+      detail: `Intensity ${feature.intensity}`,
+    }))
     : projectFeatureRows;
 
   const ftirManualFeatureRows = useMemo(() => {
@@ -1465,8 +1470,8 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   const featureRows = (technique === 'ftir' && ftirPeakConfig.isManual && ftirManualFeatureRows)
     ? ftirManualFeatureRows
     : (isUploadedContext
-        ? getQuickFeatureRows(quickAnalysisSession, snapshotFeatureRows)
-        : isQuickMode ? getQuickFeatureRows(quickAnalysisSession, projectFeatureRows) : projectFeatureRows);
+      ? getQuickFeatureRows(quickAnalysisSession, snapshotFeatureRows)
+      : isQuickMode ? getQuickFeatureRows(quickAnalysisSession, projectFeatureRows) : projectFeatureRows);
 
   const [industryFilter, setIndustryFilter] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -1549,10 +1554,11 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
             position: p.position,
             intensity: p.intensity,
             relativeIntensity: p.intensity,
+            prominence: 0,
             context: label
           };
         });
-        
+
         updateUploadedRunProcessingResults(uploadedRunId, {
           extractedFeatures: updatedFeatures
         });
@@ -1573,7 +1579,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
             label: `${label} (${match?.confidence ?? 100}%)`
           };
         });
-        
+
         const updatedFeatures = activePeaks.map((p, index) => {
           const match = matched[index];
           const label = (match && match.assignment !== 'Unassigned') ? match.assignment : (p.label || 'Peak');
@@ -2425,13 +2431,14 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
           matches: [],
         }, processingParams);
 
+        const xpsMaxIntensity = result.peaks.reduce((max, p) => Math.max(max, p.intensity), 0) || 1;
         const extractedFeatures: TechniqueFeature[] = result.peaks.map((peak, index) => ({
           id: `xps-peak-${index}`,
           technique: 'XPS' as const,
           label: `Peak at ${peak.bindingEnergy.toFixed(1)} eV`,
           position: peak.bindingEnergy,
           intensity: peak.intensity,
-          relativeIntensity: (peak.intensity / Math.max(...result.peaks.map(p => p.intensity))) * 100,
+          relativeIntensity: (peak.intensity / xpsMaxIntensity) * 100,
           prominence: peak.intensity,
           context: peak.assignment || 'Unassigned',
         }));
@@ -2521,6 +2528,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
           matches: [],
         }, processingParams);
 
+        const ftirMaxIntensity = result.bands.reduce((max, b) => Math.max(max, b.intensity), 0) || 1;
         const extractedFeatures: TechniqueFeature[] = result.bands.map((band, index) => ({
           id: `ftir-band-${index}`,
           technique: 'FTIR' as const,
@@ -2529,7 +2537,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
             : `Band at ${band.wavenumber.toFixed(0)} cm⁻¹`,
           position: band.wavenumber,
           intensity: band.intensity,
-          relativeIntensity: (band.intensity / Math.max(...result.bands.map(b => b.intensity))) * 100,
+          relativeIntensity: (band.intensity / ftirMaxIntensity) * 100,
           prominence: band.intensity,
           context: band.assignment || 'Unassigned',
         }));
@@ -2773,7 +2781,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4">
-         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
           <Link
             to={isQuickMode ? analysisReturnPath : workspacePath}
             className="shrink-0 text-sm font-bold tracking-tight text-text-main hover:text-primary"
@@ -2887,14 +2895,14 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
           onStepClick={handleStepClick}
           selectedStepId={selectedStepId}
           extraMetadata={config.id === 'xrd' ? [
-            { 
-              label: 'Identity', 
+            {
+              label: 'Identity',
               value: (
                 <div className="flex flex-col gap-0.5">
                   <span className="font-bold text-text-main leading-tight">{xrdDatasetContext.identitySource}</span>
                   <span className="text-[9px] font-medium text-text-muted leading-tight">{xrdDatasetContext.identityConfidence}</span>
                 </div>
-              ) 
+              )
             },
             { label: 'Analysis mode', value: industryFilter === 'All' ? 'Standard' : industryFilter }
           ] : undefined}
@@ -2967,10 +2975,12 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
             </div>
           )}
         />
-
+        <style>{`
+          .workspace-center-panel { min-width: ${CENTER_PANEL_MIN_WIDTH}px; }
+          .workspace-right-panel { width: ${paneLayout.rightPanelWidth}px; min-width: ${RIGHT_PANEL_MIN_WIDTH}px; max-width: ${RIGHT_PANEL_MAX_WIDTH}px; }
+        `}</style>
         <main
-          className="min-w-0 flex-1 overflow-hidden bg-background p-2 transition-[width] duration-150 flex flex-col gap-2"
-          style={{ minWidth: CENTER_PANEL_MIN_WIDTH }}
+          className="workspace-center-panel min-w-0 flex-1 overflow-hidden bg-background p-2 transition-[width] duration-150 flex flex-col gap-2"
         >
           {isReproduceSession && (
             <div className="shrink-0 flex items-center justify-between rounded border border-blue-200 bg-blue-50 px-3 py-2 shadow-sm">
@@ -2996,11 +3006,10 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                       type="button"
                       title={tab.label}
                       onClick={() => setActiveCenterTab(tab.id)}
-                      className={`shrink-0 rounded px-1.5 py-1 text-[10px] font-bold uppercase tracking-wide transition-colors ${
-                        activeCenterTab === tab.id
-                          ? 'bg-primary text-white'
-                          : 'text-text-muted hover:bg-white hover:text-text-main'
-                      }`}
+                      className={`shrink-0 rounded px-1.5 py-1 text-[10px] font-bold uppercase tracking-wide transition-colors ${activeCenterTab === tab.id
+                        ? 'bg-primary text-white'
+                        : 'text-text-muted hover:bg-white hover:text-text-main'
+                        }`}
                     >
                       {tabLabel}
                     </button>
@@ -3016,11 +3025,10 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                     title={label}
                     aria-label={label}
                     onClick={() => setActiveGraphTool(id)}
-                    className={`inline-flex h-6 w-6 items-center justify-center rounded border transition-colors ${
-                      activeGraphTool === id
-                        ? 'border-primary bg-blue-50 text-primary'
-                        : 'border-border bg-white text-text-muted hover:border-primary/40 hover:text-primary'
-                    }`}
+                    className={`inline-flex h-6 w-6 items-center justify-center rounded border transition-colors ${activeGraphTool === id
+                      ? 'border-primary bg-blue-50 text-primary'
+                      : 'border-border bg-white text-text-muted hover:border-primary/40 hover:text-primary'
+                      }`}
                   >
                     <Icon size={13} />
                   </button>
@@ -3032,7 +3040,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                     onClick={() => setIsGraphActionsOpen((open) => !open)}
                     className="inline-flex h-6 items-center gap-1 rounded border border-border bg-white px-2 text-[9px] font-bold text-text-main transition-colors hover:border-primary/40 hover:text-primary"
                     aria-haspopup="menu"
-                    aria-expanded={isGraphActionsOpen}
+                    {...{ 'aria-expanded': isGraphActionsOpen ? 'true' : 'false' }}
                   >
                     Actions <ChevronDown size={11} />
                   </button>
@@ -3119,14 +3127,14 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                         ? '🟢 Click on the spectrum to toggle peak markers.'
                         : '💡 Select the pointer tool (Pointer icon) above to edit peaks.'}
                     </span>
-                    
+
                     <div className="ml-auto flex items-center gap-1.5">
                       {ftirPeakConfig.isManual && (
                         <span className="rounded bg-red-100 px-1.5 py-0.5 text-[9.5px] font-bold text-red-800 uppercase tracking-wide dark:bg-red-900/25 dark:text-red-300">
                           {ftirPeakConfig.peaks.length} peaks
                         </span>
                       )}
-                      
+
                       <button
                         type="button"
                         onClick={() => {
@@ -3143,7 +3151,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                       >
                         Clear Peaks
                       </button>
-                      
+
                       {ftirPeakConfig.isManual && (
                         <button
                           type="button"
@@ -3230,9 +3238,9 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                       <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Ingest raw signals</span>
                       <h3 className="text-sm font-bold text-text-main mt-0.5 font-mono">UPLOAD RAW {technique.toUpperCase()} DATA FILE</h3>
                     </div>
-                    <RawFileUpload 
-                      technique={technique} 
-                      onUploadSuccess={handleUploadSuccess} 
+                    <RawFileUpload
+                      technique={technique}
+                      onUploadSuccess={handleUploadSuccess}
                     />
                   </div>
                 </div>
@@ -3304,138 +3312,136 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         )}
 
         {rightPanelVisible && (
-        <aside
-          className="flex shrink-0 flex-col overflow-hidden border-l border-border bg-surface transition-[width] duration-150"
-          style={{ width: paneLayout.rightPanelWidth, minWidth: RIGHT_PANEL_MIN_WIDTH, maxWidth: RIGHT_PANEL_MAX_WIDTH }}
-        >
-          <div className="border-b border-border px-3 py-2">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-text-main">Controls</p>
-                <p className="text-[9px] text-text-muted">{paneLayout.rightPanelWidth}px panel</p>
+          <aside
+            className="workspace-right-panel flex shrink-0 flex-col overflow-hidden border-l border-border bg-surface transition-[width] duration-150"
+          >
+            <div className="border-b border-border px-3 py-2">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-text-main">Controls</p>
+                  <p className="text-[9px] text-text-muted">{paneLayout.rightPanelWidth}px panel</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => updatePaneLayout({ rightPanelCollapsed: true, graphFocusMode: false })}
+                    className="h-6 rounded border border-border bg-background px-2 text-[9px] font-bold text-text-muted hover:text-primary"
+                    title="Collapse panel"
+                  >
+                    Collapse
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPanePreset('focusGraph')}
+                    className="h-6 rounded border border-border bg-background px-2 text-[9px] font-bold text-text-muted hover:text-primary"
+                    title="Focus graph"
+                  >
+                    Focus Graph
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => updatePaneLayout({ rightPanelCollapsed: true, graphFocusMode: false })}
-                  className="h-6 rounded border border-border bg-background px-2 text-[9px] font-bold text-text-muted hover:text-primary"
-                  title="Collapse panel"
-                >
-                  Collapse
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPanePreset('focusGraph')}
-                  className="h-6 rounded border border-border bg-background px-2 text-[9px] font-bold text-text-muted hover:text-primary"
-                  title="Focus graph"
-                >
-                  Focus Graph
-                </button>
-              </div>
-            </div>
-            <div className="grid grid-cols-5 gap-1">
-              {RIGHT_TABS.map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveRightTab(tab)}
-                  className={`rounded px-1.5 py-1.5 text-[9px] font-bold transition-colors ${
-                    activeRightTab === tab
+              <div className="grid grid-cols-5 gap-1">
+                {RIGHT_TABS.map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setActiveRightTab(tab)}
+                    className={`rounded px-1.5 py-1.5 text-[9px] font-bold transition-colors ${activeRightTab === tab
                       ? 'bg-primary text-white'
                       : 'text-text-muted hover:bg-surface-hover hover:text-text-main'
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
+                      }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {activeRightTab === 'Evidence' && (
-              <EvidencePanel
-                config={config}
-                focusedEvidence={focusedEvidence}
-                featureRows={mappedFeatureRows}
-                graphData={graphData}
-                datasetStatus={datasetStatus}
-                project={project}
-                isUploadedContext={isUploadedContext}
-                quickSession={quickAnalysisSession}
-                xrdBackendEnabled={isXrdBackendEnabled}
-                xrdBackendHealth={xrdBackendHealth}
-                xrdBackendResult={xrdBackendResult}
-                xrdBackendLoading={xrdBackendLoading}
-                xrdBackendError={xrdBackendError}
-                xrdBackendSaved={xrdBackendSaved}
-                datasetContext={xrdDatasetContext}
-              />
-            )}
-
-            {activeRightTab === 'Parameters' && (
-              <>
-
-                <ParametersPanel
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {activeRightTab === 'Evidence' && (
+                <EvidencePanel
                   config={config}
-                  sessionState={sessionState}
-                  affectedStepLabels={previewAffectedSteps.map((stepId) => config.pipeline.find((step) => step.id === stepId)?.label || stepId)}
-                  onChange={updateParameter}
-                  onToggleCheckbox={toggleCheckboxValue}
-                  onApply={applyParameters}
-                  onReprocess={reprocess}
-                  onReset={resetParameters}
-                  onSavePreset={savePreset}
-                  onMarkStepDone={handleMarkStepDone}
-                  processingStateLabel={processingStateLabel}
-                  sharedOverrideCount={sharedOverrideCount}
-                  xrdParameters={xrdParameters}
-                  xrdDatasetContext={xrdDatasetContext}
-                  xrdHasFiniteSignal={xrdHasFiniteSignal}
-                  xrdLocalReferenceProjectId={projectId ?? undefined}
-                  xrdLocalReferenceUploadedRunId={routeContext.uploadedRunId ?? quickAnalysisSession?.uploadedRunId ?? undefined}
-                  useXrdLocalReferenceForBackend={useXrdLocalReferenceForBackend}
-                  onUseXrdLocalReferenceForBackendChange={setUseXrdLocalReferenceForBackend}
-                  onXrdParametersChange={setXrdParameters}
-                  onXrdDatasetContextChange={setXrdDatasetContext}
-                  onXrdValidationStatusChange={set7E4ValidationStatus}
-                  selectedStepId={selectedStepId}
-                  industryFilter={industryFilter}
-                  onIndustryFilterChange={handleIndustryFilterChange}
+                  focusedEvidence={focusedEvidence}
+                  featureRows={mappedFeatureRows}
+                  graphData={graphData}
+                  datasetStatus={datasetStatus}
+                  project={project}
+                  isUploadedContext={isUploadedContext}
+                  quickSession={quickAnalysisSession}
+                  xrdBackendEnabled={isXrdBackendEnabled}
+                  xrdBackendHealth={xrdBackendHealth}
+                  xrdBackendResult={xrdBackendResult}
+                  xrdBackendLoading={xrdBackendLoading}
+                  xrdBackendError={xrdBackendError}
+                  xrdBackendSaved={xrdBackendSaved}
+                  datasetContext={xrdDatasetContext}
                 />
-              </>
-            )}
+              )}
 
-            {activeRightTab === 'Graph' && (
-              <GraphLayoutPanel
-                paneLayout={paneLayout}
-                onPreset={setPanePreset}
-                onRestore={restorePaneLayout}
-                onWidthChange={(width) => updatePaneLayout({ rightPanelWidth: width, rightPanelCollapsed: false, graphFocusMode: false })}
-              />
-            )}
+              {activeRightTab === 'Parameters' && (
+                <>
 
-            {activeRightTab === 'Boundary' && (
-              <BoundaryPanel
-                config={config}
-                comparisonRow={comparisonRow}
-                focusedEvidence={focusedEvidence}
-                project={project}
-              />
-            )}
+                  <ParametersPanel
+                    config={config}
+                    sessionState={sessionState}
+                    affectedStepLabels={previewAffectedSteps.map((stepId) => config.pipeline.find((step) => step.id === stepId)?.label || stepId)}
+                    onChange={updateParameter}
+                    onToggleCheckbox={toggleCheckboxValue}
+                    onApply={applyParameters}
+                    onReprocess={reprocess}
+                    onReset={resetParameters}
+                    onSavePreset={savePreset}
+                    onMarkStepDone={handleMarkStepDone}
+                    processingStateLabel={processingStateLabel}
+                    sharedOverrideCount={sharedOverrideCount}
+                    xrdParameters={xrdParameters}
+                    xrdDatasetContext={xrdDatasetContext}
+                    xrdHasFiniteSignal={xrdHasFiniteSignal}
+                    xrdLocalReferenceProjectId={projectId ?? undefined}
+                    xrdLocalReferenceUploadedRunId={routeContext.uploadedRunId ?? quickAnalysisSession?.uploadedRunId ?? undefined}
+                    useXrdLocalReferenceForBackend={useXrdLocalReferenceForBackend}
+                    onUseXrdLocalReferenceForBackendChange={setUseXrdLocalReferenceForBackend}
+                    onXrdParametersChange={setXrdParameters}
+                    onXrdDatasetContextChange={setXrdDatasetContext}
+                    onXrdValidationStatusChange={set7E4ValidationStatus}
+                    selectedStepId={selectedStepId}
+                    industryFilter={industryFilter}
+                    onIndustryFilterChange={handleIndustryFilterChange}
+                  />
+                </>
+              )}
 
-            {activeRightTab === 'Trace' && (
-              <TracePanel
-                config={config}
-                project={project}
-                datasetLabel={datasetLabel}
-                evidenceSourceId={evidenceSource?.datasetId}
-                traceId={getTraceId(project, technique)}
-                datasetStatus={datasetStatus}
-                sessionState={sessionState}
-              />
-            )}
-          </div>
-        </aside>
+              {activeRightTab === 'Graph' && (
+                <GraphLayoutPanel
+                  paneLayout={paneLayout}
+                  onPreset={setPanePreset}
+                  onRestore={restorePaneLayout}
+                  onWidthChange={(width) => updatePaneLayout({ rightPanelWidth: width, rightPanelCollapsed: false, graphFocusMode: false })}
+                />
+              )}
+
+              {activeRightTab === 'Boundary' && (
+                <BoundaryPanel
+                  config={config}
+                  comparisonRow={comparisonRow}
+                  focusedEvidence={focusedEvidence}
+                  project={project}
+                />
+              )}
+
+              {activeRightTab === 'Trace' && (
+                <TracePanel
+                  config={config}
+                  project={project}
+                  datasetLabel={datasetLabel}
+                  evidenceSourceId={evidenceSource?.datasetId}
+                  traceId={getTraceId(project, technique)}
+                  datasetStatus={datasetStatus}
+                  sessionState={sessionState}
+                />
+              )}
+            </div>
+          </aside>
         )}
       </div>
 
@@ -3590,7 +3596,7 @@ function EvidencePanel({
                     ? <span className="text-emerald-700 font-bold">Online</span>
                     : xrdBackendHealth === null
                       ? <span className="text-slate-500">Checking…</span>
-                    : <span className="text-amber-700 font-bold">{xrdBackendHealth.status || 'Offline / Unavailable'}</span>
+                      : <span className="text-amber-700 font-bold">{xrdBackendHealth.status || 'Offline / Unavailable'}</span>
                 }
               />
               {xrdBackendHealth?.ok && (
@@ -4007,7 +4013,7 @@ function ParametersPanel({
   const sortedParameters = React.useMemo(() => {
     if (!selectedStepId) return config.parameters;
     return config.parameters.filter((p) => p.affectedStepIds.includes(selectedStepId));
-  }, [config.parameters, selectedStepId]);
+  }, [config.parameters, selectedStepId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-2">
@@ -4499,437 +4505,7 @@ function XRDParametersPanel({
     }
   }
 
-  const allPanels = [
-    {
-      id: 'readiness',
-      element: (
-        <XRDReadinessPanel
-          key="readiness"
-          analysisMode={readiness.analysisMode}
-          hasSignal={readiness.hasSignal}
-          hasReferenceSet={readiness.hasReferenceSet}
-          hasKnownElements={readiness.hasKnownElements}
-          hasDeclaredPhases={readiness.hasDeclaredPhases}
-          referenceMatchEnabled={readiness.referenceMatchEnabled}
-          message={readiness.message}
-          tone={readiness.tone}
-        />
-      ),
-    },
-    {
-      id: 'range_radiation',
-      element: (
-        <Panel key="range_radiation" title="Range & Radiation" icon={<FlaskConical size={13} />}>
-          <div className="grid grid-cols-2 gap-2">
-            <XRDNumberField
-              label="2theta min"
-              value={parameters.range.twoThetaMin}
-              min={0}
-              max={180}
-              step={0.1}
-              unit="deg"
-              onChange={(twoThetaMin) => updateParameterStage('range', { twoThetaMin })}
-            />
-            <XRDNumberField
-              label="2theta max"
-              value={parameters.range.twoThetaMax}
-              min={0}
-              max={180}
-              step={0.1}
-              unit="deg"
-              onChange={(twoThetaMax) => updateParameterStage('range', { twoThetaMax })}
-            />
-            <XRDReadOnlyField label="Radiation source" value={getXrdRadiationSourceLabel(parameters.radiation.source)} />
-            <XRDNumberField
-              label="Wavelength"
-              value={parameters.radiation.wavelengthAngstrom}
-              min={0}
-              step={0.0001}
-              unit="angstrom"
-              onChange={(wavelengthAngstrom) => updateParameterStage('radiation', { wavelengthAngstrom })}
-            />
-          </div>
-        </Panel>
-      ),
-    },
-    {
-      id: 'baseline',
-      element: (
-        <Panel key="baseline" title="Baseline" icon={<GitBranch size={13} />}>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="col-span-2">
-              <XRDSelectField
-                label="Method"
-                value={parameters.baseline.method}
-                options={XRD_BASELINE_METHOD_OPTIONS}
-                onChange={(method) => updateParameterStage('baseline', { method: method as XRDBaselineMethod })}
-              />
-            </div>
-            <XRDNumberField
-              label="Lambda"
-              value={parameters.baseline.lambda}
-              min={0}
-              step={1000}
-              onChange={(lambda) => updateParameterStage('baseline', { lambda })}
-            />
-            <XRDNumberField
-              label="p"
-              value={parameters.baseline.p}
-              min={0}
-              max={1}
-              step={0.01}
-              onChange={(p) => updateParameterStage('baseline', { p })}
-            />
-          </div>
-        </Panel>
-      ),
-    },
-    {
-      id: 'smooth',
-      element: (
-        <Panel key="smooth" title="Smoothing" icon={<GitBranch size={13} />}>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="col-span-2">
-              <XRDSelectField
-                label="Method"
-                value={parameters.smoothing.method}
-                options={XRD_SMOOTHING_METHOD_OPTIONS}
-                onChange={(method) => updateParameterStage('smoothing', { method: method as XRDSmoothingMethod })}
-              />
-            </div>
-            <XRDNumberField
-              label="Window size"
-              value={parameters.smoothing.windowSize}
-              min={1}
-              step={2}
-              onChange={(windowSize) => updateParameterStage('smoothing', { windowSize })}
-            />
-            <XRDNumberField
-              label="Polynomial order"
-              value={parameters.smoothing.polynomialOrder}
-              min={0}
-              step={1}
-              onChange={(polynomialOrder) => updateParameterStage('smoothing', { polynomialOrder })}
-            />
-          </div>
-        </Panel>
-      ),
-    },
-    {
-      id: 'peaks',
-      element: (
-        <Panel key="peaks" title="Peak Detection" icon={<Search size={13} />}>
-          <div className="grid grid-cols-2 gap-2">
-            <XRDNumberField
-              label="Min prominence"
-              value={parameters.peakDetection.minProminence}
-              min={0}
-              max={1}
-              step={0.01}
-              onChange={(minProminence) => updateParameterStage('peakDetection', { minProminence })}
-            />
-            <XRDNumberField
-              label="Min distance"
-              value={parameters.peakDetection.minDistanceDeg}
-              min={0}
-              step={0.01}
-              unit="deg"
-              onChange={(minDistanceDeg) => updateParameterStage('peakDetection', { minDistanceDeg })}
-            />
-            <XRDNumberField
-              label="Min height ratio"
-              value={parameters.peakDetection.minHeightRatio}
-              min={0}
-              max={1}
-              step={0.01}
-              onChange={(minHeightRatio) => updateParameterStage('peakDetection', { minHeightRatio })}
-            />
-            <XRDNumberField
-              label="Max peak count"
-              value={parameters.peakDetection.maxPeakCount}
-              min={1}
-              step={1}
-              onChange={(maxPeakCount) => updateParameterStage('peakDetection', { maxPeakCount })}
-            />
-          </div>
-        </Panel>
-      ),
-    },
-    {
-      id: 'fit',
-      element: (
-        <Panel key="fit" title="Peak Fitting" icon={<Sparkles size={13} />}>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="col-span-2">
-              <XRDSelectField
-                label="Model"
-                value={parameters.peakFitting.model}
-                options={XRD_PEAK_FIT_MODEL_OPTIONS}
-                onChange={(model) => updateParameterStage('peakFitting', { model: model as XRDPeakFitModel })}
-              />
-            </div>
-            <XRDNumberField
-              label="Fit window"
-              value={parameters.peakFitting.fitWindowDeg}
-              min={0}
-              step={0.1}
-              unit="deg"
-              onChange={(fitWindowDeg) => updateParameterStage('peakFitting', { fitWindowDeg })}
-            />
-            <XRDNumberField
-              label="Max iterations"
-              value={parameters.peakFitting.maxIterations}
-              min={1}
-              step={1}
-              onChange={(maxIterations) => updateParameterStage('peakFitting', { maxIterations })}
-            />
-            
-            <div className="col-span-2 flex items-center justify-between border-t border-border pt-2 mt-1">
-              <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Refinement Constraints</span>
-            </div>
-            <div className="col-span-2">
-              <XRDToggleField
-                label="Refine FWHM"
-                checked={parameters.peakFitting.refineFWHM ?? true}
-                onChange={(refineFWHM) => updateParameterStage('peakFitting', { refineFWHM })}
-              />
-            </div>
-            <div className="col-span-2">
-              <XRDToggleField
-                label="Refine peak shape (eta)"
-                checked={parameters.peakFitting.refineShape ?? true}
-                onChange={(refineShape) => updateParameterStage('peakFitting', { refineShape })}
-              />
-            </div>
-
-            <div className="col-span-2 flex items-center justify-between border-t border-border pt-2 mt-1">
-              <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Microstructural Analysis</span>
-            </div>
-            <div className="col-span-2">
-              <XRDToggleField
-                label="Calculate crystallite size"
-                checked={parameters.peakFitting.calculateCrystalliteSize}
-                onChange={(calculateCrystalliteSize) => updateParameterStage('peakFitting', { calculateCrystalliteSize })}
-              />
-            </div>
-            {parameters.peakFitting.calculateCrystalliteSize && (
-              <>
-                <XRDNumberField
-                  label="Scherrer Constant (K)"
-                  value={parameters.peakFitting.scherrerConstant ?? 0.89}
-                  min={0.5}
-                  max={1.5}
-                  step={0.01}
-                  onChange={(scherrerConstant) => updateParameterStage('peakFitting', { scherrerConstant })}
-                />
-                <XRDNumberField
-                  label="Instrumental broadening"
-                  value={parameters.peakFitting.instrumentalBroadening ?? 0.05}
-                  min={0}
-                  max={2}
-                  step={0.01}
-                  unit="deg"
-                  onChange={(instrumentalBroadening) => updateParameterStage('peakFitting', { instrumentalBroadening })}
-                />
-              </>
-            )}
-            <div className="col-span-2">
-              <XRDToggleField
-                label="Calculate microstrain"
-                checked={parameters.peakFitting.calculateMicrostrain ?? false}
-                onChange={(calculateMicrostrain) => updateParameterStage('peakFitting', { calculateMicrostrain })}
-              />
-            </div>
-          </div>
-        </Panel>
-      ),
-    },
-    {
-      id: 'match_ref',
-      element: (
-        <XRDReferenceMatchPanel
-          key="match_ref"
-          enabled={parameters.referenceMatch.enabled}
-          matchMode={parameters.referenceMatch.matchMode}
-          referenceSource={parameters.referenceMatch.referenceSource}
-          candidatePhaseIds={parameters.referenceMatch.candidatePhaseIds}
-          toleranceTwoTheta={parameters.referenceMatch.toleranceTwoTheta}
-          minMatchedPeaks={parameters.referenceMatch.minMatchedPeaks}
-          minCoverageRatio={parameters.referenceMatch.minCoverageRatio}
-          minScore={parameters.referenceMatch.minScore}
-          useRelativeIntensity={parameters.referenceMatch.useRelativeIntensity}
-          intensityToleranceRatio={parameters.referenceMatch.intensityToleranceRatio}
-          allowUnknownSearch={parameters.referenceMatch.allowUnknownSearch}
-          allowIdentityClaim={parameters.referenceMatch.allowIdentityClaim}
-          allowPhasePurityClaim={parameters.referenceMatch.allowPhasePurityClaim}
-          matchModeOptions={XRD_MATCH_MODE_OPTIONS}
-          referenceSourceOptions={XRD_REFERENCE_SOURCE_OPTIONS}
-          analysisMode={industryFilter}
-          analysisModeOptions={[
-            { value: 'All', label: 'Standard' },
-            { value: 'Semiconductors', label: 'Semiconductors' },
-            { value: 'Energy Storage', label: 'Energy Storage' },
-            { value: 'Pharmaceuticals', label: 'Pharmaceuticals' },
-            { value: 'Advanced Ceramics', label: 'Advanced Ceramics' },
-          ]}
-          onEnabledChange={(enabled) => updateParameterStage('referenceMatch', { enabled })}
-          onMatchModeChange={(matchMode) => updateParameterStage('referenceMatch', { matchMode: matchMode as XRDMatchMode })}
-          onReferenceSourceChange={updateReferenceSource}
-          onAnalysisModeChange={onIndustryFilterChange}
-          onCandidatePhaseIdsChange={updateCandidatePhaseIds}
-          onToleranceTwoThetaChange={(toleranceTwoTheta) => updateParameterStage('referenceMatch', { toleranceTwoTheta })}
-          onMinMatchedPeaksChange={(minMatchedPeaks) => updateParameterStage('referenceMatch', { minMatchedPeaks })}
-          onMinCoverageRatioChange={(minCoverageRatio) => updateParameterStage('referenceMatch', { minCoverageRatio })}
-          onMinScoreChange={(minScore) => updateParameterStage('referenceMatch', { minScore })}
-          onUseRelativeIntensityChange={(useRelativeIntensity) => updateParameterStage('referenceMatch', { useRelativeIntensity })}
-          onIntensityToleranceRatioChange={(intensityToleranceRatio) => updateParameterStage('referenceMatch', { intensityToleranceRatio })}
-          onAllowUnknownSearchChange={(allowUnknownSearch) => updateParameterStage('referenceMatch', { allowUnknownSearch })}
-        />
-      ),
-    },
-    {
-      id: 'local_ref',
-      element: (
-        <XRDLocalReferencePanel
-          key="local_ref"
-          parsePreview={localReferenceParsePreview}
-          validationLevel={localReferenceValidationLevel}
-          validationLevelLabel={getXrdLocalReferenceValidationLevelLabel(localReferenceValidationLevel)}
-          canSavePreview={canSaveLocalReferencePreview}
-          saveStatus={localReferenceSaveStatus}
-          previewIssueCount={localReferencePreviewIssueCount}
-          previewIssues={localReferencePreviewIssues}
-          savedDrafts={localReferenceDrafts}
-          latestDraft={latestLocalReferenceDraft}
-          latestDraftEligible={latestLocalReferenceDraftEligible}
-          latestDraftApprovedForBackend={latestLocalReferenceDraftApprovedForBackend}
-          latestDraftBlockers={latestLocalReferenceDraftBlockers}
-          approvalStatusLabel={localReferenceApprovalStatusLabel}
-          backendUseStatusLabel={localReferenceBackendUseStatus}
-          useLocalReferenceForBackend={useLocalReferenceForBackend}
-          curatedReferenceSetId={parameters.referenceMatch.referenceSetId}
-          plannedLocalReferences={PLANNED_XRD_LOCAL_REFERENCES}
-          previewSupportedFormats={XRD_LOCAL_REFERENCE_PREVIEW_SUPPORTED_FORMATS}
-          selectableFormats={XRD_LOCAL_REFERENCE_SELECTABLE_FORMATS}
-          expectedColumns={XRD_LOCAL_REFERENCE_EXPECTED_COLUMNS}
-          statusPreview={XRD_LOCAL_REFERENCE_STATUS_PREVIEW}
-          onFileChange={handleLocalReferenceFileChange}
-          onSavePreview={handleSaveLocalReferencePreview}
-          onClearPreview={handleClearLocalReferencePreview}
-          onDeleteDraft={handleDeleteLocalReferenceDraft}
-          onApproveDraft={handleApproveLocalReferenceDraft}
-          onRejectDraft={handleRejectLocalReferenceDraft}
-          onToggleUseForBackend={onUseLocalReferenceForBackendChange}
-          formatFileKind={formatXrdReferenceFileKind}
-          formatTimestamp={formatXrdLocalReferenceTimestamp}
-          formatNumber={formatReferenceMatchNumber}
-          formatCifConversionMode={formatXrdCifConversionMode}
-          formatCifCellParameters={formatXrdCifCellParameters}
-          formatXrdmlRange={formatXrdmlRange}
-          formatXrdmlStep={formatXrdmlStep}
-          formatXrdmlIntensityRange={formatXrdmlIntensityRange}
-          getValidationStatusLabel={getXrdLocalReferenceValidationStatusLabel}
-        />
-      ),
-    },
-    {
-      id: 'boundary',
-      element: (
-        <XRDBoundaryPanel
-          key="boundary"
-          enabled={parameters.boundary.enabled}
-          claimMode={parameters.boundary.claimMode}
-          requireComplementaryEvidence={parameters.boundary.requireComplementaryEvidence}
-          requireReferenceSetForMatch={parameters.boundary.requireReferenceSetForMatch}
-          requireSampleContextForTargetedMatch={parameters.boundary.requireSampleContextForTargetedMatch}
-          allowIdentityClaim={parameters.boundary.allowIdentityClaim}
-          allowPhasePurityClaim={parameters.boundary.allowPhasePurityClaim}
-          claimModeOptions={XRD_CLAIM_MODE_OPTIONS}
-          onEnabledChange={(enabled) => updateParameterStage('boundary', { enabled })}
-          onClaimModeChange={(claimMode) => updateParameterStage('boundary', { claimMode: claimMode as XRDClaimMode })}
-          onRequireComplementaryEvidenceChange={(requireComplementaryEvidence) => updateParameterStage('boundary', { requireComplementaryEvidence })}
-          onRequireReferenceSetForMatchChange={(requireReferenceSetForMatch) => updateParameterStage('boundary', { requireReferenceSetForMatch })}
-          onRequireSampleContextForTargetedMatchChange={(requireSampleContextForTargetedMatch) => updateParameterStage('boundary', { requireSampleContextForTargetedMatch })}
-        />
-      ),
-    },
-    {
-      id: 'legacy',
-      element: (
-        <Panel key="legacy" title="Legacy Demo Processing" icon={<Play size={13} />}>
-          <p className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] leading-relaxed text-text-muted">
-            These existing demo actions use the current workspace parameter path. The Phase 2 XRD controls above remain local frontend state.
-          </p>
-          <div className="mt-2 space-y-1.5">
-            <Metric label="Affected step" value={affectedStepLabels.join(', ')} />
-            <Metric label="Status" value={processingStateLabel} />
-            <Metric label="Shared overrides" value={sharedOverrideCount > 0 ? `${sharedOverrideCount} active` : 'None'} />
-            <Metric
-              label="Recalculated"
-              value={sessionState.pendingRecalculation || sessionState.dirty
-                ? `${config.graphLabel}, ${config.featureLabel}, evidence boundary`
-                : 'No pending recalculation'}
-            />
-            <Metric label="Preset" value={sessionState.presetSavedLabel ? `Saved ${sessionState.presetSavedLabel}` : 'No preset saved'} />
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {selectedStepId && (
-              <button
-                type="button"
-                onClick={() => {
-                  onApply([selectedStepId]);
-                  onMarkStepDone(selectedStepId);
-                }}
-                className="col-span-2 h-8 rounded bg-green-600 px-2 text-[11px] font-bold text-white hover:bg-green-700"
-              >
-                Save & Mark as Done
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onApply()}
-              className="h-8 rounded bg-primary px-2 text-[11px] font-bold text-white hover:bg-primary/90"
-            >
-              Apply Parameters
-            </button>
-            <button
-              type="button"
-              onClick={handleLegacyReprocessClick}
-              className="h-8 rounded border border-blue-200 bg-blue-50 px-2 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
-            >
-              {config.reprocessLabel}
-            </button>
-            <button
-              type="button"
-              onClick={onReset}
-              className="h-8 rounded border border-border bg-background px-2 text-[11px] font-bold text-text-main hover:bg-surface-hover"
-            >
-              Reset
-            </button>
-            <button
-              type="button"
-              onClick={onSavePreset}
-              className="h-8 rounded border border-border bg-background px-2 text-[11px] font-bold text-text-main hover:bg-surface-hover"
-            >
-              Save Preset
-            </button>
-          </div>
-        </Panel>
-      ),
-    },
-    {
-      id: 'history',
-      element: (
-        <ParameterHistoryPanel
-          key="history"
-          projectId={projectId ?? null}
-          technique="xrd"
-        />
-      ),
-    },
-  ];
-
-  const getPanelStepMatch = (panelId: string, stepId: string | null): boolean => {
+  const getPanelStepMatch = React.useCallback((panelId: string, stepId: string | null): boolean => {
     if (!stepId) return false;
     if (stepId === 'baseline') return panelId === 'baseline' || panelId === 'range_radiation';
     if (stepId === 'smooth') return panelId === 'smooth';
@@ -4938,9 +4514,9 @@ function XRDParametersPanel({
     if (stepId === 'match') return panelId === 'match_ref' || panelId === 'local_ref';
     if (stepId === 'refinement') return panelId === 'boundary';
     return false;
-  };
+  }, []);
 
-  const panelsOrder = [
+  const PANELS_ORDER = React.useMemo(() => [
     'readiness',
     'range_radiation',
     'baseline',
@@ -4952,32 +4528,437 @@ function XRDParametersPanel({
     'boundary',
     'legacy',
     'history',
-  ];
+  ], []);
 
-  const sortedPanels = React.useMemo(() => {
-    if (!selectedStepId) {
-      return [...allPanels].sort((a, b) => panelsOrder.indexOf(a.id) - panelsOrder.indexOf(b.id));
+  // Stable panel IDs for ordering (avoids recreating allPanels every render)
+  const panelIds = React.useMemo(() => {
+    if (!selectedStepId) return PANELS_ORDER;
+    return PANELS_ORDER.filter(
+      (id) => getPanelStepMatch(id, selectedStepId) || id === 'legacy'
+    );
+  }, [PANELS_ORDER, selectedStepId, getPanelStepMatch]);
+
+  const renderPanelElement = (panelId: string) => {
+    switch (panelId) {
+      case 'readiness':
+        return (
+          <XRDReadinessPanel
+            analysisMode={readiness.analysisMode}
+            hasSignal={readiness.hasSignal}
+            hasReferenceSet={readiness.hasReferenceSet}
+            hasKnownElements={readiness.hasKnownElements}
+            hasDeclaredPhases={readiness.hasDeclaredPhases}
+            referenceMatchEnabled={readiness.referenceMatchEnabled}
+            message={readiness.message}
+            tone={readiness.tone}
+          />
+        );
+      case 'range_radiation':
+        return (
+          <Panel title="Range & Radiation" icon={<FlaskConical size={13} />}>
+            <div className="grid grid-cols-2 gap-2">
+              <XRDNumberField
+                label="2theta min"
+                value={parameters.range.twoThetaMin}
+                min={0}
+                max={180}
+                step={0.1}
+                unit="deg"
+                onChange={(twoThetaMin) => updateParameterStage('range', { twoThetaMin })}
+              />
+              <XRDNumberField
+                label="2theta max"
+                value={parameters.range.twoThetaMax}
+                min={0}
+                max={180}
+                step={0.1}
+                unit="deg"
+                onChange={(twoThetaMax) => updateParameterStage('range', { twoThetaMax })}
+              />
+              <XRDReadOnlyField label="Radiation source" value={getXrdRadiationSourceLabel(parameters.radiation.source)} />
+              <XRDNumberField
+                label="Wavelength"
+                value={parameters.radiation.wavelengthAngstrom}
+                min={0}
+                step={0.0001}
+                unit="angstrom"
+                onChange={(wavelengthAngstrom) => updateParameterStage('radiation', { wavelengthAngstrom })}
+              />
+            </div>
+          </Panel>
+        );
+      case 'baseline':
+        return (
+          <Panel title="Baseline" icon={<GitBranch size={13} />}>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2">
+                <XRDSelectField
+                  label="Method"
+                  value={parameters.baseline.method}
+                  options={XRD_BASELINE_METHOD_OPTIONS}
+                  onChange={(method) => updateParameterStage('baseline', { method: method as XRDBaselineMethod })}
+                />
+              </div>
+              <XRDNumberField
+                label="Lambda"
+                value={parameters.baseline.lambda}
+                min={0}
+                step={1000}
+                onChange={(lambda) => updateParameterStage('baseline', { lambda })}
+              />
+              <XRDNumberField
+                label="p"
+                value={parameters.baseline.p}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={(p) => updateParameterStage('baseline', { p })}
+              />
+            </div>
+          </Panel>
+        );
+      case 'smooth':
+        return (
+          <Panel title="Smoothing" icon={<GitBranch size={13} />}>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2">
+                <XRDSelectField
+                  label="Method"
+                  value={parameters.smoothing.method}
+                  options={XRD_SMOOTHING_METHOD_OPTIONS}
+                  onChange={(method) => updateParameterStage('smoothing', { method: method as XRDSmoothingMethod })}
+                />
+              </div>
+              <XRDNumberField
+                label="Window size"
+                value={parameters.smoothing.windowSize}
+                min={1}
+                step={2}
+                onChange={(windowSize) => updateParameterStage('smoothing', { windowSize })}
+              />
+              <XRDNumberField
+                label="Polynomial order"
+                value={parameters.smoothing.polynomialOrder}
+                min={0}
+                step={1}
+                onChange={(polynomialOrder) => updateParameterStage('smoothing', { polynomialOrder })}
+              />
+            </div>
+          </Panel>
+        );
+      case 'peaks':
+        return (
+          <Panel title="Peak Detection" icon={<Search size={13} />}>
+            <div className="grid grid-cols-2 gap-2">
+              <XRDNumberField
+                label="Min prominence"
+                value={parameters.peakDetection.minProminence}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={(minProminence) => updateParameterStage('peakDetection', { minProminence })}
+              />
+              <XRDNumberField
+                label="Min distance"
+                value={parameters.peakDetection.minDistanceDeg}
+                min={0}
+                step={0.01}
+                unit="deg"
+                onChange={(minDistanceDeg) => updateParameterStage('peakDetection', { minDistanceDeg })}
+              />
+              <XRDNumberField
+                label="Min height ratio"
+                value={parameters.peakDetection.minHeightRatio}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={(minHeightRatio) => updateParameterStage('peakDetection', { minHeightRatio })}
+              />
+              <XRDNumberField
+                label="Max peak count"
+                value={parameters.peakDetection.maxPeakCount}
+                min={1}
+                step={1}
+                onChange={(maxPeakCount) => updateParameterStage('peakDetection', { maxPeakCount })}
+              />
+            </div>
+          </Panel>
+        );
+      case 'fit':
+        return (
+          <Panel title="Peak Fitting" icon={<Sparkles size={13} />}>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2">
+                <XRDSelectField
+                  label="Model"
+                  value={parameters.peakFitting.model}
+                  options={XRD_PEAK_FIT_MODEL_OPTIONS}
+                  onChange={(model) => updateParameterStage('peakFitting', { model: model as XRDPeakFitModel })}
+                />
+              </div>
+              <XRDNumberField
+                label="Fit window"
+                value={parameters.peakFitting.fitWindowDeg}
+                min={0}
+                step={0.1}
+                unit="deg"
+                onChange={(fitWindowDeg) => updateParameterStage('peakFitting', { fitWindowDeg })}
+              />
+              <XRDNumberField
+                label="Max iterations"
+                value={parameters.peakFitting.maxIterations}
+                min={1}
+                step={1}
+                onChange={(maxIterations) => updateParameterStage('peakFitting', { maxIterations })}
+              />
+
+              <div className="col-span-2 flex items-center justify-between border-t border-border pt-2 mt-1">
+                <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Refinement Constraints</span>
+              </div>
+              <div className="col-span-2">
+                <XRDToggleField
+                  label="Refine FWHM"
+                  checked={parameters.peakFitting.refineFWHM ?? true}
+                  onChange={(refineFWHM) => updateParameterStage('peakFitting', { refineFWHM })}
+                />
+              </div>
+              <div className="col-span-2">
+                <XRDToggleField
+                  label="Refine peak shape (eta)"
+                  checked={parameters.peakFitting.refineShape ?? true}
+                  onChange={(refineShape) => updateParameterStage('peakFitting', { refineShape })}
+                />
+              </div>
+
+              <div className="col-span-2 flex items-center justify-between border-t border-border pt-2 mt-1">
+                <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Microstructural Analysis</span>
+              </div>
+              <div className="col-span-2">
+                <XRDToggleField
+                  label="Calculate crystallite size"
+                  checked={parameters.peakFitting.calculateCrystalliteSize}
+                  onChange={(calculateCrystalliteSize) => updateParameterStage('peakFitting', { calculateCrystalliteSize })}
+                />
+              </div>
+              {parameters.peakFitting.calculateCrystalliteSize && (
+                <>
+                  <XRDNumberField
+                    label="Scherrer Constant (K)"
+                    value={parameters.peakFitting.scherrerConstant ?? 0.89}
+                    min={0.5}
+                    max={1.5}
+                    step={0.01}
+                    onChange={(scherrerConstant) => updateParameterStage('peakFitting', { scherrerConstant })}
+                  />
+                  <XRDNumberField
+                    label="Instrumental broadening"
+                    value={parameters.peakFitting.instrumentalBroadening ?? 0.05}
+                    min={0}
+                    max={2}
+                    step={0.01}
+                    unit="deg"
+                    onChange={(instrumentalBroadening) => updateParameterStage('peakFitting', { instrumentalBroadening })}
+                  />
+                </>
+              )}
+              <div className="col-span-2">
+                <XRDToggleField
+                  label="Calculate microstrain"
+                  checked={parameters.peakFitting.calculateMicrostrain ?? false}
+                  onChange={(calculateMicrostrain) => updateParameterStage('peakFitting', { calculateMicrostrain })}
+                />
+              </div>
+            </div>
+          </Panel>
+        );
+      case 'match_ref':
+        return (
+          <XRDReferenceMatchPanel
+            enabled={parameters.referenceMatch.enabled}
+            matchMode={parameters.referenceMatch.matchMode}
+            referenceSource={parameters.referenceMatch.referenceSource}
+            candidatePhaseIds={parameters.referenceMatch.candidatePhaseIds}
+            toleranceTwoTheta={parameters.referenceMatch.toleranceTwoTheta}
+            minMatchedPeaks={parameters.referenceMatch.minMatchedPeaks}
+            minCoverageRatio={parameters.referenceMatch.minCoverageRatio}
+            minScore={parameters.referenceMatch.minScore}
+            useRelativeIntensity={parameters.referenceMatch.useRelativeIntensity}
+            intensityToleranceRatio={parameters.referenceMatch.intensityToleranceRatio}
+            allowUnknownSearch={parameters.referenceMatch.allowUnknownSearch}
+            allowIdentityClaim={parameters.referenceMatch.allowIdentityClaim}
+            allowPhasePurityClaim={parameters.referenceMatch.allowPhasePurityClaim}
+            matchModeOptions={XRD_MATCH_MODE_OPTIONS}
+            referenceSourceOptions={XRD_REFERENCE_SOURCE_OPTIONS}
+            analysisMode={industryFilter}
+            analysisModeOptions={[
+              { value: 'All', label: 'Standard' },
+              { value: 'Semiconductors', label: 'Semiconductors' },
+              { value: 'Energy Storage', label: 'Energy Storage' },
+              { value: 'Pharmaceuticals', label: 'Pharmaceuticals' },
+              { value: 'Advanced Ceramics', label: 'Advanced Ceramics' },
+            ]}
+            onEnabledChange={(enabled) => updateParameterStage('referenceMatch', { enabled })}
+            onMatchModeChange={(matchMode) => updateParameterStage('referenceMatch', { matchMode: matchMode as XRDMatchMode })}
+            onReferenceSourceChange={updateReferenceSource}
+            onAnalysisModeChange={onIndustryFilterChange}
+            onCandidatePhaseIdsChange={updateCandidatePhaseIds}
+            onToleranceTwoThetaChange={(toleranceTwoTheta) => updateParameterStage('referenceMatch', { toleranceTwoTheta })}
+            onMinMatchedPeaksChange={(minMatchedPeaks) => updateParameterStage('referenceMatch', { minMatchedPeaks })}
+            onMinCoverageRatioChange={(minCoverageRatio) => updateParameterStage('referenceMatch', { minCoverageRatio })}
+            onMinScoreChange={(minScore) => updateParameterStage('referenceMatch', { minScore })}
+            onUseRelativeIntensityChange={(useRelativeIntensity) => updateParameterStage('referenceMatch', { useRelativeIntensity })}
+            onIntensityToleranceRatioChange={(intensityToleranceRatio) => updateParameterStage('referenceMatch', { intensityToleranceRatio })}
+            onAllowUnknownSearchChange={(allowUnknownSearch) => updateParameterStage('referenceMatch', { allowUnknownSearch })}
+          />
+        );
+      case 'local_ref':
+        return (
+          <XRDLocalReferencePanel
+            parsePreview={localReferenceParsePreview}
+            validationLevel={localReferenceValidationLevel}
+            validationLevelLabel={getXrdLocalReferenceValidationLevelLabel(localReferenceValidationLevel)}
+            canSavePreview={canSaveLocalReferencePreview}
+            saveStatus={localReferenceSaveStatus}
+            previewIssueCount={localReferencePreviewIssueCount}
+            previewIssues={localReferencePreviewIssues}
+            savedDrafts={localReferenceDrafts}
+            latestDraft={latestLocalReferenceDraft}
+            latestDraftEligible={latestLocalReferenceDraftEligible}
+            latestDraftApprovedForBackend={latestLocalReferenceDraftApprovedForBackend}
+            latestDraftBlockers={latestLocalReferenceDraftBlockers}
+            approvalStatusLabel={localReferenceApprovalStatusLabel}
+            backendUseStatusLabel={localReferenceBackendUseStatus}
+            useLocalReferenceForBackend={useLocalReferenceForBackend}
+            curatedReferenceSetId={parameters.referenceMatch.referenceSetId}
+            plannedLocalReferences={PLANNED_XRD_LOCAL_REFERENCES}
+            previewSupportedFormats={XRD_LOCAL_REFERENCE_PREVIEW_SUPPORTED_FORMATS}
+            selectableFormats={XRD_LOCAL_REFERENCE_SELECTABLE_FORMATS}
+            expectedColumns={XRD_LOCAL_REFERENCE_EXPECTED_COLUMNS}
+            statusPreview={XRD_LOCAL_REFERENCE_STATUS_PREVIEW}
+            onFileChange={handleLocalReferenceFileChange}
+            onSavePreview={handleSaveLocalReferencePreview}
+            onClearPreview={handleClearLocalReferencePreview}
+            onDeleteDraft={handleDeleteLocalReferenceDraft}
+            onApproveDraft={handleApproveLocalReferenceDraft}
+            onRejectDraft={handleRejectLocalReferenceDraft}
+            onToggleUseForBackend={onUseLocalReferenceForBackendChange}
+            formatFileKind={formatXrdReferenceFileKind}
+            formatTimestamp={formatXrdLocalReferenceTimestamp}
+            formatNumber={formatReferenceMatchNumber}
+            formatCifConversionMode={formatXrdCifConversionMode}
+            formatCifCellParameters={formatXrdCifCellParameters}
+            formatXrdmlRange={formatXrdmlRange}
+            formatXrdmlStep={formatXrdmlStep}
+            formatXrdmlIntensityRange={formatXrdmlIntensityRange}
+            getValidationStatusLabel={getXrdLocalReferenceValidationStatusLabel}
+          />
+        );
+      case 'boundary':
+        return (
+          <XRDBoundaryPanel
+            enabled={parameters.boundary.enabled}
+            claimMode={parameters.boundary.claimMode}
+            requireComplementaryEvidence={parameters.boundary.requireComplementaryEvidence}
+            requireReferenceSetForMatch={parameters.boundary.requireReferenceSetForMatch}
+            requireSampleContextForTargetedMatch={parameters.boundary.requireSampleContextForTargetedMatch}
+            allowIdentityClaim={parameters.boundary.allowIdentityClaim}
+            allowPhasePurityClaim={parameters.boundary.allowPhasePurityClaim}
+            claimModeOptions={XRD_CLAIM_MODE_OPTIONS}
+            onEnabledChange={(enabled) => updateParameterStage('boundary', { enabled })}
+            onClaimModeChange={(claimMode) => updateParameterStage('boundary', { claimMode: claimMode as XRDClaimMode })}
+            onRequireComplementaryEvidenceChange={(requireComplementaryEvidence) => updateParameterStage('boundary', { requireComplementaryEvidence })}
+            onRequireReferenceSetForMatchChange={(requireReferenceSetForMatch) => updateParameterStage('boundary', { requireReferenceSetForMatch })}
+            onRequireSampleContextForTargetedMatchChange={(requireSampleContextForTargetedMatch) => updateParameterStage('boundary', { requireSampleContextForTargetedMatch })}
+          />
+        );
+      case 'legacy':
+        return (
+          <Panel title="Legacy Demo Processing" icon={<Play size={13} />}>
+            <p className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] leading-relaxed text-text-muted">
+              These existing demo actions use the current workspace parameter path. The Phase 2 XRD controls above remain local frontend state.
+            </p>
+            <div className="mt-2 space-y-1.5">
+              <Metric label="Affected step" value={affectedStepLabels.join(', ')} />
+              <Metric label="Status" value={processingStateLabel} />
+              <Metric label="Shared overrides" value={sharedOverrideCount > 0 ? `${sharedOverrideCount} active` : 'None'} />
+              <Metric
+                label="Recalculated"
+                value={sessionState.pendingRecalculation || sessionState.dirty
+                  ? `${config.graphLabel}, ${config.featureLabel}, evidence boundary`
+                  : 'No pending recalculation'}
+              />
+              <Metric label="Preset" value={sessionState.presetSavedLabel ? `Saved ${sessionState.presetSavedLabel}` : 'No preset saved'} />
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {selectedStepId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onApply([selectedStepId]);
+                    onMarkStepDone(selectedStepId);
+                  }}
+                  className="col-span-2 h-8 rounded bg-green-600 px-2 text-[11px] font-bold text-white hover:bg-green-700"
+                >
+                  Save & Mark as Done
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onApply()}
+                className="h-8 rounded bg-primary px-2 text-[11px] font-bold text-white hover:bg-primary/90"
+              >
+                Apply Parameters
+              </button>
+              <button
+                type="button"
+                onClick={handleLegacyReprocessClick}
+                className="h-8 rounded border border-blue-200 bg-blue-50 px-2 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
+              >
+                {config.reprocessLabel}
+              </button>
+              <button
+                type="button"
+                onClick={onReset}
+                className="h-8 rounded border border-border bg-background px-2 text-[11px] font-bold text-text-main hover:bg-surface-hover"
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={onSavePreset}
+                className="h-8 rounded border border-border bg-background px-2 text-[11px] font-bold text-text-main hover:bg-surface-hover"
+              >
+                Save Preset
+              </button>
+            </div>
+          </Panel>
+        );
+      case 'history':
+        return (
+          <ParameterHistoryPanel
+            projectId={projectId ?? null}
+            technique="xrd"
+          />
+        );
+      default:
+        return null;
     }
-    return allPanels.filter(
-      (p) => getPanelStepMatch(p.id, selectedStepId) || p.id === 'legacy'
-    ).sort((a, b) => panelsOrder.indexOf(a.id) - panelsOrder.indexOf(b.id));
-  }, [allPanels, selectedStepId]);
+  };
 
   return (
     <div className="space-y-2">
-      {sortedPanels.map((panel) => {
-        const isHighlighted = getPanelStepMatch(panel.id, selectedStepId);
+      {panelIds.map((panelId) => {
+        const isHighlighted = getPanelStepMatch(panelId, selectedStepId);
         return (
           <div
-            key={panel.id}
-            id={`param-panel-${panel.id}`}
-            className={`transition-all duration-300 rounded ${
-              isHighlighted
-                ? 'ring-1 ring-primary/40 bg-primary/[0.02] p-1 border border-primary/20 shadow-sm'
-                : ''
-            }`}
+            key={panelId}
+            id={`param-panel-${panelId}`}
+            className={`transition-all duration-300 rounded ${isHighlighted
+              ? 'ring-1 ring-primary/40 bg-primary/[0.02] p-1 border border-primary/20 shadow-sm'
+              : ''
+              }`}
           >
-            {panel.element}
+            {renderPanelElement(panelId)}
           </div>
         );
       })}
@@ -5062,6 +5043,7 @@ function XRDNumberField({
         min={min}
         max={max}
         step={step}
+        aria-label={label}
         onChange={(event) => onChange(parseXrdNumberInput(event.target.value, value))}
         className="mt-1 h-8 w-full rounded border border-border bg-white px-2 text-xs font-semibold text-text-main focus:border-primary focus:outline-none"
       />
@@ -5088,6 +5070,7 @@ function XRDSelectField<TValue extends string>({
         <XRDFieldLabel label={label} />
         <select
           value={value}
+          aria-label={label}
           onChange={(event) => onChange(event.target.value as TValue)}
           className="mt-0.5 h-7 w-full rounded border border-border bg-white px-2 text-xs font-semibold text-text-main focus:border-primary focus:outline-none"
         >
@@ -5106,6 +5089,7 @@ function XRDSelectField<TValue extends string>({
       <XRDFieldLabel label={label} />
       <select
         value={value}
+        aria-label={label}
         onChange={(event) => onChange(event.target.value as TValue)}
         className="mt-1 h-8 w-full rounded border border-border bg-white px-2 text-xs font-semibold text-text-main focus:border-primary focus:outline-none"
       >
@@ -5144,27 +5128,41 @@ function XRDToggleField({
   return (
     <div className="rounded border border-border bg-background px-2 py-1.5">
       <XRDFieldLabel label={label} />
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={`mt-1 inline-flex h-7 w-full items-center justify-between rounded border px-2 text-xs font-bold ${
-          disabled
+      {checked ? (
+        <button
+          type="button"
+          role="switch"
+          aria-checked="true"
+          disabled={disabled}
+          onClick={() => onChange(!checked)}
+          className={`mt-1 inline-flex h-7 w-full items-center justify-between rounded border px-2 text-xs font-bold ${disabled
             ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-            : checked
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            }`}
+        >
+          <span>Enabled</span>
+          <span className="h-4 w-8 rounded-full p-0.5 bg-emerald-500">
+            <span className="block h-3 w-3 rounded-full bg-white transition-transform translate-x-4" />
+          </span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          role="switch"
+          aria-checked="false"
+          disabled={disabled}
+          onClick={() => onChange(!checked)}
+          className={`mt-1 inline-flex h-7 w-full items-center justify-between rounded border px-2 text-xs font-bold ${disabled
+            ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
             : 'border-slate-200 bg-slate-50 text-slate-600'
-        }`}
-      >
-        <span>{checked ? 'Enabled' : 'Disabled'}</span>
-        <span className={`h-4 w-8 rounded-full p-0.5 ${checked ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-          <span
-            className={`block h-3 w-3 rounded-full bg-white transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`}
-          />
-        </span>
-      </button>
+            }`}
+        >
+          <span>Disabled</span>
+          <span className="h-4 w-8 rounded-full p-0.5 bg-slate-300">
+            <span className="block h-3 w-3 rounded-full bg-white transition-transform translate-x-0" />
+          </span>
+        </button>
+      )}
     </div>
   );
 }
@@ -5179,8 +5177,8 @@ function XRDStatusText({
   const className = tone === 'warning'
     ? 'border-amber-200 bg-amber-50 text-amber-800'
     : tone === 'info'
-    ? 'border-blue-200 bg-blue-50 text-blue-900'
-    : 'border-slate-200 bg-slate-50 text-text-muted';
+      ? 'border-blue-200 bg-blue-50 text-blue-900'
+      : 'border-slate-200 bg-slate-50 text-text-muted';
 
   return (
     <p className={`rounded border px-2 py-1.5 text-[10px] leading-relaxed ${className}`}>
@@ -5215,6 +5213,7 @@ function GraphLayoutPanel({
               max={RIGHT_PANEL_MAX_WIDTH}
               step={10}
               value={paneLayout.rightPanelWidth}
+              aria-label="Right panel width"
               onChange={(event) => onWidthChange(Number(event.target.value))}
               className="mt-1 w-full accent-blue-600"
             />

@@ -11,7 +11,7 @@ export const DEFAULT_XRD_PARAMETERS: XRDParameters = {
   },
   baseline: {
     method: 'rolling_ball',
-    asymmetry: 0.001,
+    lambda: 0.001,
     p: 0.01,
   },
   smoothing: {

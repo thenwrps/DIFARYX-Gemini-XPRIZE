@@ -102,7 +102,7 @@ describe('Claim Graph Engine - CuFe2O4 Demo Data', () => {
     expect(result.report).toBeDefined();
     expect(result.report.conclusion).toBeDefined();
     expect(result.report.evidence_basis).toBeDefined();
-    expect(result.report.cross_technique_consistency).toBeDefined();
+    expect(result.report.cross_tech_consistency).toBeDefined();
     expect(result.report.limitations).toBeDefined();
     expect(result.report.required_validation).toBeDefined();
     expect(result.report.decision).toBeDefined();
@@ -257,7 +257,7 @@ describe('Claim Graph Engine - CuFe2O4 Demo Data', () => {
     expect(techniques.has('FTIR')).toBe(true);
 
     // Cross-technique consistency should be mentioned in report
-    expect(result.report.cross_technique_consistency).toBeDefined();
-    expect(result.report.cross_technique_consistency.length).toBeGreaterThan(0);
+    expect(result.report.cross_tech_consistency).toBeDefined();
+    expect(result.report.cross_tech_consistency.length).toBeGreaterThan(0);
   });
 });
