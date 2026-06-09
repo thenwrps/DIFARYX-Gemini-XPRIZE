@@ -950,7 +950,9 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         } as const;
 
   // XRD Backend integration state (XRD workspace only)
-  const isXrdBackendEnabled = technique === 'xrd';
+  const isXrdBackendEnabled =
+    technique === 'xrd' &&
+    Boolean(import.meta.env.VITE_XRD_API_URL || import.meta.env.VITE_XRD_BACKEND_URL);
   const [xrdParameters, setXrdParameters] = useState<XRDParameters>(cloneDefaultXrdParameters);
   const [xrdDatasetContext, setXrdDatasetContext] = useState<XRDDatasetContext>(createDefaultXrdDatasetContext);
   const [xrdBackendHealth, setXrdBackendHealth] = useState<XRDHealthStatus | null>(null);

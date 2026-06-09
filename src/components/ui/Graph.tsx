@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CartesianGrid,
   Legend,
@@ -47,6 +47,44 @@ const HEIGHT_CLASSES: Record<string, string> = {
   '400': 'h-[400px] min-h-[400px]',
   '500': 'h-[500px] min-h-[500px]',
 };
+
+type ContainerSize = { width: number; height: number };
+
+function useContainerSize(ref: React.RefObject<HTMLElement>): ContainerSize {
+  const [size, setSize] = useState<ContainerSize>({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let frame: number | null = null;
+
+    const update = () => {
+      const next = el.getBoundingClientRect();
+      const width = Math.round(next.width);
+      const height = Math.round(next.height);
+      setSize((prev) => {
+        if (prev.width === width && prev.height === height) return prev;
+        return { width, height };
+      });
+    };
+
+    update();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(update);
+    });
+    ro.observe(el);
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
+  }, [ref]);
+
+  return size;
+}
 
 // ── Component props ──────────────────────────────────────────────────
 
@@ -415,6 +453,9 @@ export function Graph({
   yAxisLabel,
   onChartClick,
 }: GraphProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const containerSize = useContainerSize(containerRef);
+  const isContainerReady = containerSize.width > 0 && containerSize.height > 0;
   const useExternal = !!externalData && externalData.length > 0;
 
   // Internal data path (backward compat)
@@ -472,7 +513,8 @@ export function Graph({
     }
 
     return (
-      <div className={`w-full ${HEIGHT_CLASSES[String(resolvedHeight)] || 'h-[400px] min-h-[400px]'}`}>
+      <div ref={containerRef} className={`w-full ${HEIGHT_CLASSES[String(resolvedHeight)] || 'h-[400px] min-h-[400px]'}`}>
+        {isContainerReady && (
         <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
           <LineChart
             data={externalChartData}
@@ -619,6 +661,7 @@ export function Graph({
             />
           </LineChart>
         </ResponsiveContainer>
+        )}
       </div>
     );
   }
@@ -632,7 +675,8 @@ export function Graph({
   const resolvedHeight = height !== undefined ? height : 400;
 
   return (
-    <div className={`w-full ${HEIGHT_CLASSES[String(resolvedHeight)] || 'h-[400px] min-h-[400px]'}`}>
+    <div ref={containerRef} className={`w-full ${HEIGHT_CLASSES[String(resolvedHeight)] || 'h-[400px] min-h-[400px]'}`}>
+      {isContainerReady && (
       <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
         <LineChart
           data={internalData}
@@ -747,6 +791,7 @@ export function Graph({
           )}
         </LineChart>
       </ResponsiveContainer>
+      )}
     </div>
   );
 }
