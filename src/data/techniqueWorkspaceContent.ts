@@ -246,7 +246,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       },
       {
         id: 'fittingConstraint',
-        label: 'Fitting constraint',
+        label: 'Fitting constraint (Not active)',
         type: 'checkbox-group',
         defaultValue: ['FWHM linked', 'spin-orbit split'],
         options: ['FWHM linked', 'spin-orbit split', 'area ratio lock'],
@@ -254,7 +254,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       },
       {
         id: 'chargeCorrection',
-        label: 'Charge correction',
+        label: 'Charge correction (Not active)',
         type: 'toggle',
         defaultValue: true,
         affectedStepIds: ['background-subtraction', 'chemical-state-assignment'],
