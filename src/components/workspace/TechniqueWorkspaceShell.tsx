@@ -61,6 +61,7 @@ import {
   createAnalysisSession,
   type AnalysisSession,
   type PipelineStepStatus,
+  type ProcessingPipelineStep,
 } from '../../data/analysisSessions';
 import type { DemoDataset, Technique } from '../../data/demoProjects';
 import type { TechniqueId } from '../../data/demoProjectRegistry';
@@ -84,6 +85,7 @@ import {
   buildEvidenceRouteSearch,
   getEvidenceRouteContext,
 } from '../../utils/evidenceRouteContext';
+import { readLastUploadedContext } from '../../utils/uploadedContextStore';
 import {
   getRuntimeBadgeClass,
   getRuntimeBadgeLabel,
@@ -101,10 +103,12 @@ import {
 } from '../../data/uploadedSignalRuns';
 import { RawFileUpload } from './RawFileUpload';
 import { RawFileUploadModal } from './RawFileUploadModal';
+import { ScientificFeatureTable, featureRowToScientificFeature, peakMarkerToScientificFeature, xrdPeakToScientificFeature, type ScientificTechnique, type ScientificFeature } from './ScientificFeatureTable';
 import { XpsElementAnalysisPanel } from './xps/XpsElementAnalysisPanel';
 import { listReferenceElements, getElementRegionWindow } from '../../data/xpsReferenceData';
 import { saveXpsElementEvidence } from '../../data/xpsElementEvidence';
 import type { XpsElementEvidence } from '../../agent/mcp/types';
+import type { XrdDetectedPeak } from '../../agents/xrdAgent/types';
 import { runXrdPhaseIdentificationAgent, preprocess_xrd, detect_xrd_peaks, type XrdProcessingParams } from '../../agents/xrdAgent/runner';
 import { getXrdProcessingParams, getXrdParameterSnapshot, xrdToFlatParameters, flatToXrdParameters } from '../../utils/xrdParameterAdapter';
 import {
@@ -465,11 +469,35 @@ function mapSharedOverridesToSessionParameters(
   }, {});
 }
 
-function mapQuickPipelineStatus(status: PipelineStepStatus): PipelineStepState {
+export function mapPipelineStepStatusToState(status: PipelineStepStatus): PipelineStepState {
   if (status === 'completed') return 'done';
   if (status === 'active' || status === 'error') return 'active';
   if (status === 'skipped') return 'optional';
   return 'pending';
+}
+
+export function mapPipelineStatesToProcessingPipeline(
+  pipelineConfig: { id: string; label: string }[],
+  pipelineStates: Record<string, PipelineStepState>,
+  existingProcessingPipeline: ProcessingPipelineStep[] = []
+): ProcessingPipelineStep[] {
+  return pipelineConfig.map((step) => {
+    const state = pipelineStates[step.id] || 'pending';
+    let status: PipelineStepStatus = 'pending';
+    if (state === 'done') status = 'completed';
+    else if (state === 'active') status = 'active';
+    else if (state === 'optional') status = 'skipped';
+    
+    const existingStep = existingProcessingPipeline.find(p => p.id === step.id) || ({} as Partial<ProcessingPipelineStep>);
+    
+    return {
+      id: step.id,
+      label: step.label,
+      status,
+      timestamp: existingStep.timestamp,
+      notes: existingStep.notes,
+    };
+  });
 }
 
 function getQuickSessionParameters(config: TechniqueWorkspaceConfig, quickSession: AnalysisSession | null) {
@@ -501,16 +529,16 @@ function getQuickSessionParameters(config: TechniqueWorkspaceConfig, quickSessio
   return defaults;
 }
 
-function getDefaultPipelineStates(
+export function getDefaultPipelineStates(
   config: TechniqueWorkspaceConfig,
   hasProjectEvidence: boolean,
   hasProject: boolean,
   quickSession: AnalysisSession | null = null,
 ) {
   if (quickSession) {
-    return config.pipeline.reduce<Record<string, PipelineStepState>>((acc, step, index) => {
-      const sessionStep = quickSession.processingPipeline[index];
-      acc[step.id] = sessionStep ? mapQuickPipelineStatus(sessionStep.status) : 'pending';
+    return config.pipeline.reduce<Record<string, PipelineStepState>>((acc, step) => {
+      const sessionStep = quickSession.processingPipeline.find((s) => s.id === step.id);
+      acc[step.id] = sessionStep ? mapPipelineStepStatusToState(sessionStep.status) : 'pending';
       return acc;
     }, {});
   }
@@ -528,7 +556,7 @@ function getDefaultPipelineStates(
   }, {});
 }
 
-function buildDefaultSession(
+export function buildDefaultSession(
   storageKey: string,
   config: TechniqueWorkspaceConfig,
   hasProjectEvidence: boolean,
@@ -563,7 +591,7 @@ function buildDefaultSession(
   };
 }
 
-function loadSessionState(
+export function loadSessionState(
   storageKey: string,
   config: TechniqueWorkspaceConfig,
   hasProjectEvidence: boolean,
@@ -961,6 +989,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   const [xrdBackendError, setXrdBackendError] = useState<string | null>(null);
   const [xrdBackendSaved, setXrdBackendSaved] = useState(false);
   const [useXrdLocalReferenceForBackend, setUseXrdLocalReferenceForBackend] = useState(false);
+  const [xrdPipelineDetectedPeaks, setXrdPipelineDetectedPeaks] = useState<(XrdDetectedPeak & { assignment?: string; confidence?: number })[] | null>(null);
 
   // Backend Status Hook
   const { xrdStatus, agentStatus } = useBackendStatus(
@@ -1143,7 +1172,17 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     evidenceSnapshot?.availableTechniques.includes(technique.toUpperCase() as Technique) ||
     techniqueState?.available,
   );
-  const [quickSessionKey] = useState(() => (isQuickMode || isUploadedContext) ? (querySessionId ?? routeContext.uploadedRunId ?? `quick-${Date.now()}`) : '');
+  const [quickSessionKey] = useState(() => {
+    if (!isQuickMode && !isUploadedContext) return '';
+    if (querySessionId) return querySessionId;
+    if (routeContext.uploadedRunId) return routeContext.uploadedRunId;
+    const storedCtx = readLastUploadedContext();
+    if (storedCtx && storedCtx.technique === technique) {
+      return storedCtx.sessionId || storedCtx.uploadedRunId || `quick-${technique}-${Date.now()}`;
+    }
+    const safeFileName = fileName ? fileName.replace(/[^a-zA-Z0-9_-]/g, '_') : 'unknown';
+    return `quick-${technique}-${safeFileName}-${Date.now()}`;
+  });
   const uploadedContextKey = routeContext.uploadedRunId ?? querySessionId ?? 'uploaded';
   const sessionStorageKey = useMemo(() => isQuickMode
     ? `difaryx-technique-session:${technique}:quick:${quickSessionKey}`
@@ -1636,6 +1675,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       minProminence: xrdParameters.peakDetection.minProminence,
       minDistance: xrdParameters.peakDetection.minDistanceDeg,
       minHeight: xrdParameters.peakDetection.minHeightRatio,
+      wavelengthAngstrom: xrdParameters.radiation.wavelengthAngstrom,
     };
 
     try {
@@ -1671,6 +1711,17 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         'XRD',
         industryFilter
       );
+
+      setXrdPipelineDetectedPeaks(result.detectedPeaks.map((peak, index) => {
+        const match = matched[index];
+        const hasMatch = match && match.assignment !== 'Unassigned';
+        return {
+          ...peak,
+          label: hasMatch ? `${match.assignment} (${match.confidence}%)` : peak.label,
+          assignment: hasMatch ? match.assignment : undefined,
+          confidence: hasMatch ? match.confidence : undefined,
+        };
+      }));
 
       const updatedFeatures = extractedFeatures.map((f, index) => {
         const match = matched[index];
@@ -1785,6 +1836,30 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       return row;
     });
   }, [featureRows, technique, industryFilter]);
+
+  // XRD ScientificFeatureTable integration — read-only feature data for PEAKS tab
+  const xrdScientificFeatures = useMemo<ScientificFeature[]>(() => {
+    if (technique !== 'xrd') return [];
+
+    // PRIORITY 1: Structured detected peaks from local pipeline
+    if (xrdPipelineDetectedPeaks && xrdPipelineDetectedPeaks.length > 0) {
+      return xrdPipelineDetectedPeaks.map((peak, index) => xrdPeakToScientificFeature(peak as any, index));
+    }
+    
+    // PRIORITY 2: Structured detected peaks from backend
+    if (xrdBackendResult?.raw?.detected_peaks && xrdBackendResult.raw.detected_peaks.length > 0) {
+      return xrdBackendResult.raw.detected_peaks.map((peak, index) => xrdPeakToScientificFeature(peak as any, index));
+    }
+
+    // FALLBACKS
+    if (mappedFeatureRows.length > 0) {
+      return mappedFeatureRows.map((row, index) => featureRowToScientificFeature(row, index));
+    }
+    if (graphData?.peaks?.length) {
+      return graphData.peaks.map((peak, index) => peakMarkerToScientificFeature(peak, index));
+    }
+    return [];
+  }, [technique, xrdPipelineDetectedPeaks, xrdBackendResult, mappedFeatureRows, graphData?.peaks]);
 
   // ── XPS element-selection analysis (survey-first, view-layer) ──
   // Authoritative survey spectrum points reused by the element sub-view.
@@ -2095,6 +2170,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
           minProminence: xrdParameters.peakDetection.minProminence,
           minDistance: xrdParameters.peakDetection.minDistanceDeg,
           minHeight: xrdParameters.peakDetection.minHeightRatio,
+          wavelengthAngstrom: xrdParameters.radiation.wavelengthAngstrom,
         };
 
         const paramSnapshot = projectId
@@ -2135,6 +2211,17 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
           'XRD',
           industryFilter
         );
+
+        setXrdPipelineDetectedPeaks(result.detectedPeaks.map((peak, index) => {
+          const match = matched[index];
+          const hasMatch = match && match.assignment !== 'Unassigned';
+          return {
+            ...peak,
+            label: hasMatch ? `${match.assignment} (${match.confidence}%)` : peak.label,
+            assignment: hasMatch ? match.assignment : undefined,
+            confidence: hasMatch ? match.confidence : undefined,
+          };
+        }));
 
         const updatedFeatures = extractedFeatures.map((f, index) => {
           const match = matched[index];
@@ -2657,16 +2744,61 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   };
 
   const saveSession = () => {
-    setSessionState((prev) =>
-      addLog(
-        {
-          ...prev,
-          dirty: false,
-          pendingRecalculation: false,
-        },
-        'Processing result saved to local session state.',
-      ),
-    );
+    try {
+      const activeSessionId = quickAnalysisSession?.analysisId || querySessionId || routeContext.uploadedRunId;
+      if (activeSessionId) {
+        const current = getAnalysisSession(activeSessionId);
+        if (current) {
+          const updatedParams = [...current.processingParameters];
+          const updateParam = (id: string, value: string) => {
+            const idx = updatedParams.findIndex(p => p.id === id);
+            if (idx >= 0) updatedParams[idx] = { ...updatedParams[idx], value };
+          };
+
+          if (technique === 'xrd') {
+            updateParam('baseline', xrdParameters.baseline.method);
+            updateParam('wavelength', xrdParameters.radiation.wavelengthAngstrom.toString());
+            updateParam('smoothing', xrdParameters.smoothing.method);
+            updateParam('window', `${xrdParameters.smoothing.windowSize} points`);
+            updateParam('prominence', `${xrdParameters.peakDetection.minProminence}%`);
+            updateParam('fit', xrdParameters.peakFitting.model);
+          }
+
+          const updatedPipeline = mapPipelineStatesToProcessingPipeline(
+            config.pipeline,
+            sessionState.pipelineStates,
+            current.processingPipeline
+          );
+
+          saveAnalysisSession({ 
+            ...current, 
+            status: 'saved',
+            processingParameters: updatedParams,
+            processingPipeline: updatedPipeline
+          });
+        }
+      }
+
+      setSessionState((prev) =>
+        addLog(
+          {
+            ...prev,
+            dirty: false,
+            pendingRecalculation: false,
+          },
+          'Processing result saved to local session state.',
+        ),
+      );
+    } catch (err) {
+      console.error('Save failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Storage quota exceeded or write failure';
+      setSessionState((prev) =>
+        addLog(
+          prev,
+          `Save failed: ${errorMessage}`,
+        ),
+      );
+    }
   };
 
   const updatePaneLayout = (patch: Partial<Omit<PaneLayoutState, 'storageKey'>>) => {
@@ -2820,7 +2952,10 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         <div className="flex shrink-0 items-center gap-2">
 
           <Link
-            to={isQuickMode ? '/workspace' : '/workspace'}
+            to={(() => {
+              const search = isUploadedContext ? buildEvidenceRouteSearch(routeContext) : '';
+              return search ? `/workspace?${search}` : '/workspace';
+            })()}
             className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-white px-3 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
           >
             <Layers size={13} />
@@ -3249,6 +3384,15 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
               </div>
             ) : (
               <div className="min-h-0 flex-1 overflow-auto p-2">
+                {technique === 'xrd' && activeCenterTab === 'peaks' ? (
+                  <div className="overflow-hidden rounded border border-border bg-background">
+                    <ScientificFeatureTable
+                      features={xrdScientificFeatures}
+                      technique={'xrd' as ScientificTechnique}
+                      className="p-2"
+                    />
+                  </div>
+                ) : (
                 <div className="overflow-hidden rounded border border-border bg-background">
                   <table className="w-full text-left">
                     <thead className="bg-surface-hover text-[10px] uppercase tracking-wide text-text-muted">
@@ -3269,6 +3413,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                     </tbody>
                   </table>
                 </div>
+                )}
 
                 <div className="mt-3 rounded border border-border bg-surface-hover/30 p-3">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-text-main">Interpretation Notice</p>
