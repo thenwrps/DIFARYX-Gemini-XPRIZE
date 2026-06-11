@@ -107,6 +107,9 @@ export interface XrdProcessingParams {
   minProminence?: number;
   minDistance?: number;
   minHeight?: number;
+
+  // Radiation
+  wavelengthAngstrom?: number;
 }
 
 export interface XrdParameterImpact {
@@ -242,6 +245,7 @@ export function detect_xrd_peaks(preprocessedData: XrdPreprocessedPoint[], param
   const minHeight = params?.minHeight ?? Math.max(5.5, noise * 4);
   const minProminence = params?.minProminence ?? Math.max(3.2, noise * 3.5);
   const minSeparation = params?.minDistance ?? 0.44;
+  const wavelength = params?.wavelengthAngstrom;
   
   const candidates: XrdDetectedPeak[] = [];
 
@@ -265,7 +269,7 @@ export function detect_xrd_peaks(preprocessedData: XrdPreprocessedPoint[], param
       rawIntensity: roundTo(preprocessedData[i].rawIntensity, 3),
       prominence: roundTo(prominence, 2),
       fwhm: roundTo(fwhm, 3),
-      dSpacing: roundTo(calculateDSpacing(position), 4),
+      dSpacing: roundTo(calculateDSpacing(position, wavelength), 4),
       classification: fwhm > 1.25 ? 'broad' : 'sharp',
       label: 'peak',
     });
