@@ -103,7 +103,7 @@ import {
 } from '../../data/uploadedSignalRuns';
 import { RawFileUpload } from './RawFileUpload';
 import { RawFileUploadModal } from './RawFileUploadModal';
-import { ScientificFeatureTable, featureRowToScientificFeature, peakMarkerToScientificFeature, xrdPeakToScientificFeature, type ScientificTechnique, type ScientificFeature } from './ScientificFeatureTable';
+import { ScientificFeatureTable, featureRowToScientificFeature, peakMarkerToScientificFeature, xrdPeakToScientificFeature, xpsPeakToScientificFeature, type ScientificTechnique, type ScientificFeature } from './ScientificFeatureTable';
 import { XpsElementAnalysisPanel } from './xps/XpsElementAnalysisPanel';
 import { listReferenceElements, getElementRegionWindow } from '../../data/xpsReferenceData';
 import { saveXpsElementEvidence } from '../../data/xpsElementEvidence';
@@ -1913,6 +1913,37 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     });
   }, [technique, ftirPeakConfig, graphData?.peaks, mappedFeatureRows, industryFilter]);
 
+  // XPS ScientificFeatureTable integration — read-only feature data for PEAK LIST tab
+  const xpsScientificFeatures = useMemo<ScientificFeature[]>(() => {
+    if (technique !== 'xps') return [];
+
+    // Priority 1: Structured XPS peaks/components/assignments if available
+    const activeUploadedRunId = routeContext.uploadedRunId || quickAnalysisSession?.uploadedRunId;
+    if (activeUploadedRunId) {
+      const run = getUploadedRunById(activeUploadedRunId);
+      if (run && run.extractedFeatures && run.extractedFeatures.length > 0) {
+        return run.extractedFeatures.map((f, i) => xpsPeakToScientificFeature(f, i));
+      }
+    }
+
+    // Priority 2: graphData.peaks as display fallback
+    const activePeaks = graphData?.peaks || [];
+    if (activePeaks.length > 0) {
+      return activePeaks.map((peak, index) => xpsPeakToScientificFeature(peak, index));
+    }
+
+    // Priority 3: mappedFeatureRows as final fallback
+    if (mappedFeatureRows.length > 0) {
+      return mappedFeatureRows.map((row, index) => {
+        const feature = featureRowToScientificFeature(row, index);
+        feature.technique = 'xps'; // Ensure the technique is correctly set to 'xps' for the fallback
+        return feature;
+      });
+    }
+
+    return [];
+  }, [technique, graphData?.peaks, mappedFeatureRows, routeContext.uploadedRunId, quickAnalysisSession?.uploadedRunId]);
+
   // ── XPS element-selection analysis (survey-first, view-layer) ──
   // Authoritative survey spectrum points reused by the element sub-view.
   const xpsSpectrumPoints = useMemo<{ x: number; y: number }[]>(() => {
@@ -3441,10 +3472,10 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
               </div>
             ) : (
               <div className="min-h-0 flex-1 overflow-auto p-2">
-                {(technique === 'xrd' && activeCenterTab === 'peaks') || (technique === 'ftir' && activeCenterTab === 'band-list') ? (
+                {(technique === 'xrd' && activeCenterTab === 'peaks') || (technique === 'ftir' && activeCenterTab === 'band-list') || (technique === 'xps' && activeCenterTab === 'peak-list') ? (
                   <div className="overflow-hidden rounded border border-border bg-background">
                     <ScientificFeatureTable
-                      features={technique === 'xrd' ? xrdScientificFeatures : ftirScientificFeatures}
+                      features={technique === 'xrd' ? xrdScientificFeatures : technique === 'ftir' ? ftirScientificFeatures : xpsScientificFeatures}
                       technique={technique as ScientificTechnique}
                       className="p-2"
                     />

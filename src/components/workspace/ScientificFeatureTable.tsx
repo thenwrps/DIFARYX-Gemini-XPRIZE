@@ -318,6 +318,19 @@ export function xrdPeakToScientificFeature(peak: {
   };
 }
 
+export function xpsPeakToScientificFeature(peak: any, index: number): ScientificFeature {
+  return {
+    id: peak.id ?? `xps-${index}`,
+    technique: 'xps',
+    position: peak.position ?? peak.bindingEnergy,
+    intensity: peak.intensity,
+    fwhm: peak.fwhm ?? peak.width,
+    label: peak.label,
+    assignment: peak.assignment ?? peak.context,
+    confidence: peak.confidence,
+  };
+}
+
 export function techniqueFeatureToScientificFeature(f: {
   id?: string;
   label?: string;
