@@ -158,7 +158,7 @@ import { getRamanProcessingParams, getRamanParameterSnapshot } from '../../utils
 import { runXpsProcessing } from '../../agents/xpsAgent/runner';
 import { getXpsProcessingParams, getXpsParameterSnapshot } from '../../utils/xpsParameterAdapter';
 import { runFtirProcessing } from '../../agents/ftirAgent/runner';
-import { getFtirProcessingParams, getFtirParameterSnapshot } from '../../utils/ftirParameterAdapter';
+import { getFtirProcessingParams, getFtirParameterSnapshot, convertToFtirProcessingParams } from '../../utils/ftirParameterAdapter';
 import { getTechniqueProcessingSupport } from '../../utils/techniqueProcessingSupport';
 import { runWhenIdle } from '../../utils/idle';
 import { identifyMaterialFeatures, applyBaseline, applySmoothing } from '../../hooks/useX7UniversalHook';
@@ -1861,6 +1861,58 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     return [];
   }, [technique, xrdPipelineDetectedPeaks, xrdBackendResult, mappedFeatureRows, graphData?.peaks]);
 
+  // FTIR ScientificFeatureTable integration — read-only feature data for BAND LIST tab
+  const ftirScientificFeatures = useMemo<ScientificFeature[]>(() => {
+    if (technique !== 'ftir') return [];
+
+    const activePeaks = ftirPeakConfig.isManual
+      ? ftirPeakConfig.peaks
+      : (graphData?.peaks || []);
+
+    if (activePeaks.length === 0) {
+      if (mappedFeatureRows.length > 0) {
+        return mappedFeatureRows.map((row, index) => {
+          const position = parseFloat(row.value);
+          const intensityMatch = row.detail?.match(/Intensity\s+([\d.]+)/i);
+          const intensity = intensityMatch ? parseFloat(intensityMatch[1]) : undefined;
+          return {
+            id: `ftir-fr-${index}`,
+            technique: 'ftir',
+            position: Number.isFinite(position) ? position : undefined,
+            intensity,
+            label: row.label || 'Unassigned',
+            assignment: row.detail,
+            confidence: row.label && row.label !== 'Unassigned' ? 85 : 0,
+            source: 'auto'
+          };
+        });
+      }
+      return [];
+    }
+
+    const matched = identifyMaterialFeatures(
+      activePeaks,
+      'FTIR',
+      industryFilter
+    );
+
+    return activePeaks.map((peak, index) => {
+      const match = matched[index];
+      const hasAssignment = match && match.assignment !== 'Unassigned';
+      return {
+        id: `ftir-peak-${index}`,
+        technique: 'ftir',
+        position: peak.position,
+        intensity: peak.intensity,
+        width: (peak as any).width ?? (peak as any).fwhm ?? undefined,
+        label: hasAssignment ? match.assignment : (peak.label || 'Unassigned'),
+        assignment: match ? match.details : undefined,
+        confidence: match ? match.confidence : 0,
+        source: ftirPeakConfig.isManual ? 'manual' : 'auto'
+      };
+    });
+  }, [technique, ftirPeakConfig, graphData?.peaks, mappedFeatureRows, industryFilter]);
+
   // ── XPS element-selection analysis (survey-first, view-layer) ──
   // Authoritative survey spectrum points reused by the element sub-view.
   const xpsSpectrumPoints = useMemo<{ x: number; y: number }[]>(() => {
@@ -2020,7 +2072,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         'Parameters applied to processing session.',
       ),
     );
-    if (technique === 'xrd') {
+    if (technique === 'xrd' || technique === 'ftir') {
       reprocess();
     }
   };
@@ -2598,7 +2650,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       }
 
       try {
-        const processingParams = projectId ? getFtirProcessingParams(projectId) : undefined;
+        const processingParams = convertToFtirProcessingParams(sessionState.parameters);
         const paramSnapshot = projectId
           ? getFtirParameterSnapshot(projectId)
           : { hasOverrides: false, overrideCount: 0, lastUpdatedBy: 'default', updatedAt: null };
@@ -2762,6 +2814,11 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
             updateParam('window', `${xrdParameters.smoothing.windowSize} points`);
             updateParam('prominence', `${xrdParameters.peakDetection.minProminence}%`);
             updateParam('fit', xrdParameters.peakFitting.model);
+          } else if (technique === 'ftir') {
+            updateParam('baseline', String(sessionState.parameters.baselineMethod ?? 'Rubberband'));
+            updateParam('smoothing', String(sessionState.parameters.smoothingMethod ?? 'Savitzky-Golay'));
+            updateParam('threshold', `${((sessionState.parameters.bandThreshold as number ?? 0.032) * 100).toFixed(1)}% transmittance change`);
+            updateParam('library', String(sessionState.parameters.assignmentLibrary ?? 'oxide/support functional groups'));
           }
 
           const updatedPipeline = mapPipelineStatesToProcessingPipeline(
@@ -3384,11 +3441,11 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
               </div>
             ) : (
               <div className="min-h-0 flex-1 overflow-auto p-2">
-                {technique === 'xrd' && activeCenterTab === 'peaks' ? (
+                {(technique === 'xrd' && activeCenterTab === 'peaks') || (technique === 'ftir' && activeCenterTab === 'band-list') ? (
                   <div className="overflow-hidden rounded border border-border bg-background">
                     <ScientificFeatureTable
-                      features={xrdScientificFeatures}
-                      technique={'xrd' as ScientificTechnique}
+                      features={technique === 'xrd' ? xrdScientificFeatures : ftirScientificFeatures}
+                      technique={technique as ScientificTechnique}
                       className="p-2"
                     />
                   </div>

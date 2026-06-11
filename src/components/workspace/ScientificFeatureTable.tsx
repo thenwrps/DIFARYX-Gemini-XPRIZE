@@ -243,4 +243,96 @@ export const ScientificFeatureTable: React.FC<ScientificFeatureTableProps> = ({
   );
 };
 
+// ---------------------------------------------------------------------------
+// Adapters — convert existing workspace data shapes to ScientificFeature
+// ---------------------------------------------------------------------------
+
+function safeParseFloat(value: string | undefined | null): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function extractAssignment(detail: string | undefined): string | undefined {
+  if (!detail) return undefined;
+  const trimmed = detail.trim();
+  if (!trimmed || trimmed === '—') return undefined;
+  return trimmed;
+}
+
+export function featureRowToScientificFeature(
+  row: { label: string; value: string; detail: string },
+  index: number,
+): ScientificFeature {
+  const position = safeParseFloat(row.value);
+  const intensityMatch = row.detail?.match(/Intensity\s+([\d.]+)/i);
+  const intensity = intensityMatch ? safeParseFloat(intensityMatch[1]) : undefined;
+  const assignment = !intensityMatch ? extractAssignment(row.detail) : undefined;
+
+  return {
+    id: `fr-${index}`,
+    technique: 'xrd',
+    position,
+    intensity,
+    label: row.label || undefined,
+    assignment: assignment ?? (intensityMatch ? row.detail : undefined),
+  };
+}
+
+export function peakMarkerToScientificFeature(
+  peak: { position: number; intensity: number; label?: string; role?: string },
+  index: number,
+): ScientificFeature {
+  return {
+    id: `pm-${index}`,
+    technique: 'xrd',
+    position: peak.position,
+    intensity: peak.intensity,
+    label: peak.label || undefined,
+  };
+}
+
+export function xrdPeakToScientificFeature(peak: {
+  id?: string;
+  position: number;
+  intensity: number;
+  fwhm?: number;
+  dSpacing?: number;
+  snr?: number;
+  label?: string;
+  assignment?: string;
+  confidence?: number;
+  prominence?: number;
+}, index: number): ScientificFeature {
+  return {
+    id: peak.id ?? `xrd-${index}`,
+    technique: 'xrd',
+    position: peak.position,
+    intensity: peak.intensity,
+    fwhm: peak.fwhm,
+    dSpacing: peak.dSpacing,
+    snr: peak.snr,
+    label: peak.label,
+    assignment: peak.assignment,
+    confidence: peak.confidence,
+  };
+}
+
+export function techniqueFeatureToScientificFeature(f: {
+  id?: string;
+  label?: string;
+  position?: number;
+  intensity?: number;
+  context?: string;
+}): ScientificFeature {
+  return {
+    id: f.id,
+    technique: 'xrd',
+    position: f.position,
+    intensity: f.intensity,
+    label: f.label,
+    assignment: f.context || undefined,
+  };
+}
+
 export default ScientificFeatureTable;
