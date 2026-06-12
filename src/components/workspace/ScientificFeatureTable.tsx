@@ -331,6 +331,20 @@ export function xpsPeakToScientificFeature(peak: any, index: number): Scientific
   };
 }
 
+export function ramanPeakToScientificFeature(peak: any, index: number): ScientificFeature {
+  return {
+    id: peak.id ?? `raman-${index}`,
+    technique: 'raman',
+    position: peak.position ?? peak.ramanShift,
+    positionUnit: 'cm⁻¹',
+    intensity: peak.intensity,
+    fwhm: peak.fwhm ?? peak.width,
+    label: peak.label,
+    assignment: peak.assignment ?? peak.context,
+    confidence: peak.confidence,
+  };
+}
+
 export function techniqueFeatureToScientificFeature(f: {
   id?: string;
   label?: string;

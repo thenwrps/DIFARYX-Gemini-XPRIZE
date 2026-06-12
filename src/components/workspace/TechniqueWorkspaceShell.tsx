@@ -73,6 +73,11 @@ import {
   readParameterHistory,
   type ParameterHistoryEntry,
 } from '../../utils/parameterStateManager';
+import {
+  shouldTriggerReprocessOnApply,
+  buildReprocessUnwiredNotice,
+  computeSaveSessionUpdate,
+} from '../../utils/ramanReprocessState';
 import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../utils/evidenceSnapshot';
 import { useAuth } from '../../contexts/AuthContext';
 import { useXrdWorkflowRuntime } from '../../context/XrdWorkflowRuntimeContext';
@@ -103,7 +108,7 @@ import {
 } from '../../data/uploadedSignalRuns';
 import { RawFileUpload } from './RawFileUpload';
 import { RawFileUploadModal } from './RawFileUploadModal';
-import { ScientificFeatureTable, featureRowToScientificFeature, peakMarkerToScientificFeature, xrdPeakToScientificFeature, xpsPeakToScientificFeature, type ScientificTechnique, type ScientificFeature } from './ScientificFeatureTable';
+import { ScientificFeatureTable, featureRowToScientificFeature, peakMarkerToScientificFeature, xrdPeakToScientificFeature, xpsPeakToScientificFeature, ramanPeakToScientificFeature, type ScientificTechnique, type ScientificFeature } from './ScientificFeatureTable';
 import { XpsElementAnalysisPanel } from './xps/XpsElementAnalysisPanel';
 import { listReferenceElements, getElementRegionWindow } from '../../data/xpsReferenceData';
 import { saveXpsElementEvidence } from '../../data/xpsElementEvidence';
@@ -1944,6 +1949,37 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
     return [];
   }, [technique, graphData?.peaks, mappedFeatureRows, routeContext.uploadedRunId, quickAnalysisSession?.uploadedRunId]);
 
+  // Raman ScientificFeatureTable integration — read-only feature data for PEAK LIST tab
+  const ramanScientificFeatures = useMemo<ScientificFeature[]>(() => {
+    if (technique !== 'raman') return [];
+
+    // Priority 1/2: Structured Raman peaks/modes/assignments or uploadedRun.extractedFeatures if available
+    const activeUploadedRunId = routeContext.uploadedRunId || quickAnalysisSession?.uploadedRunId;
+    if (activeUploadedRunId) {
+      const run = getUploadedRunById(activeUploadedRunId);
+      if (run && run.extractedFeatures && run.extractedFeatures.length > 0) {
+        return run.extractedFeatures.map((f, i) => ramanPeakToScientificFeature(f, i));
+      }
+    }
+
+    // Priority 3: graphData.peaks as display fallback
+    const activePeaks = graphData?.peaks || [];
+    if (activePeaks.length > 0) {
+      return activePeaks.map((peak, index) => ramanPeakToScientificFeature(peak, index));
+    }
+
+    // Priority 4: mappedFeatureRows as final fallback
+    if (mappedFeatureRows.length > 0) {
+      return mappedFeatureRows.map((row, index) => {
+        const feature = featureRowToScientificFeature(row, index);
+        feature.technique = 'raman'; // Ensure the technique is correctly set to 'raman' for the fallback
+        return feature;
+      });
+    }
+
+    return [];
+  }, [technique, routeContext.uploadedRunId, quickAnalysisSession?.uploadedRunId, graphData?.peaks, mappedFeatureRows]);
+
   // ── XPS element-selection analysis (survey-first, view-layer) ──
   // Authoritative survey spectrum points reused by the element sub-view.
   const xpsSpectrumPoints = useMemo<{ x: number; y: number }[]>(() => {
@@ -2103,8 +2139,11 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         'Parameters applied to processing session.',
       ),
     );
-    if (technique === 'xrd' || technique === 'ftir') {
+    if (shouldTriggerReprocessOnApply(technique)) {
       reprocess();
+    } else {
+      const { logMessage } = buildReprocessUnwiredNotice(technique);
+      setSessionState((prev) => addLog(prev, logMessage));
     }
   };
 
@@ -2867,16 +2906,20 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         }
       }
 
-      setSessionState((prev) =>
-        addLog(
+      setSessionState((prev) => {
+        const update = computeSaveSessionUpdate({
+          dirty: prev.dirty,
+          pendingRecalculation: prev.pendingRecalculation,
+        });
+        return addLog(
           {
             ...prev,
-            dirty: false,
-            pendingRecalculation: false,
+            dirty: update.nextDirty,
+            pendingRecalculation: update.nextPendingRecalculation,
           },
-          'Processing result saved to local session state.',
-        ),
-      );
+          update.logMessage,
+        );
+      });
     } catch (err) {
       console.error('Save failed:', err);
       const errorMessage = err instanceof Error ? err.message : 'Storage quota exceeded or write failure';
@@ -3472,10 +3515,10 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
               </div>
             ) : (
               <div className="min-h-0 flex-1 overflow-auto p-2">
-                {(technique === 'xrd' && activeCenterTab === 'peaks') || (technique === 'ftir' && activeCenterTab === 'band-list') || (technique === 'xps' && activeCenterTab === 'peak-list') ? (
+                {(technique === 'xrd' && activeCenterTab === 'peaks') || (technique === 'ftir' && activeCenterTab === 'band-list') || (technique === 'xps' && activeCenterTab === 'peak-list') || (technique === 'raman' && activeCenterTab === 'peak-list') ? (
                   <div className="overflow-hidden rounded border border-border bg-background">
                     <ScientificFeatureTable
-                      features={technique === 'xrd' ? xrdScientificFeatures : technique === 'ftir' ? ftirScientificFeatures : xpsScientificFeatures}
+                      features={technique === 'xrd' ? xrdScientificFeatures : technique === 'ftir' ? ftirScientificFeatures : technique === 'xps' ? xpsScientificFeatures : ramanScientificFeatures}
                       technique={technique as ScientificTechnique}
                       className="p-2"
                     />
