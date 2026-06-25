@@ -9,7 +9,7 @@ try {
   const vertexModule = await import("@google-cloud/vertexai");
   VertexAI = vertexModule.VertexAI;
   console.log("Vertex AI SDK successfully imported.");
-} catch (e) {
+} catch {
   console.warn("Vertex AI SDK not loaded. Vertex AI mode will not be available.");
 }
 
@@ -450,13 +450,13 @@ app.post("/run-agent", async (req, res) => {
     if (reasoningMode === "mimo") {
       try {
         data = await runMimoReasoning(prompt);
-      } catch (err) {
+      } catch {
         data = fallbackDecision("mimo-simulated");
       }
     } else if (reasoningMode === "gemini") {
       try {
         data = await runGeminiReasoning(prompt, "gemini-1.5-flash");
-      } catch (err) {
+      } catch {
         data = fallbackDecision("gemini-simulated");
       }
     } else {
@@ -508,7 +508,7 @@ Return ONLY valid JSON:
     let data;
     try {
       data = await runMimoReasoning(prompt);
-    } catch (err) {
+    } catch {
       data = {
         final_decision: "Spinel ferrite phase is likely present based on input peaks (simulated fallback).",
         claimStatus: "supported",

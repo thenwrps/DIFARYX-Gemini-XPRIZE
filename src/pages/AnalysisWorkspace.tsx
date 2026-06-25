@@ -715,12 +715,18 @@ export function AnalysisWorkspaceHome() {
   };
 
   const handleSaveSession = (session: AnalysisSession) => {
-    saveAnalysisSession({
-      ...session,
-      status: 'saved',
-      processingLog: ['Saved quick analysis session', ...session.processingLog],
-    });
-    setSessions(getAnalysisSessions());
+    try {
+      saveAnalysisSession({
+        ...session,
+        status: 'saved',
+        processingLog: ['Saved quick analysis session', ...session.processingLog],
+      });
+      setSessions(getAnalysisSessions());
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Storage quota exceeded or write failure';
+      console.error('Failed to save session:', message);
+      setUploadError(`Save failed: ${message}`);
+    }
   };
 
   const handleDeleteSession = (session: AnalysisSession) => {

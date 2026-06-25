@@ -45,38 +45,44 @@ export function useBackendStatus(
     let nextAgent: AgentStatus = 'offline';
 
     // 1. XRD health check
-    try {
-      const res = await checkXrdBackendHealth();
-      if (res.ok) {
-        nextXrd = 'connected';
-      } else {
+    const xrdUrlConfigured = Boolean(
+      import.meta.env.VITE_XRD_API_URL || import.meta.env.VITE_XRD_BACKEND_URL,
+    );
+    if (xrdUrlConfigured) {
+      try {
+        const res = await checkXrdBackendHealth();
+        if (res.ok) {
+          nextXrd = 'connected';
+        } else {
+          nextXrd = 'offline';
+        }
+      } catch {
         nextXrd = 'offline';
       }
-    } catch {
-      nextXrd = 'offline';
     }
 
     // 2. Agent health check
-    try {
-      const agentUrl = import.meta.env.VITE_AGENT_API_URL || 'http://localhost:3001';
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch(`${agentUrl}/health`, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        // If keys are missing in env, or if we have observed that the last run used a fallback:
-        const hasKeys = data.gemini || data.mimo;
-        if (!hasKeys || lastAgentFallback) {
-          nextAgent = 'fallback';
+    const agentUrl = import.meta.env.VITE_AGENT_API_URL;
+    if (agentUrl) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(`${agentUrl}/health`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          const hasKeys = data.gemini || data.mimo;
+          if (!hasKeys || lastAgentFallback) {
+            nextAgent = 'fallback';
+          } else {
+            nextAgent = 'connected';
+          }
         } else {
-          nextAgent = 'connected';
+          nextAgent = 'offline';
         }
-      } else {
+      } catch {
         nextAgent = 'offline';
       }
-    } catch {
-      nextAgent = 'offline';
     }
 
     setXrdStatus(nextXrd);

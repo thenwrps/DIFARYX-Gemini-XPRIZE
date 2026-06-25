@@ -1446,6 +1446,9 @@ export function applyBaseline(
   method: 'Rubberband' | 'ALS' | 'Polynomial' | 'Rolling Ball'
 ): Array<{ x: number; y: number }> {
   if (data.length === 0) return [];
+  if ((method as string) === 'None') {
+    return data.map(p => ({ ...p }));
+  }
 
   let baseline: number[];
   if (method === 'Rubberband') {

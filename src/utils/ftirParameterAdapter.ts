@@ -20,10 +20,8 @@ export function convertToFtirProcessingParams(
 
   // Baseline correction
   const baselineMethod = effectiveValues['baselineMethod'];
-  if (baselineMethod === 'Rubberband' || baselineMethod === 'ALS' || baselineMethod === 'Polynomial') {
-    // Map ALS to Rubberband (closest match)
-    const mappedMethod = baselineMethod === 'ALS' ? 'Rubberband' : baselineMethod;
-    params.baselineMethod = mappedMethod as 'Polynomial' | 'Rubberband' | 'Linear';
+  if (baselineMethod === 'Rubberband' || baselineMethod === 'ALS' || baselineMethod === 'Polynomial' || baselineMethod === 'None') {
+    params.baselineMethod = baselineMethod as any;
     hasAnyParams = true;
   }
 

@@ -53,7 +53,7 @@ interface XrdRuntimeSessionPacket {
 function readSessionPacket(): XrdRuntimeSessionPacket | null {
   try {
     if (typeof window === 'undefined') return null;
-    const raw = window.sessionStorage.getItem(XRD_RUNTIME_SESSION_KEY);
+    const raw = window.localStorage.getItem(XRD_RUNTIME_SESSION_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as XrdRuntimeSessionPacket;
   } catch {
@@ -62,18 +62,14 @@ function readSessionPacket(): XrdRuntimeSessionPacket | null {
 }
 
 function writeSessionPacket(packet: XrdRuntimeSessionPacket): void {
-  try {
-    if (typeof window === 'undefined') return;
-    window.sessionStorage.setItem(XRD_RUNTIME_SESSION_KEY, JSON.stringify(packet));
-  } catch {
-    // Silently ignore quota errors.
-  }
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(XRD_RUNTIME_SESSION_KEY, JSON.stringify(packet));
 }
 
 function clearSessionPacket(): void {
   try {
     if (typeof window === 'undefined') return;
-    window.sessionStorage.removeItem(XRD_RUNTIME_SESSION_KEY);
+    window.localStorage.removeItem(XRD_RUNTIME_SESSION_KEY);
   } catch {
     // Silently ignore.
   }
@@ -553,7 +549,13 @@ export function XrdWorkflowRuntimeProvider({ children }: XrdWorkflowRuntimeProvi
       ...(currentEvidence.fileName ? { fileName: currentEvidence.fileName } : {}),
       isValidated7E4,
     };
-    writeSessionPacket(packet);
+    try {
+      writeSessionPacket(packet);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Storage quota exceeded';
+      console.error('Failed to write session packet:', message);
+      setSessionResetNotification(`Save failed: ${message}`);
+    }
   }, [currentEvidence, isValidated7E4]);
 
   // Derive sample information from current evidence (strict canonical shape)

@@ -226,6 +226,7 @@ export function detectPeaksWithParameters(
   }
   
   const minHeight = Math.max(DEFAULTS.peakDetection.minHeightBase, noise * DEFAULTS.peakDetection.minHeightNoiseFactor);
+  const wavelength = parameters?.radiation?.wavelengthAngstrom;
   const candidates: XrdDetectedPeak[] = [];
   
   for (let i = 2; i < preprocessedData.length - 2; i += 1) {
@@ -248,7 +249,7 @@ export function detectPeaksWithParameters(
       rawIntensity: roundTo(preprocessedData[i].rawIntensity, 3),
       prominence: roundTo(prominence, 2),
       fwhm: roundTo(fwhm, 3),
-      dSpacing: roundTo(calculateDSpacing(position), 4),
+      dSpacing: roundTo(calculateDSpacing(position, wavelength), 4),
       classification: fwhm > DEFAULTS.peakDetection.broadThreshold ? 'broad' : 'sharp',
       label: 'peak',
     });
