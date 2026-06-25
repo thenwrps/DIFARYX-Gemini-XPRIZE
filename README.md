@@ -204,4 +204,7 @@ git diff --check
 - The current demo is deterministic and frontend-only.
 - The public-beta upload workflow is local-browser scoped.
 - Scientific outputs are evidence-limited and require validation before stronger claims.
-- INANZ, if discussed separately, is a separate product and is not a DIFARYX module.
+
+## License
+
+This project is licensed under the MIT License.
