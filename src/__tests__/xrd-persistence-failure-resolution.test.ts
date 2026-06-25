@@ -16,7 +16,7 @@
  * Validates: Requirements 1.1, 1.2, 1.3, 2.1, 2.2, 3.1, 4.1
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   saveLastUploadedContext,
   readLastUploadedContext,
@@ -62,7 +62,8 @@ function resolveQuickSessionKey_fixed(params: {
   if (storedCtx && storedCtx.technique === technique) {
     return storedCtx.sessionId || storedCtx.uploadedRunId;
   }
-  return `quick-${technique}-${fileName ?? 'unknown'}`;
+  const safeFileName = fileName ? fileName.replace(/[^a-zA-Z0-9_-]/g, '_') : 'unknown';
+  return `quick-${technique}-${safeFileName}-12345`; // Use mock timestamp for predictability in tests
 }
 
 // ── Defect 1 — Stale Key resolved ────────────────────────────────────────────
@@ -92,7 +93,7 @@ describe('Defect 1 resolved — quickSessionKey restores stored sessionId on cle
       technique: 'xrd',
       fileName: undefined,
     });
-    expect(quickSessionKey).toBe('quick-xrd-unknown');
+    expect(quickSessionKey).toBe('quick-xrd-unknown-12345');
   });
 
   it('does not cross technique boundaries', () => {
@@ -106,7 +107,7 @@ describe('Defect 1 resolved — quickSessionKey restores stored sessionId on cle
       fileName: undefined,
     });
     // Stored context is for xps; xrd mount must not adopt it.
-    expect(quickSessionKey).toBe('quick-xrd-unknown');
+    expect(quickSessionKey).toBe('quick-xrd-unknown-12345');
   });
 });
 
@@ -181,5 +182,46 @@ describe('Defect 4 resolved — Attach Project link forwards the uploaded eviden
       : '';
     const href = search ? `/workspace?${search}` : '/workspace';
     expect(href).toBe('/workspace');
+  });
+});
+
+// ── Defect 5 — Save failure is not silent ────────────────────────────────────
+
+describe('Defect 5 resolved — Save failure is not silent', () => {
+  it('saveAnalysisSession throws when localStorage quota is exceeded', () => {
+    const session = createAnalysisSession('xrd', 'test-quota.xy');
+    
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+
+    expect(() => {
+      saveAnalysisSession({ ...session, status: 'saved' });
+    }).toThrow('QuotaExceededError');
+
+    spy.mockRestore();
+  });
+});
+
+// ── Defect 6 — Parameter state survives reload ───────────────────────────────
+
+describe('Defect 6 resolved — Parameter state survives reload', () => {
+  it('persists processing parameters to the session and they survive a reload', () => {
+    const session = createAnalysisSession('xrd', 'test-params.xy');
+    
+    const modifiedParams = [...session.processingParameters];
+    const targetIdx = modifiedParams.findIndex(p => p.id === 'wavelength');
+    if (targetIdx >= 0) {
+      modifiedParams[targetIdx] = { ...modifiedParams[targetIdx], value: '1.5418' };
+    }
+
+    saveAnalysisSession({ ...session, status: 'saved', processingParameters: modifiedParams });
+
+    const reloaded = getAnalysisSession(session.analysisId);
+    expect(reloaded).not.toBeNull();
+    expect(reloaded?.status).toBe('saved');
+    
+    const reloadedWavelength = reloaded?.processingParameters.find(p => p.id === 'wavelength')?.value;
+    expect(reloadedWavelength).toBe('1.5418');
   });
 });

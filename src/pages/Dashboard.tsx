@@ -1083,22 +1083,24 @@ export default function Dashboard() {
 
               {/* Grid or Empty State */}
               {(showDemoProjects ? demoProjectRegistry.length + localNotebooks.length : localNotebooks.length) > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Demo Projects */}
                   {showDemoProjects && demoProjectRegistry.map((project) => (
                     <ProjectCard key={project.id} project={project} />
                   ))}
                   {/* User Local Projects (Notebooks) */}
-                  {localNotebooks.map((notebook) => (
-                    <NotebookCard
-                      key={notebook.id}
-                      notebook={notebook}
-                      onDelete={(id) => {
-                        deleteProjectNotebook(id);
-                        setLocalNotebooks(getLocalProjectNotebooks());
-                      }}
-                    />
-                  ))}
+                  {[...localNotebooks]
+                    .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
+                    .map((notebook) => (
+                      <NotebookCard
+                        key={notebook.id}
+                        notebook={notebook}
+                        onDelete={(id) => {
+                          deleteProjectNotebook(id);
+                          setLocalNotebooks(getLocalProjectNotebooks());
+                        }}
+                      />
+                    ))}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1138,22 +1140,26 @@ export default function Dashboard() {
 
               {/* Grid or Empty State */}
               {((showDemoProjects ? analysisSessions.filter(s => s.source !== 'user_uploaded').length : analysisSessions.filter(s => s.source === 'user_uploaded').length) + localExperiments.length) > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Evidence Sessions (Demo or User) */}
-                  {(showDemoProjects
+                  {[...(showDemoProjects
                     ? analysisSessions.filter((s) => s.source !== 'user_uploaded')
                     : analysisSessions.filter((s) => s.source === 'user_uploaded')
-                  ).map((session) => (
-                    <EvidenceCard
-                      key={session.analysisId}
-                      session={session}
-                      onDelete={session.source === 'user_uploaded' ? handleDeleteUploadedSession : undefined}
-                    />
-                  ))}
+                  )]
+                    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+                    .map((session) => (
+                      <EvidenceCard
+                        key={session.analysisId}
+                        session={session}
+                        onDelete={session.source === 'user_uploaded' ? handleDeleteUploadedSession : undefined}
+                      />
+                    ))}
                   {/* Quick Experiments */}
-                  {localExperiments.map((experiment) => (
-                    <ExperimentCard key={experiment.id} experiment={experiment} />
-                  ))}
+                  {[...localExperiments]
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                    .map((experiment) => (
+                      <ExperimentCard key={experiment.id} experiment={experiment} />
+                    ))}
                 </div>
               ) : (
                 <div className="space-y-4">

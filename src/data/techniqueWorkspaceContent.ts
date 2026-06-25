@@ -246,7 +246,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       },
       {
         id: 'fittingConstraint',
-        label: 'Fitting constraint',
+        label: 'Fitting constraint (Not active)',
         type: 'checkbox-group',
         defaultValue: ['FWHM linked', 'spin-orbit split'],
         options: ['FWHM linked', 'spin-orbit split', 'area ratio lock'],
@@ -254,7 +254,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       },
       {
         id: 'chargeCorrection',
-        label: 'Charge correction',
+        label: 'Charge correction (Not active)',
         type: 'toggle',
         defaultValue: true,
         affectedStepIds: ['background-subtraction', 'chemical-state-assignment'],
@@ -415,7 +415,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       },
       {
         id: 'ramanShiftMin',
-        label: 'Raman shift min',
+        label: 'Raman shift min (Not active)',
         type: 'number',
         defaultValue: 100,
         min: 0,
@@ -426,7 +426,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       },
       {
         id: 'ramanShiftMax',
-        label: 'Raman shift max',
+        label: 'Raman shift max (Not active)',
         type: 'number',
         defaultValue: 3200,
         min: 100,
@@ -437,7 +437,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       },
       {
         id: 'modeLibrary',
-        label: 'Mode library',
+        label: 'Mode library (Not active)',
         type: 'select',
         defaultValue: 'Ferrite modes',
         options: ['Ferrite modes', 'Carbon bands', 'Oxide modes', 'Custom'],
@@ -445,7 +445,7 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       },
       {
         id: 'cosmicRayRemoval',
-        label: 'Cosmic ray removal',
+        label: 'Cosmic ray removal (Not active)',
         type: 'toggle',
         defaultValue: true,
         affectedStepIds: ['smoothing', 'peak-detection'],
