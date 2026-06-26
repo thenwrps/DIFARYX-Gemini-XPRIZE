@@ -53,7 +53,7 @@ export interface XrdPhaseReference {
   name: string;
   formula: string;
   family: string;
-  crystalSystem: 'cubic' | 'tetragonal' | 'hexagonal' | 'rhombohedral' | 'orthorhombic' | 'monoclinic' | 'triclinic';
+  crystalSystem: 'cubic' | 'tetragonal' | 'hexagonal' | 'rhombohedral' | 'orthorhombic' | 'monoclinic' | 'triclinic' | 'amorphous';
   spaceGroup: string;
   latticeParameters: {
     a: number;
@@ -65,6 +65,8 @@ export interface XrdPhaseReference {
   };
   jcpdsCard?: string;
   icddPdf?: string;
+  codId?: string;
+  dbSource?: 'COD' | 'synthetic';
   referenceNote: string;
   peaks: XrdReferencePeak[];
 }

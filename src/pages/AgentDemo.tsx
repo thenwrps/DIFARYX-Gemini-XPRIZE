@@ -1185,9 +1185,17 @@ import {
 } from '../utils/parameterProvenanceSummary';
 import type { TechniqueWorkspaceId } from '../data/techniqueWorkspaceContent';
 import { getXrdProcessingParams, getXrdParameterSnapshot } from '../utils/xrdParameterAdapter';
-import { getRamanParameterSnapshot } from '../utils/ramanParameterAdapter';
-import { getXpsParameterSnapshot } from '../utils/xpsParameterAdapter';
-import { getFtirParameterSnapshot } from '../utils/ftirParameterAdapter';
+import { getRamanProcessingParams, getRamanParameterSnapshot } from '../utils/ramanParameterAdapter';
+import { getXpsProcessingParams, getXpsParameterSnapshot } from '../utils/xpsParameterAdapter';
+import { getFtirProcessingParams, getFtirParameterSnapshot } from '../utils/ftirParameterAdapter';
+import { runRamanProcessing } from '../agents/ramanAgent/runner';
+import { runXpsProcessing } from '../agents/xpsAgent/runner';
+import { runFtirProcessing } from '../agents/ftirAgent/runner';
+import {
+  demoDatasetToRamanDataset,
+  demoDatasetToXpsDataset,
+  demoDatasetToFtirDataset,
+} from '../utils/techniqueDatasetAdapters';
 
 function FormulaText({
   children,
@@ -1328,6 +1336,12 @@ function createDecisionResult(
   xrdAnalysis: ReturnType<typeof runXrdPhaseIdentificationAgent> | null,
   llmOutput: ReasoningOutput | null = null,
   xpsElementEvidence: XpsElementEvidence | null = null,
+  // Live runner results for Raman / XPS / FTIR (Patch 10.7E).
+  // When provided, the fusion engine uses real detected peaks instead of
+  // static detectedFeatures; falls back to detectedFeatures when null.
+  ramanResult?: ReturnType<typeof runRamanProcessing> | null,
+  xpsResult?: ReturnType<typeof runXpsProcessing> | null,
+  ftirResult?: ReturnType<typeof runFtirProcessing> | null,
 ): DecisionResult {
   const { project, dataset } = option;
   const config = CONTEXT_CONFIG[context];
@@ -1339,8 +1353,32 @@ function createDecisionResult(
     // Use XRD analysis peaks
     const demoPeaks = asDemoPeaks(xrdAnalysis.detectedPeaks);
     peakInputs = convertXrdPeaksToPeakInput(demoPeaks);
+  } else if (context === 'Raman' && ramanResult?.peaks.length) {
+    // Use live Raman runner output
+    peakInputs = ramanResult.peaks.map((p, i) => ({
+      id: `raman-${i}`,
+      position: p.ramanShift,
+      intensity: p.intensity,
+      label: p.assignment ?? `${p.ramanShift.toFixed(0)} cm\u207B\u00B9`,
+    }));
+  } else if (context === 'XPS' && xpsResult?.peaks.length) {
+    // Use live XPS runner output
+    peakInputs = xpsResult.peaks.map((p, i) => ({
+      id: `xps-${i}`,
+      position: p.bindingEnergy,
+      intensity: p.intensity,
+      label: p.assignment ?? `${p.bindingEnergy.toFixed(1)} eV`,
+    }));
+  } else if (context === 'FTIR' && ftirResult?.bands.length) {
+    // Use live FTIR runner output
+    peakInputs = ftirResult.bands.map((b, i) => ({
+      id: `ftir-${i}`,
+      position: b.wavenumber,
+      intensity: b.intensity,
+      label: b.assignment ?? `${b.wavenumber.toFixed(0)} cm\u207B\u00B9`,
+    }));
   } else {
-    // Use dataset features
+    // Deterministic fallback: use pre-computed detectedFeatures
     peakInputs = convertDatasetFeaturesToPeakInput(dataset);
   }
 
@@ -1896,9 +1934,19 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
   const contextConfig = CONTEXT_CONFIG[agentState.context];
   const stages = contextConfig.stages;
   const modeConfig = AGENT_MODES[agentState.mode];
+  // ── Param-version reads (cheap localStorage reads; change when user edits ──
+  // params in the workspace panel).  Used as useMemo deps so analysis
+  // re-runs whenever effective parameters change, not only when the project
+  // id changes (Patch 10.7E condition 1).
+  const xrdParamVersion  = getXrdParameterSnapshot(selectedProject.id).version;
+  const ramanParamVersion = getRamanParameterSnapshot(selectedProject.id).version;
+  const xpsParamVersion   = getXpsParameterSnapshot(selectedProject.id).version;
+  const ftirParamVersion  = getFtirParameterSnapshot(selectedProject.id).version;
+
   const xrdAnalysis = useMemo(
     () => {
       if (agentState.context !== 'XRD') return null;
+      if (!selectedDataset.dataPoints.length) return null;
       const processingParams = getXrdProcessingParams(selectedProject.id);
       return runXrdPhaseIdentificationAgent({
         datasetId: selectedDataset.id,
@@ -1907,8 +1955,78 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         dataPoints: selectedDataset.dataPoints,
       }, processingParams);
     },
-    [agentState.context, selectedDataset, selectedProject.id],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agentState.context, selectedDataset, selectedProject.id, xrdParamVersion],
   );
+
+  // ── Non-XRD analysis memos (Patch 10.7E) ──────────────────────────────────
+  // Mirror the XRD pattern: compute only when the context matches; re-run
+  // when params or dataset change.  Empty dataPoints → null (Q1: callers
+  // fall back to detectedFeatures).
+
+  const ramanAnalysis = useMemo(
+    () => {
+      if (agentState.context !== 'Raman') return null;
+      if (!selectedDataset.dataPoints.length) return null;
+      return runRamanProcessing(
+        demoDatasetToRamanDataset(selectedDataset),
+        getRamanProcessingParams(selectedProject.id),
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agentState.context, selectedDataset, selectedProject.id, ramanParamVersion],
+  );
+
+  const xpsAnalysis = useMemo(
+    () => {
+      if (agentState.context !== 'XPS') return null;
+      if (!selectedDataset.dataPoints.length) return null;
+      return runXpsProcessing(
+        demoDatasetToXpsDataset(selectedDataset),
+        getXpsProcessingParams(selectedProject.id),
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agentState.context, selectedDataset, selectedProject.id, xpsParamVersion],
+  );
+
+  const ftirAnalysis = useMemo(
+    () => {
+      if (agentState.context !== 'FTIR') return null;
+      if (!selectedDataset.dataPoints.length) return null;
+      return runFtirProcessing(
+        demoDatasetToFtirDataset(selectedDataset),
+        getFtirProcessingParams(selectedProject.id),
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agentState.context, selectedDataset, selectedProject.id, ftirParamVersion],
+  );
+
+  // ── Analysis cache ref (Patch 10.7E condition 2: no double-compute) ───────
+  // runAuto reads from this ref so it reuses whatever the memo already
+  // computed.  The ref is updated synchronously during render (before any
+  // async call in runAuto), so it always holds the values from the most
+  // recent render at the time runAuto runs.
+  const analysisCache = React.useRef({
+    xrd: xrdAnalysis as ReturnType<typeof runXrdPhaseIdentificationAgent> | null,
+    raman: ramanAnalysis as ReturnType<typeof runRamanProcessing> | null,
+    xps: xpsAnalysis as ReturnType<typeof runXpsProcessing> | null,
+    ftir: ftirAnalysis as ReturnType<typeof runFtirProcessing> | null,
+    context: agentState.context as TechniqueContext,
+    datasetId: selectedDataset.id,
+  });
+  // Synchronous update — intentionally outside useEffect so runAuto always
+  // reads the current render's values without waiting for a commit.
+  analysisCache.current = {
+    xrd: xrdAnalysis,
+    raman: ramanAnalysis,
+    xps: xpsAnalysis,
+    ftir: ftirAnalysis,
+    context: agentState.context,
+    datasetId: selectedDataset.id,
+  };
+
   // Phase X6C: Read persisted XRD backend evidence + runtime evidence for Agent reasoning enrichment.
   // Prioritize runtime evidence when available, fallback to localStorage.
   const [xrdBackendEvidence, setXrdBackendEvidence] = useState<XRDBackendEvidenceRecord | null>(null);
@@ -1936,22 +2054,60 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
   }, [agentState.context, selectedProject.id, runtimeEvidence]);
 
   const peakMarkers = useMemo(
-    () =>
-      agentState.context === 'XRD' && (agentState.graphState.showMarkers || agentState.reasoningState.result)
-        ? asDemoPeaks(
-            xrdAnalysis?.detectedPeaks.length
-              ? xrdAnalysis.detectedPeaks
-              : selectedDataset.detectedFeatures,
-          )
-        : undefined,
+    () => {
+      const showMarkers = agentState.graphState.showMarkers || !!agentState.reasoningState.result;
+      if (!showMarkers) return undefined;
+
+      if (agentState.context === 'XRD') {
+        return asDemoPeaks(
+          xrdAnalysis?.detectedPeaks.length
+            ? xrdAnalysis.detectedPeaks
+            : selectedDataset.detectedFeatures,
+        );
+      }
+
+      // Non-XRD: use live runner peaks when available, fall back to detectedFeatures
+      if (agentState.context === 'Raman' && ramanAnalysis?.peaks.length) {
+        return ramanAnalysis.peaks.map((p) => ({
+          position: p.ramanShift,
+          intensity: p.intensity,
+          label: p.assignment ?? `${p.ramanShift.toFixed(0)} cm\u207B\u00B9`,
+        }));
+      }
+      if (agentState.context === 'XPS' && xpsAnalysis?.peaks.length) {
+        return xpsAnalysis.peaks.map((p) => ({
+          position: p.bindingEnergy,
+          intensity: p.intensity,
+          label: p.assignment ?? `${p.bindingEnergy.toFixed(1)} eV`,
+        }));
+      }
+      if (agentState.context === 'FTIR' && ftirAnalysis?.bands.length) {
+        return ftirAnalysis.bands.map((b) => ({
+          position: b.wavenumber,
+          intensity: b.intensity,
+          label: b.assignment ?? `${b.wavenumber.toFixed(0)} cm\u207B\u00B9`,
+        }));
+      }
+
+      // Fallback: static detectedFeatures
+      return selectedDataset.detectedFeatures.length > 0
+        ? asDemoPeaks(selectedDataset.detectedFeatures)
+        : undefined;
+    },
     [
       agentState.context,
       agentState.graphState.showMarkers,
       agentState.reasoningState.result,
       selectedDataset.detectedFeatures,
       xrdAnalysis,
+      ramanAnalysis,
+      xpsAnalysis,
+      ftirAnalysis,
     ],
   );
+
+  // Baseline data for the graph: XRD has a computed baseline; for other
+  // techniques the runners do not expose a separate baseline array yet.
   const baselineData = agentState.context === 'XRD' ? xrdAnalysis?.baselineData : undefined;
   const currentResult = agentState.reasoningState.result;
   const runComplete = agentState.reasoningState.status === 'complete' && !!currentResult;
@@ -2192,13 +2348,20 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     llmOutput: ReasoningOutput | null = null,
     fallbackUsed = false,
     lit: LiteratureRunData | null = null,
+    // Live runner results threaded from runAuto/runStep (Patch 10.7E).
+    ramanResult: ReturnType<typeof runRamanProcessing> | null = null,
+    xpsRunResult: ReturnType<typeof runXpsProcessing> | null = null,
+    ftirResult: ReturnType<typeof runFtirProcessing> | null = null,
   ) => {
     // XPS element-focused evidence (persisted from the Element Selection
     // Analysis view) feeds fusion scoring + contradiction detection.
     const xpsElementEvidence =
       context === 'XPS' ? readLatestXpsElementEvidence(option.project.id)?.evidence ?? null : null;
 
-    const decision = createDecisionResult(context, option, xrdResult, llmOutput, xpsElementEvidence);
+    const decision = createDecisionResult(
+      context, option, xrdResult, llmOutput, xpsElementEvidence,
+      ramanResult, xpsRunResult, ftirResult,
+    );
 
     // Collected XPS↔XRD oxidation-state contradictions, surfaced into the claim
     // boundary (hasContradictions) below as well as the basis/limitations.
@@ -2444,9 +2607,18 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       ? { project: currentProject, dataset: evidenceSnapshot.activeDataset }
       : getDatasetOption(context, datasetId, agentState.projectId);
     const config = CONTEXT_CONFIG[context];
-    const xrdResult =
+    // ── XRD: reuse the memo result when context + dataset match (condition 2);
+    // fall back to a fresh compute only for context-switch calls where the
+    // memo hasn't had a chance to update yet.
+    const xrdResult: ReturnType<typeof runXrdPhaseIdentificationAgent> | null =
       context === 'XRD'
         ? (() => {
+            const cached = analysisCache.current;
+            if (cached.context === 'XRD' && cached.datasetId === option.dataset.id && cached.xrd) {
+              return cached.xrd;
+            }
+            // Context-switch fallback: compute fresh with option.dataset
+            if (!option.dataset.dataPoints.length) return null;
             const processingParams = getXrdProcessingParams(currentProject.id);
             const paramSnapshot = getXrdParameterSnapshot(currentProject.id);
             const result = runXrdPhaseIdentificationAgent({
@@ -2455,7 +2627,6 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
               sourceLabel: option.dataset.fileName,
               dataPoints: option.dataset.dataPoints,
             }, processingParams);
-            // Log parameter snapshot used for processing
             if (paramSnapshot.hasOverrides) {
               appendLog({
                 stamp: '[params]',
@@ -2467,35 +2638,97 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
           })()
         : null;
 
-    // Log parameter snapshots for other techniques (provenance-only, no actual processing)
-    if (context === 'Raman') {
-      const paramSnapshot = getRamanParameterSnapshot(agentState.projectId);
-      if (paramSnapshot.hasOverrides) {
-        appendLog({
-          stamp: '[params]',
-          message: `Applied ${paramSnapshot.overrideCount} custom Raman parameter${paramSnapshot.overrideCount !== 1 ? 's' : ''} (last updated by ${paramSnapshot.lastUpdatedBy})`,
-          type: 'system',
-        });
-      }
-    } else if (context === 'XPS') {
-      const paramSnapshot = getXpsParameterSnapshot(agentState.projectId);
-      if (paramSnapshot.hasOverrides) {
-        appendLog({
-          stamp: '[params]',
-          message: `Applied ${paramSnapshot.overrideCount} custom XPS parameter${paramSnapshot.overrideCount !== 1 ? 's' : ''} (last updated by ${paramSnapshot.lastUpdatedBy})`,
-          type: 'system',
-        });
-      }
-    } else if (context === 'FTIR') {
-      const paramSnapshot = getFtirParameterSnapshot(agentState.projectId);
-      if (paramSnapshot.hasOverrides) {
-        appendLog({
-          stamp: '[params]',
-          message: `Applied ${paramSnapshot.overrideCount} custom FTIR parameter${paramSnapshot.overrideCount !== 1 ? 's' : ''} (last updated by ${paramSnapshot.lastUpdatedBy})`,
-          type: 'system',
-        });
-      }
-    }
+    // ── Raman/XPS/FTIR: reuse memo result or compute fresh (Patch 10.7E) ────
+    // Helper: reuse from analysisCache if context + dataset match; otherwise
+    // run the processing function using the same selectedDataset the memo uses
+    // (not option.dataset) to guarantee graph ↔ decision consistency.
+    const ramanResult: ReturnType<typeof runRamanProcessing> | null =
+      context === 'Raman'
+        ? (() => {
+            const cached = analysisCache.current;
+            if (cached.context === 'Raman' && cached.datasetId === option.dataset.id && cached.raman) {
+              return cached.raman;
+            }
+            // Context-switch or empty fallback: compute using selectedDataset
+            if (!selectedDataset.dataPoints.length) return null;
+            const paramSnapshot = getRamanParameterSnapshot(currentProject.id);
+            const result = runRamanProcessing(
+              demoDatasetToRamanDataset(selectedDataset),
+              getRamanProcessingParams(currentProject.id),
+            );
+            if (paramSnapshot.hasOverrides) {
+              appendLog({
+                stamp: '[params]',
+                message: `Applied ${paramSnapshot.overrideCount} custom Raman parameter${paramSnapshot.overrideCount !== 1 ? 's' : ''} (last updated by ${paramSnapshot.lastUpdatedBy})`,
+                type: 'system',
+              });
+            }
+            appendLog({
+              stamp: '[raman]',
+              message: `Signal processed: ${result.peaks.length} mode${result.peaks.length !== 1 ? 's' : ''} detected`,
+              type: 'system',
+            });
+            return result;
+          })()
+        : null;
+
+    const xpsRunResult: ReturnType<typeof runXpsProcessing> | null =
+      context === 'XPS'
+        ? (() => {
+            const cached = analysisCache.current;
+            if (cached.context === 'XPS' && cached.datasetId === option.dataset.id && cached.xps) {
+              return cached.xps;
+            }
+            if (!selectedDataset.dataPoints.length) return null;
+            const paramSnapshot = getXpsParameterSnapshot(currentProject.id);
+            const result = runXpsProcessing(
+              demoDatasetToXpsDataset(selectedDataset),
+              getXpsProcessingParams(currentProject.id),
+            );
+            if (paramSnapshot.hasOverrides) {
+              appendLog({
+                stamp: '[params]',
+                message: `Applied ${paramSnapshot.overrideCount} custom XPS parameter${paramSnapshot.overrideCount !== 1 ? 's' : ''} (last updated by ${paramSnapshot.lastUpdatedBy})`,
+                type: 'system',
+              });
+            }
+            appendLog({
+              stamp: '[xps]',
+              message: `Signal processed: ${result.peaks.length} peak${result.peaks.length !== 1 ? 's' : ''} detected`,
+              type: 'system',
+            });
+            return result;
+          })()
+        : null;
+
+    const ftirResult: ReturnType<typeof runFtirProcessing> | null =
+      context === 'FTIR'
+        ? (() => {
+            const cached = analysisCache.current;
+            if (cached.context === 'FTIR' && cached.datasetId === option.dataset.id && cached.ftir) {
+              return cached.ftir;
+            }
+            if (!selectedDataset.dataPoints.length) return null;
+            const paramSnapshot = getFtirParameterSnapshot(currentProject.id);
+            const result = runFtirProcessing(
+              demoDatasetToFtirDataset(selectedDataset),
+              getFtirProcessingParams(currentProject.id),
+            );
+            if (paramSnapshot.hasOverrides) {
+              appendLog({
+                stamp: '[params]',
+                message: `Applied ${paramSnapshot.overrideCount} custom FTIR parameter${paramSnapshot.overrideCount !== 1 ? 's' : ''} (last updated by ${paramSnapshot.lastUpdatedBy})`,
+                type: 'system',
+              });
+            }
+            appendLog({
+              stamp: '[ftir]',
+              message: `Signal processed: ${result.bands.length} band${result.bands.length !== 1 ? 's' : ''} detected`,
+              type: 'system',
+            });
+            return result;
+          })()
+        : null;
 
     setFeedback('');
     setAgentState((current) => ({
@@ -2621,7 +2854,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         }
       }
 
-      finalizeRun(context, option, xrdResult, llmOutput, fallbackUsed, lit);
+      finalizeRun(context, option, xrdResult, llmOutput, fallbackUsed, lit, ramanResult, xpsRunResult, ftirResult);
     } finally {
       if (runTokenRef.current === token) {
         runningGuardRef.current = false;
@@ -2784,7 +3017,11 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
           }
         }
 
-        finalizeRun(agentState.context, option, xrdResult, llmOutput, fallbackUsed, lit);
+        finalizeRun(agentState.context, option, xrdResult, llmOutput, fallbackUsed, lit,
+          analysisCache.current.raman,
+          analysisCache.current.xps,
+          analysisCache.current.ftir,
+        );
       }
     } finally {
       if (runTokenRef.current === token) {

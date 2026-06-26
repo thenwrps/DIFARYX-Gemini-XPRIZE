@@ -9,6 +9,7 @@
     "video:studio": "remotion studio remotion/src/Root.tsx",
     "video:render": "remotion render remotion/src/Root.tsx GoogleAIChallengeVideo remotion/out/difaryx-google-ai-challenge.mp4",
     "smoke:upload-beta": "node test-upload-beta.mjs",
+    "test": "tsx src/utils/__tests__/techniqueDatasetAdapters.test.ts && tsx src/agents/xrdAgent/__tests__/spinelMillerIndexing.test.ts && tsx src/agents/xrdAgent/__tests__/codMatching.test.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"

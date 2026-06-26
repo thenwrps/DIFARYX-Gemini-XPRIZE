@@ -374,6 +374,7 @@ class ReferenceMarkerResponse(BaseModel):
     position_2theta: float
     relative_intensity: float
     phase_label: str
+    cod_id: Optional[str] = None
 
 
 class PeakMatchResponse(BaseModel):

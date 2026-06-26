@@ -78,6 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_reference_peaks_phase_id
 # Mock Reference Data — Seed Phases
 # ============================================================================
 
+# DEPRECATED: Kept as fallback only for legacy unit tests.
 _SEED_PHASES: List[dict] = [
     # ── TiO₂ Anatase (ICSD-9852, tetragonal I41/amd) ─────────────────────
     {
@@ -270,6 +271,116 @@ _SEED_PHASES: List[dict] = [
 # ============================================================================
 
 
+def seed_from_cifs(cifs_dir: Optional[Path] = None) -> List[dict]:
+    """Seed reference database from 14 COD CIF files plus 1 synthetic profile."""
+    import math
+    import re
+    import pymatgen.analysis.diffraction.xrd as xrd
+    import pymatgen.io.cif as cif
+
+    if cifs_dir is None:
+        cifs_dir = Path(__file__).resolve().parent.parent / "data" / "cifs"
+
+    configs = [
+        ("1011032", "Fe3 O4", "fe3o4", "Magnetite Fe3O4", "spinel ferrite", "cubic", "ICDD-PDF 01-088-0315"),
+        ("5910028", "Cu Fe2 O4", "cufe2o4", "Copper Ferrite (Cubic)", "spinel ferrite", "cubic", "JCPDS 25-0283"),
+        ("9011012", "Cu Fe2 O4", "cufe2o4_tetragonal", "Copper Ferrite (Tetragonal)", "spinel ferrite", "tetragonal", "JCPDS 34-0425"),
+        ("5910063", "Co Fe2 O4", "cofe2o4", "Cobalt Ferrite", "spinel ferrite", "cubic", "JCPDS 22-1086"),
+        ("5910064", "Fe2 Ni O4", "nife2o4", "Nickel Ferrite", "spinel ferrite", "cubic", "JCPDS 10-0325"),
+        ("1011240", "Fe2 O3", "alpha-fe2o3", "Hematite alpha-Fe2O3", "hematite", "rhombohedral", "JCPDS 33-0664"),
+        ("9006316", "Fe2 O3", "maghemite_gamma_fe2o3", "Maghemite gamma-Fe2O3", "spinel ferrite", "cubic", "JCPDS 39-1346"),
+        ("9009086", "O2 Ti", "anatase_tio2", "Anatase TiO2", "anatase", "tetragonal", "JCPDS 21-1272"),
+        ("9009087", "O2 Ti", "brookite_tio2", "Brookite TiO2", "brookite", "orthorhombic", "JCPDS 29-1360"),
+        ("1010944", "O2 Si", "cristobalite_sio2", "Cristobalite SiO2", "cristobalite", "tetragonal", "JCPDS 39-1425"),
+        ("1011258", "O Zn", "zincite_zno", "Zincite ZnO", "wurtzite", "hexagonal", "JCPDS 36-1451"),
+        ("1011148", "Cu O", "cuo", "Tenorite CuO", "tenorite", "monoclinic", "JCPDS 48-1548"),
+        ("9008459", "Ag", "silver_ag", "Silver Metal", "fcc_metal", "cubic", "JCPDS 04-0783"),
+        ("9008463", "Au", "gold_au", "Gold Metal", "fcc_metal", "cubic", "JCPDS 04-0784"),
+    ]
+
+    calc = xrd.XRDCalculator(wavelength="CuKa")
+    phases = []
+
+    for cid, exp_formula, pid, pname, family, csys, ref_card in configs:
+        cif_path = cifs_dir / f"{cid}.cif"
+        if not cif_path.exists():
+            raise FileNotFoundError(f"Missing CIF file: {cif_path}")
+
+        text = cif_path.read_text(encoding="utf-8", errors="ignore")
+        m = re.search(r"_chemical_formula_sum\s+([^\r\n]+)", text)
+        parsed_formula = m.group(1).strip().strip("'").strip('"') if m else ""
+        if " ".join(parsed_formula.split()) != " ".join(exp_formula.split()):
+            raise AssertionError(f"Formula gate failed for {cid}: expected '{exp_formula}', got '{parsed_formula}'")
+
+        parser = cif.CifParser(str(cif_path))
+        struct = parser.parse_structures(primitive=False)[0]
+        space_group = struct.get_space_group_info()[0]
+        lat = struct.lattice
+
+        pattern = calc.get_pattern(struct, two_theta_range=(10, 80))
+        peaks = []
+        for x, y, h in zip(pattern.x, pattern.y, pattern.hkls):
+            if y >= 1.0:
+                hkl_tuple = h[0]["hkl"]
+                hkl_str = f"({hkl_tuple[0]}{hkl_tuple[1]}{hkl_tuple[2]})"
+                theta_rad = math.radians(float(x) / 2.0)
+                d_sp = round(1.5406 / (2.0 * math.sin(theta_rad)), 4)
+                peaks.append({
+                    "twotheta": round(float(x), 2),
+                    "d_spacing": d_sp,
+                    "relative_intensity": round(float(y), 1),
+                    "hkl": hkl_str,
+                    "multiplicity": h[0].get("multiplicity", 1),
+                })
+
+        elements = [str(el) for el in struct.composition.elements]
+
+        phases.append({
+            "phase_id": pid,
+            "phase_label": pname,
+            "formula": struct.composition.reduced_formula,
+            "structure_family": family,
+            "elements": elements,
+            "space_group": space_group,
+            "crystal_system": csys,
+            "database_ref": f"COD-{cid} / {ref_card}",
+            "lattice_a": round(float(lat.a), 4),
+            "lattice_b": round(float(lat.b), 4),
+            "lattice_c": round(float(lat.c), 4),
+            "lattice_alpha": round(float(lat.alpha), 2),
+            "lattice_beta": round(float(lat.beta), 2),
+            "lattice_gamma": round(float(lat.gamma), 2),
+            "peaks": peaks,
+        })
+
+    # Add 15th synthetic reference
+    phases.append({
+        "phase_id": "sba15_amorphous_silica",
+        "phase_label": "SBA-15 Amorphous Silica",
+        "formula": "SiO2",
+        "structure_family": "amorphous",
+        "elements": ["Si", "O"],
+        "space_group": "Amorphous",
+        "crystal_system": "amorphous",
+        "database_ref": "Synthetic Profile",
+        "lattice_a": 0.0,
+        "lattice_b": 0.0,
+        "lattice_c": 0.0,
+        "lattice_alpha": 90.0,
+        "lattice_beta": 90.0,
+        "lattice_gamma": 90.0,
+        "peaks": [{
+            "twotheta": 22.5,
+            "d_spacing": 3.948,
+            "relative_intensity": 100.0,
+            "hkl": "broad-halo",
+            "multiplicity": 1,
+        }],
+    })
+
+    return phases
+
+
 class CODDatabaseIndexer:
     """
     Creates and populates a SQLite database of crystallographic reference
@@ -320,7 +431,7 @@ class CODDatabaseIndexer:
             target_path.unlink()
             logger.info("Removed existing database: %s", target_path)
 
-        data = phases if phases is not None else _SEED_PHASES
+        data = phases if phases is not None else seed_from_cifs()
 
         conn = sqlite3.connect(str(target_path))
         try:

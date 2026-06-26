@@ -73,7 +73,7 @@ describe('Task 19: Enhanced Confidence Calculation Algorithm', () => {
     it('should match peaks within ±0.2° tolerance', () => {
       const phase = createMockPhase('test1', 'TestPhase1', [
         { position: 30.0, relativeIntensity: 100, hkl: '(311)' },
-        { position: 35.5, relativeIntensity: 80, hkl: '(400)' },
+        { position: 35.5, relativeIntensity: 80, hkl: '(311)' },
       ]);
 
       const detectedPeaks: XrdDetectedPeak[] = [
@@ -104,7 +104,7 @@ describe('Task 19: Enhanced Confidence Calculation Algorithm', () => {
       // Phase with mix of strong and weak peaks
       const phaseWithStrongPeaks = createMockPhase('strong', 'StrongPeaks', [
         { position: 30.0, relativeIntensity: 100, hkl: '(311)' }, // Strong
-        { position: 35.5, relativeIntensity: 80, hkl: '(400)' },  // Strong
+        { position: 35.5, relativeIntensity: 80, hkl: '(311)' },  // Strong
         { position: 40.0, relativeIntensity: 20, hkl: '(422)' },  // Weak
       ]);
 
@@ -137,7 +137,7 @@ describe('Task 19: Enhanced Confidence Calculation Algorithm', () => {
     it('should penalize missing strong reference peaks', () => {
       const phase = createMockPhase('test', 'TestPhase', [
         { position: 30.0, relativeIntensity: 100, hkl: '(311)' }, // Strong
-        { position: 35.5, relativeIntensity: 80, hkl: '(400)' },  // Strong
+        { position: 35.5, relativeIntensity: 80, hkl: '(311)' },  // Strong
         { position: 40.0, relativeIntensity: 60, hkl: '(422)' },  // Strong
       ]);
 
@@ -179,7 +179,7 @@ describe('Task 19: Enhanced Confidence Calculation Algorithm', () => {
     it('should cap confidence at 85% when <80% of strong peaks matched', () => {
       const phase = createMockPhase('test', 'TestPhase', [
         { position: 30.0, relativeIntensity: 100, hkl: '(311)' }, // Strong
-        { position: 35.5, relativeIntensity: 80, hkl: '(400)' },  // Strong
+        { position: 35.5, relativeIntensity: 80, hkl: '(311)' },  // Strong
         { position: 40.0, relativeIntensity: 60, hkl: '(422)' },  // Strong
         { position: 43.0, relativeIntensity: 50, hkl: '(511)' },  // Strong
         { position: 45.0, relativeIntensity: 40, hkl: '(440)' },  // Strong
@@ -202,7 +202,7 @@ describe('Task 19: Enhanced Confidence Calculation Algorithm', () => {
     it('should cap confidence below 50% when <50% of reference peaks matched', () => {
       const phase = createMockPhase('test', 'TestPhase', [
         { position: 30.0, relativeIntensity: 100, hkl: '(311)' },
-        { position: 35.5, relativeIntensity: 80, hkl: '(400)' },
+        { position: 35.5, relativeIntensity: 80, hkl: '(311)' },
         { position: 40.0, relativeIntensity: 60, hkl: '(422)' },
         { position: 43.0, relativeIntensity: 50, hkl: '(511)' },
       ]);
@@ -224,7 +224,7 @@ describe('Task 19: Enhanced Confidence Calculation Algorithm', () => {
     it('should detect ambiguous candidates with similar confidence scores', () => {
       const phase1 = createMockPhase('phase1', 'Phase1', [
         { position: 30.0, relativeIntensity: 100, hkl: '(311)' },
-        { position: 35.5, relativeIntensity: 80, hkl: '(400)' },
+        { position: 35.5, relativeIntensity: 80, hkl: '(311)' },
       ]);
 
       const phase2 = createMockPhase('phase2', 'Phase2', [
@@ -257,7 +257,7 @@ describe('Task 19: Enhanced Confidence Calculation Algorithm', () => {
     it('should NOT flag ambiguity when confidence scores differ by >5%', () => {
       const phase1 = createMockPhase('phase1', 'Phase1', [
         { position: 30.0, relativeIntensity: 100, hkl: '(311)' },
-        { position: 35.5, relativeIntensity: 80, hkl: '(400)' },
+        { position: 35.5, relativeIntensity: 80, hkl: '(311)' },
       ]);
 
       const phase2 = createMockPhase('phase2', 'Phase2', [
@@ -283,7 +283,7 @@ describe('Task 19: Enhanced Confidence Calculation Algorithm', () => {
     it('should produce high confidence for good match with all strong peaks', () => {
       const phase = createMockPhase('cuferrite', 'CuFe2O4', [
         { position: 30.1, relativeIntensity: 100, hkl: '(311)' },
-        { position: 35.5, relativeIntensity: 90, hkl: '(400)' },
+        { position: 35.5, relativeIntensity: 90, hkl: '(311)' },
         { position: 43.2, relativeIntensity: 70, hkl: '(422)' },
         { position: 57.1, relativeIntensity: 60, hkl: '(511)' },
       ]);
@@ -308,7 +308,7 @@ describe('Task 19: Enhanced Confidence Calculation Algorithm', () => {
     it('should produce low confidence for poor match', () => {
       const phase = createMockPhase('cuferrite', 'CuFe2O4', [
         { position: 30.1, relativeIntensity: 100, hkl: '(311)' },
-        { position: 35.5, relativeIntensity: 90, hkl: '(400)' },
+        { position: 35.5, relativeIntensity: 90, hkl: '(311)' },
         { position: 43.2, relativeIntensity: 70, hkl: '(422)' },
         { position: 57.1, relativeIntensity: 60, hkl: '(511)' },
       ]);

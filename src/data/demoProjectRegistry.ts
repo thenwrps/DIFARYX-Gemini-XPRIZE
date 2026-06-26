@@ -538,7 +538,7 @@ function buildCrossTechniqueComparison(project: RawDemoProject): DemoCrossTechni
     comp.matrix = [
       {
         techniqueId: 'xrd', techniqueLabel: 'XRD', role: 'Primary structural evidence',
-        keyFinding: 'Major reflections at 17.1°, 28.5°, 35.6°, 42.8°, 53.2°, 56.8°, 61.6° 2θ consistent with spinel (311) family.',
+        keyFinding: 'Major reflections at 18.3°, 30.1°, 35.5°, 43.2°, 53.6°, 57.1°, 62.7° 2θ consistent with spinel (311) family.',
         supportsClaim: 'yes',
         limitation: 'Phase purity claim limited without Rietveld refinement.',
         nextAction: 'Add refinement or control reference for publication-level validation.',

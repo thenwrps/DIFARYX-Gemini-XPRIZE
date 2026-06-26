@@ -26,7 +26,7 @@ import {
 } from './types';
 
 // Task 19.7: Peak position tolerance matching (±0.2° for XRD)
-const MATCH_TOLERANCE = 0.2;
+export const MATCH_TOLERANCE = 0.2;
 
 // Task 19.1: Strong peaks threshold (relative intensity > 30 weighted more heavily)
 const STRONG_PEAK_THRESHOLD = 30;
@@ -409,10 +409,10 @@ export function score_phase_candidates(
 
       // Calculate raw score using weighted components
       let rawScore = clamp(
-        weightedPeakScore * 0.50 +
-          matchedReferencePeakRatio * 0.30 -
-          missingStrongPeakPenalty * 0.15 -
-          unexplainedPeakPenalty * 0.15,
+        weightedPeakScore * 0.60 +
+          matchedReferencePeakRatio * 0.40 -
+          missingStrongPeakPenalty * 0.35 -
+          unexplainedPeakPenalty * 0.35,
         0,
         1,
       );

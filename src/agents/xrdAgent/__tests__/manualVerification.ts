@@ -67,7 +67,7 @@ console.log('-'.repeat(80));
 {
   const phase = createMockPhase('test1', 'TestPhase1', [
     { position: 30.0, relativeIntensity: 100, hkl: '(311)' },
-    { position: 35.5, relativeIntensity: 80, hkl: '(400)' },
+    { position: 35.5, relativeIntensity: 80, hkl: '(311)' },
   ]);
 
   const detectedPeaks: XrdDetectedPeak[] = [
@@ -87,7 +87,7 @@ console.log('-'.repeat(80));
 {
   const phaseWithStrongPeaks = createMockPhase('strong', 'StrongPeaks', [
     { position: 30.0, relativeIntensity: 100, hkl: '(311)' }, // Strong
-    { position: 35.5, relativeIntensity: 80, hkl: '(400)' },  // Strong
+    { position: 35.5, relativeIntensity: 80, hkl: '(311)' },  // Strong
     { position: 40.0, relativeIntensity: 20, hkl: '(422)' },  // Weak
   ]);
 
@@ -119,7 +119,7 @@ console.log('-'.repeat(80));
 {
   const phase = createMockPhase('test', 'TestPhase', [
     { position: 30.0, relativeIntensity: 100, hkl: '(311)' }, // Strong
-    { position: 35.5, relativeIntensity: 80, hkl: '(400)' },  // Strong
+    { position: 35.5, relativeIntensity: 80, hkl: '(311)' },  // Strong
     { position: 40.0, relativeIntensity: 60, hkl: '(422)' },  // Strong
   ]);
 
@@ -163,7 +163,7 @@ console.log('-'.repeat(80));
 {
   const phase = createMockPhase('test', 'TestPhase', [
     { position: 30.0, relativeIntensity: 100, hkl: '(311)' },
-    { position: 35.5, relativeIntensity: 80, hkl: '(400)' },
+    { position: 35.5, relativeIntensity: 80, hkl: '(311)' },
     { position: 40.0, relativeIntensity: 60, hkl: '(422)' },
     { position: 43.0, relativeIntensity: 50, hkl: '(511)' },
   ]);
@@ -187,7 +187,7 @@ console.log('-'.repeat(80));
 {
   const phase1 = createMockPhase('phase1', 'Phase1', [
     { position: 30.0, relativeIntensity: 100, hkl: '(311)' },
-    { position: 35.5, relativeIntensity: 80, hkl: '(400)' },
+    { position: 35.5, relativeIntensity: 80, hkl: '(311)' },
   ]);
 
   const phase2 = createMockPhase('phase2', 'Phase2', [
@@ -219,17 +219,17 @@ console.log('\n[Test 7] Integration: High Confidence for Good Match');
 console.log('-'.repeat(80));
 {
   const phase = createMockPhase('cuferrite', 'CuFe2O4', [
-    { position: 30.1, relativeIntensity: 100, hkl: '(311)' },
-    { position: 35.5, relativeIntensity: 90, hkl: '(400)' },
-    { position: 43.2, relativeIntensity: 70, hkl: '(422)' },
-    { position: 57.1, relativeIntensity: 60, hkl: '(511)' },
+    { position: 30.1, relativeIntensity: 58, hkl: '(220)' },
+    { position: 35.5, relativeIntensity: 100, hkl: '(311)' },
+    { position: 43.2, relativeIntensity: 47, hkl: '(311)' },
+    { position: 57.1, relativeIntensity: 39, hkl: '(511)' },
   ]);
 
   const detectedPeaks: XrdDetectedPeak[] = [
-    createMockDetectedPeak('p1', 30.1, 100),
-    createMockDetectedPeak('p2', 35.5, 90),
-    createMockDetectedPeak('p3', 43.2, 70),
-    createMockDetectedPeak('p4', 57.1, 60),
+    createMockDetectedPeak('p1', 30.1, 58),
+    createMockDetectedPeak('p2', 35.5, 100),
+    createMockDetectedPeak('p3', 43.2, 47),
+    createMockDetectedPeak('p4', 57.1, 39),
   ];
 
   const searchResults = search_phase_database(detectedPeaks, [phase]);

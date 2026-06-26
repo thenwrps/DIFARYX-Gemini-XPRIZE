@@ -28,7 +28,7 @@ from xrd_engine.services.xrd_engine import FittedPeak
 logger = logging.getLogger(__name__)
 
 # Tolerance for matching a measured peak to a reference marker (degrees 2θ)
-DEFAULT_MATCH_TOLERANCE: float = 0.5
+DEFAULT_MATCH_TOLERANCE: float = 0.2
 
 
 # ============================================================================
@@ -53,6 +53,7 @@ class ReferenceMarker:
     position_2theta: float
     relative_intensity: float
     phase_label: str
+    cod_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -248,6 +249,7 @@ SBA15_AMORPHOUS_MARKERS: List[ReferenceMarker] = [
 ]
 
 # Master registry: phase_label → list of markers
+# DEPRECATED: Kept as fallback only for legacy unit tests.
 REFERENCE_REGISTRY: Dict[str, List[ReferenceMarker]] = {
     "CuFe2O4 Spinel": CUFE2O4_SPINEL_MARKERS,
     "CoFe2O4 Spinel": COFE2O4_SPINEL_MARKERS,
@@ -345,11 +347,42 @@ def match_peaks(
     db_meta: dict = _get_db_metadata(db_type)
     confidence_scale: float = db_meta["confidence_scale"]
 
-    # Flatten all markers from the registry into a single list,
-    # keeping the phase_label attached to each marker.
+    # Load markers dynamically from SQLite xrd_reference.db
+    if not _DB_PATH.exists():
+        try:
+            from api.database_indexer import seed_mock_data
+            seed_mock_data(_DB_PATH)
+        except Exception as exc:
+            logger.warning("Auto-seed failed in match_peaks: %s", exc)
+
     all_markers: List[ReferenceMarker] = []
-    for phase_markers in REFERENCE_REGISTRY.values():
-        all_markers.extend(phase_markers)
+    if _DB_PATH.exists():
+        conn = _sqlite3.connect(str(_DB_PATH))
+        try:
+            cursor = conn.execute(
+                "SELECT p.twotheta, p.d_spacing, p.relative_intensity, p.hkl, ph.phase_label, ph.database_ref "
+                "FROM reference_peaks p JOIN reference_phases ph ON p.phase_id = ph.phase_id"
+            )
+            for tt, dsp, rel_int, hkl, plabel, db_ref in cursor:
+                cod_id = None
+                if db_ref and "COD-" in db_ref:
+                    cod_id = db_ref.split("COD-")[1].split()[0].split("/")[0]
+                all_markers.append(
+                    ReferenceMarker(
+                        hkl=hkl or "",
+                        d_spacing=dsp or 0.0,
+                        position_2theta=tt,
+                        relative_intensity=rel_int or 0.0,
+                        phase_label=plabel,
+                        cod_id=cod_id,
+                    )
+                )
+        finally:
+            conn.close()
+    else:
+        # DEPRECATED fallback
+        for phase_markers in REFERENCE_REGISTRY.values():
+            all_markers.extend(phase_markers)
 
     matched: List[PeakMatch] = []
 
