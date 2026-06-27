@@ -1,6 +1,8 @@
 export type Technique = 'XRD' | 'XPS' | 'FTIR' | 'Raman' | 'Unknown';
 
 import { identifyMaterialFeatures } from '../hooks/useX7UniversalHook';
+import { safeGetItem, safeSetRuns } from '../utils/localStorageSafe';
+// Note: safeSetRuns signature is (key, runs, maxRuns?, maxEvictions?)
 
 export type EvidenceQualityState =
   | 'ready'
@@ -96,8 +98,8 @@ export type ParsedUploadedSignal = ParsedUploadedSignalSuccess | ParsedUploadedS
 
 export const UPLOADED_SIGNAL_RUNS_KEY = 'difaryx.uploadedSignalRuns.v1';
 
-const MAX_PERSISTED_RUNS = 8;
-const MAX_PERSISTED_POINTS = 1200;
+export const MAX_PERSISTED_RUNS = 12;
+export const MAX_PERSISTED_POINTS = 1200;
 
 export const SUPPORTED_UPLOAD_EXTENSIONS = ['csv', 'txt', 'xy', 'dat'] as const;
 
@@ -732,21 +734,12 @@ function compactUploadedSignalRunForStorage(run: UploadedSignalRun): UploadedSig
 }
 
 export function readUploadedSignalRuns(): UploadedSignalRun[] {
-  if (typeof window === 'undefined' || !window.localStorage) return [];
-
-  try {
-    const raw = window.localStorage.getItem(UPLOADED_SIGNAL_RUNS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .filter(isUploadedSignalRun)
-      .map(compactUploadedSignalRunForStorage)
-      .slice(0, MAX_PERSISTED_RUNS);
-  } catch {
-    return [];
-  }
+  const raw = safeGetItem<unknown[]>(UPLOADED_SIGNAL_RUNS_KEY, []);
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(isUploadedSignalRun)
+    .map(compactUploadedSignalRunForStorage)
+    .slice(0, MAX_PERSISTED_RUNS);
 }
 
 export function getUploadedSignalStorageStatus(): UploadStorageStatus {
@@ -805,9 +798,9 @@ export function saveUploadedSignalRun(run: UploadedSignalRun): boolean {
   try {
     const existing = readUploadedSignalRuns();
     const storedRun = compactUploadedSignalRunForStorage(run);
-    const next = [storedRun, ...existing.filter((item) => item.id !== storedRun.id)].slice(0, MAX_PERSISTED_RUNS);
-    window.localStorage.setItem(UPLOADED_SIGNAL_RUNS_KEY, JSON.stringify(next));
-    return true;
+    const next = [storedRun, ...existing.filter((item) => item.id !== storedRun.id)];
+    const { ok } = safeSetRuns(UPLOADED_SIGNAL_RUNS_KEY, next);
+    return ok;
   } catch {
     return false;
   }
@@ -820,8 +813,8 @@ export function deleteUploadedSignalRun(runId: string): boolean {
     const existing = readUploadedSignalRuns();
     const next = existing.filter((run) => run.id !== runId);
     if (next.length === existing.length) return false;
-    window.localStorage.setItem(UPLOADED_SIGNAL_RUNS_KEY, JSON.stringify(next));
-    return true;
+    const { ok } = safeSetRuns(UPLOADED_SIGNAL_RUNS_KEY, next);
+    return ok;
   } catch {
     return false;
   }
@@ -864,10 +857,10 @@ export function updateUploadedRunProcessingResults(
     const next = [
       storedRun,
       ...existing.filter((item, idx) => idx !== runIndex),
-    ].slice(0, MAX_PERSISTED_RUNS);
+    ];
 
-    window.localStorage.setItem(UPLOADED_SIGNAL_RUNS_KEY, JSON.stringify(next));
-    return true;
+    const { ok } = safeSetRuns(UPLOADED_SIGNAL_RUNS_KEY, next);
+    return ok;
   } catch (error) {
     console.error('Failed to update uploaded run:', error);
     return false;

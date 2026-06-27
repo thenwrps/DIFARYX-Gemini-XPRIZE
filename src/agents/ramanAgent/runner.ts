@@ -22,75 +22,13 @@ import type {
 } from './types';
 import type { RamanDataset } from '../../data/ramanDemoData';
 import { applyBaseline, applySmoothing, removeCosmicRays, identifyFunctionalGroups } from '../../hooks/useX7UniversalHook';
+import { RAMAN_STARTER_DATABASE } from '../../data/ramanReferenceData';
 
 // ============================================================================
-// Raman Mode Reference Database
+// Raman Mode Reference Database (Synchronized Part C)
 // ============================================================================
 
-const RAMAN_MODE_DATABASE: RamanModeReference[] = [
-  // Spinel Ferrite Modes
-  {
-    modeName: 'A1g spinel ferrite',
-    assignment: 'Symmetric stretching of metal-oxygen bonds in spinel structure',
-    ramanShiftRange: [660, 720],
-    typicalCenter: 690,
-    expectedWidth: 'sharp',
-    diagnosticWeight: 1.0,  // Primary diagnostic
-    supportingModes: ['eg_ferrite', 'low_ferrite'],
-    overlappingModes: [],
-    phaseType: 'ferrite',
-    literatureSource: 'Graves et al. (1988). Materials Research Bulletin',
-  },
-  {
-    modeName: 'Eg ferrite mode',
-    assignment: 'Eg vibrational mode of spinel ferrite',
-    ramanShiftRange: [450, 500],
-    typicalCenter: 470,
-    expectedWidth: 'medium',
-    diagnosticWeight: 0.7,  // Supporting
-    supportingModes: ['a1g_ferrite'],
-    overlappingModes: [],
-    phaseType: 'ferrite',
-    literatureSource: 'Graves et al. (1988). Materials Research Bulletin',
-  },
-  {
-    modeName: 'Lower ferrite mode',
-    assignment: 'Lower-frequency ferrite vibrational mode',
-    ramanShiftRange: [300, 360],
-    typicalCenter: 330,
-    expectedWidth: 'medium',
-    diagnosticWeight: 0.6,  // Supporting
-    supportingModes: ['a1g_ferrite'],
-    overlappingModes: [],
-    phaseType: 'ferrite',
-    literatureSource: 'Graves et al. (1988). Materials Research Bulletin',
-  },
-  // Carbon / Defect Modes
-  {
-    modeName: 'D band (carbon/defect)',
-    assignment: 'Disorder-induced carbon band or defect mode',
-    ramanShiftRange: [1300, 1400],
-    typicalCenter: 1350,
-    expectedWidth: 'medium',
-    diagnosticWeight: 0.5,
-    supportingModes: [],
-    overlappingModes: [],
-    phaseType: 'carbon',
-    literatureSource: 'Ferrari & Robertson (2000). Physical Review B',
-  },
-  {
-    modeName: 'G band (carbon)',
-    assignment: 'Graphitic carbon band',
-    ramanShiftRange: [1550, 1610],
-    typicalCenter: 1580,
-    expectedWidth: 'sharp',
-    diagnosticWeight: 0.5,
-    supportingModes: [],
-    overlappingModes: [],
-    phaseType: 'carbon',
-    literatureSource: 'Ferrari & Robertson (2000). Physical Review B',
-  },
-];
+const RAMAN_MODE_DATABASE: RamanModeReference[] = RAMAN_STARTER_DATABASE;
 
 // ============================================================================
 // Processing Functions
@@ -336,6 +274,14 @@ function matchModes(
       confidenceLevel: confidenceLevel,
       ambiguity: null,
       phaseType: ref.phaseType,
+      phaseId: ref.phaseId,
+      phaseLabel: ref.phaseLabel,
+      formula: ref.formula,
+      dbSource: ref.dbSource,
+      rruffId: ref.rruffId,
+      sourceDoi: ref.sourceDoi,
+      excitationNm: ref.excitationNm,
+      caveat: ref.caveat,
     });
   }
   
@@ -354,8 +300,8 @@ function generateInterpretation(
   const sorted = [...candidates].sort((a, b) => {
     const aIsA1g = a.modeName.includes('A1g');
     const bIsA1g = b.modeName.includes('A1g');
-    const aIsSupporting = a.modeName.includes('Eg') || a.modeName.includes('T2g') || a.modeName.includes('Lower ferrite');
-    const bIsSupporting = b.modeName.includes('Eg') || b.modeName.includes('T2g') || b.modeName.includes('Lower ferrite');
+    const aIsSupporting = a.modeName.includes('Eg') || a.modeName.includes('T2g') || a.modeName.includes('F2g') || a.modeName.includes('Lower ferrite');
+    const bIsSupporting = b.modeName.includes('Eg') || b.modeName.includes('T2g') || b.modeName.includes('F2g') || b.modeName.includes('Lower ferrite');
     
     // A1g always first
     if (aIsA1g && !bIsA1g) return -1;
@@ -372,7 +318,7 @@ function generateInterpretation(
   const dominantModes = sorted.slice(0, 3).map(c => c.modeName);
   
   const hasA1g = sorted.some(m => m.modeName.includes('A1g'));
-  const hasEg = sorted.some(m => m.modeName.includes('Eg'));
+  const hasEg = sorted.some(m => m.modeName.includes('Eg') || m.modeName.includes('F2g'));
   const hasLowFerrite = sorted.some(m => m.modeName.includes('Lower ferrite'));
   const hasDband = sorted.some(m => m.modeName.includes('D band'));
   const hasGband = sorted.some(m => m.modeName.includes('G band'));
@@ -456,12 +402,14 @@ function generateInterpretation(
   // Reviewer-level scientific caveats
   const caveats: string[] = [];
   
+  caveats.push('Raman supports phase EVIDENCE; it CANNOT assert phase purity without reference validation.');
+  
   if (hasDband || hasGband) {
     caveats.push('D and G bands at 1350 and 1580 cm⁻¹ indicate carbonaceous species; these do not confirm ferrite phase identity');
   }
   
   if (hasA1g && !hasEg && !hasLowFerrite) {
-    caveats.push('A1g mode observed without corroborating Eg or T2g modes; spinel assignment requires additional characterization');
+    caveats.push('A1g mode observed without corroborating Eg, F2g, or T2g modes; spinel assignment requires additional characterization');
   }
   
   if (broadPeakCount > 0) {
@@ -479,6 +427,10 @@ function generateInterpretation(
   const confidenceQualifier = confidenceLevel === 'high' ? 'high' : confidenceLevel === 'medium' ? 'moderate' : 'low';
   const summary = `${dominantModes.slice(0, 2).join(', ')} detected with ${confidenceQualifier} confidence`;
   
+  const bestCand = sorted[0];
+  if (bestCand?.caveat && !caveats.includes(bestCand.caveat)) {
+    caveats.push(bestCand.caveat);
+  }
   return {
     dominantModes: dominantModes,
     phaseInterpretation: phaseInterpretation,
@@ -489,6 +441,10 @@ function generateInterpretation(
     ambiguities: ambiguities,
     caveats: caveats,
     summary: summary,
+    primaryPhase: bestCand?.phaseLabel,
+    formula: bestCand?.formula,
+    dbSource: bestCand?.dbSource,
+    catalogId: bestCand?.rruffId || bestCand?.sourceDoi,
   };
 }
 

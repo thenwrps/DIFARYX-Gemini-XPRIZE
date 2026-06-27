@@ -40,8 +40,17 @@ export interface RamanModeReference {
   diagnosticWeight: number;     // 0-1, importance for phase identification
   supportingModes: string[];    // IDs of supporting modes
   overlappingModes: string[];   // IDs of potentially overlapping modes
-  phaseType: 'ferrite' | 'carbon' | 'defect' | 'oxide';
+  phaseType: 'ferrite' | 'carbon' | 'defect' | 'oxide' | 'mineral';
   literatureSource: string;
+  // Provenance fields mirroring Part B
+  phaseId?: string;
+  phaseLabel?: string;
+  formula?: string;
+  dbSource?: 'RRUFF' | 'literature' | 'synthetic';
+  rruffId?: string;
+  sourceDoi?: string;
+  excitationNm?: number;
+  caveat?: string;
 }
 
 // ============================================================================
@@ -65,7 +74,16 @@ export interface RamanModeCandidate {
   score: number;                // 0-1
   confidenceLevel: 'high' | 'medium' | 'low';
   ambiguity: string | null;
-  phaseType: 'ferrite' | 'carbon' | 'defect' | 'oxide';
+  phaseType: 'ferrite' | 'carbon' | 'defect' | 'oxide' | 'mineral';
+  // Provenance
+  phaseId?: string;
+  phaseLabel?: string;
+  formula?: string;
+  dbSource?: 'RRUFF' | 'literature' | 'synthetic';
+  rruffId?: string;
+  sourceDoi?: string;
+  excitationNm?: number;
+  caveat?: string;
 }
 
 // ============================================================================
@@ -82,6 +100,10 @@ export interface RamanInterpretation {
   ambiguities: string[];        // Ambiguous assignments
   caveats: string[];            // Interpretation caveats
   summary: string;              // One-line summary
+  primaryPhase?: string;
+  formula?: string;
+  dbSource?: string;
+  catalogId?: string;
 }
 
 // ============================================================================

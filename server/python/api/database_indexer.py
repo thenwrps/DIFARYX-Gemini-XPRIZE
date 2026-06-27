@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -582,7 +583,9 @@ def seed_mock_data(db_path: Optional[str | Path] = None) -> Path:
 # ============================================================================
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", stream=sys.stdout)
     result_path = seed_mock_data()
     print(f"\nDatabase created at: {result_path}")
     status = CODDatabaseIndexer.verify_index(result_path)
