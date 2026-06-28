@@ -21,6 +21,10 @@ import type {
   FtirReferenceRange,
   StateAggregation,
 } from './types';
+import {
+  FTIR_TECHNIQUE_BOUNDARY,
+  FTIR_FERRITE_CAVEAT,
+} from './types';
 import type { FtirDataset } from '../../data/ftirDemoData';
 import { applyBaseline, applySmoothing, applyNormalization, identifyFunctionalGroups } from '../../hooks/useX7UniversalHook';
 
@@ -28,7 +32,7 @@ import { applyBaseline, applySmoothing, applyNormalization, identifyFunctionalGr
 // FTIR Functional Group Reference Database
 // ============================================================================
 
-const FTIR_REFERENCE_DATABASE: FtirReferenceRange[] = [
+export const FTIR_GROUP_CORRELATION_TABLE: FtirReferenceRange[] = [
   // Hydroxyl Groups
   {
     functionalGroup: 'Surface hydroxyl',
@@ -101,6 +105,8 @@ const FTIR_REFERENCE_DATABASE: FtirReferenceRange[] = [
     literatureSource: 'Socrates, G. (2001). Infrared and Raman Characteristic Group Frequencies',
   },
 ];
+
+const FTIR_REFERENCE_DATABASE = FTIR_GROUP_CORRELATION_TABLE;
 
 // ============================================================================
 // Processing Functions
@@ -890,6 +896,12 @@ function generateInterpretation(
   const unassignedBands = bands.filter(b => !assignedBandIds.has(b.id));
   if (unassignedBands.length > 0) {
     caveats.push(`${unassignedBands.length} unassigned band(s): may indicate additional species or artifacts`);
+  }
+  
+  // Mandatory technique boundaries and ferrite caveats
+  caveats.push(FTIR_TECHNIQUE_BOUNDARY);
+  if (dominantGroups.includes('Metal-oxygen vibration') || bands.some(b => b.wavenumber >= 400 && b.wavenumber <= 700)) {
+    caveats.push(FTIR_FERRITE_CAVEAT);
   }
   
   // Summary with confidence qualifier

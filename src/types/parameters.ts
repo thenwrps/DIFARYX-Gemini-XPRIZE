@@ -142,6 +142,17 @@ export interface XrdReferenceMatchingParams {
 }
 
 /**
+ * Radiation parameters for XRD
+ */
+export interface XrdRadiationParams {
+  /** Radiation source */
+  source?: string;
+  
+  /** X-ray wavelength in Angstroms */
+  wavelengthAngstrom?: number;
+}
+
+/**
  * Complete XRD parameter set
  */
 export interface XrdParameters {
@@ -150,6 +161,7 @@ export interface XrdParameters {
   peakDetection: XrdPeakDetectionParams;
   peakFitting: XrdPeakFittingParams;
   referenceMatching: XrdReferenceMatchingParams;
+  radiation?: XrdRadiationParams;
 }
 
 // ============================================================================

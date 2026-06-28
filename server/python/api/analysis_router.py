@@ -34,6 +34,8 @@ from api.universal_schemas import (
     Technique,
     UniversalEvidenceNode,
 )
+from ftir_engine.services.ftir_reference_service import FtirObservedBand, match_ftir_bands
+from xps_engine.services.xps_reference_service import XpsObservedPeak, match_xps_peaks
 
 logger = logging.getLogger("difaryx.analysis_router")
 
@@ -381,10 +383,10 @@ def _handle_xrd_upload(file_bytes: bytes, filename: str) -> dict:
 
 
 
-def _handle_xps_upload_stub(file_bytes: bytes, filename: str) -> dict:
+def _handle_xps_upload(file_bytes: bytes, filename: str) -> dict:
     """
     XPS Handler: Parse CSV (binding_energy, intensity), run peak detection,
-    and apply energy calibration shift if eligible reference peaks are found.
+    apply adventitious C 1s energy calibration shift if eligible, and execute Layer-2 matching.
     """
     x_data, y_data = _parse_csv_two_columns(file_bytes)
     point_count = len(x_data)
@@ -394,29 +396,24 @@ def _handle_xps_upload_stub(file_bytes: bytes, filename: str) -> dict:
     # Detect raw peaks first
     raw_peaks = _find_peaks_in_signal(x_data, y_data, "XPS")
 
-    # Find calibration candidate reference peaks
-    # Prominence must exceed 5% of y_range to be considered eligible
+    # Find calibration candidate reference peaks (C 1s only)
     min_ref_prominence = 0.05 * y_range if y_range > 0 else 0.0
 
     c1s_candidates = []
-    o1s_candidates = []
     if y_range >= 15.0:
         c1s_candidates = [p for p in raw_peaks if 282.0 <= p["position"] <= 288.0 and p["prominence"] >= min_ref_prominence]
-        o1s_candidates = [p for p in raw_peaks if 526.0 <= p["position"] <= 534.0 and p["prominence"] >= min_ref_prominence]
-
 
     energy_shift = 0.0
     ref_peak = None
     ref_type = "None"
-    status = "skipped_no_reference"
-    confidence = ConfidenceLevel.LOW
-    message = "No eligible C 1s or O 1s reference peak detected with sufficient prominence. No shift applied."
+    is_calibrated = False
 
     if c1s_candidates:
         ref_peak = c1s_candidates[0]
         ref_type = "C 1s"
         raw_pos = ref_peak["position"]
         energy_shift = 284.8 - raw_pos
+        is_calibrated = True
         if abs(energy_shift) <= 0.1:
             energy_shift = 0.0
             status = "already_calibrated"
@@ -426,20 +423,10 @@ def _handle_xps_upload_stub(file_bytes: bytes, filename: str) -> dict:
             status = "calibrated"
             confidence = ConfidenceLevel.HIGH
             message = f"Shifted XPS energy scale by {energy_shift:+.2f} eV to align C 1s reference peak ({raw_pos:.2f} eV -> 284.8 eV)."
-    elif o1s_candidates:
-        ref_peak = o1s_candidates[0]
-        ref_type = "O 1s"
-        raw_pos = ref_peak["position"]
-        energy_shift = 529.8 - raw_pos
-        if abs(energy_shift) <= 0.1:
-            energy_shift = 0.0
-            status = "already_calibrated"
-            confidence = ConfidenceLevel.MEDIUM
-            message = f"O 1s reference peak detected at {raw_pos:.2f} eV (close to 529.8 eV). Spectrum is already calibrated."
-        else:
-            status = "calibrated"
-            confidence = ConfidenceLevel.MEDIUM
-            message = f"Shifted XPS energy scale by {energy_shift:+.2f} eV to align O 1s reference peak ({raw_pos:.2f} eV -> 529.8 eV)."
+    else:
+        status = "uncalibrated"
+        confidence = ConfidenceLevel.LOW
+        message = "No eligible C 1s reference peak detected in [282.0, 288.0] eV. Defaulting to uncalibrated path (deltaE=0). Confidence capped at LOW."
 
     # Apply energy shift to x coordinates
     x_calibrated = [float(val + energy_shift) for val in x_data]
@@ -449,6 +436,7 @@ def _handle_xps_upload_stub(file_bytes: bytes, filename: str) -> dict:
 
     # Generate UniversalEvidenceNodes for calibrated peaks
     parsed_features = []
+    observed_peaks_for_match = []
     for i, peak in enumerate(calibrated_peaks):
         label, conf = _get_xps_peak_label(peak["position"])
         full_label = f"{label} ({peak['relative_intensity']:.1f}% rel)"
@@ -464,6 +452,29 @@ def _handle_xps_upload_stub(file_bytes: bytes, filename: str) -> dict:
             confidence=conf,
         )
         parsed_features.append(node.model_dump())
+        observed_peaks_for_match.append(
+            XpsObservedPeak(
+                position=peak["position"],
+                intensity=peak["intensity"],
+                relative_intensity=peak["relative_intensity"],
+                prominence=peak["prominence"],
+            )
+        )
+
+    # Execute Layer-2 Phase Matching
+    match_response = match_xps_peaks(observed_peaks_for_match, is_calibrated=is_calibrated)
+    candidates_data = [
+        {
+            "phase_id": c.phase_id,
+            "phase_label": c.phase_label,
+            "formula": c.formula,
+            "db_source": c.db_source,
+            "match_score": round(c.match_score * 100, 1),
+            "confidence_level": c.confidence_level,
+            "caveat": c.caveat,
+        }
+        for c in match_response.candidates
+    ]
 
     # Build calibration metadata object
     calibration_metadata = {
@@ -488,19 +499,23 @@ def _handle_xps_upload_stub(file_bytes: bytes, filename: str) -> dict:
         "value_unit": "counts/s",
         "calibration_metadata": calibration_metadata,
         "parsed_features": parsed_features,
+        "layer2_match": {
+            "status_summary": match_response.status_summary,
+            "candidates": candidates_data,
+        },
         "stub": False,
-        "message": message,
+        "message": f"XPS analysis completed. Extracted {len(calibrated_peaks)} peaks. {match_response.status_summary}.",
     }
 
 
 
-# --- FTIR Stub Handler ---
+# --- FTIR Handler ---
 
-def _handle_ftir_upload_stub(file_bytes: bytes, filename: str) -> dict:
+def _handle_ftir_upload(file_bytes: bytes, filename: str) -> dict:
     """
     FTIR Handler: Parse CSV (wavenumber, transmittance/absorbance),
     detect band regions (handling transmittance dips automatically),
-    and return real coordinate arrays and evidence-bound features.
+    run Layer-2 database search match, and return real coordinate arrays.
     """
     x_data, y_data = _parse_csv_two_columns(file_bytes)
     point_count = len(x_data)
@@ -508,6 +523,7 @@ def _handle_ftir_upload_stub(file_bytes: bytes, filename: str) -> dict:
     detected_bands = _find_peaks_in_signal(x_data, y_data, "FTIR")
 
     parsed_features = []
+    observed_bands_for_match = []
     for i, band in enumerate(detected_bands):
         label, conf = _get_ftir_band_label(band["position"])
         full_label = f"{label} ({band['relative_intensity']:.1f}% rel)"
@@ -523,6 +539,27 @@ def _handle_ftir_upload_stub(file_bytes: bytes, filename: str) -> dict:
             confidence=conf,
         )
         parsed_features.append(node.model_dump())
+        observed_bands_for_match.append(
+            FtirObservedBand(
+                position=band["position"],
+                intensity=band["intensity"],
+                fwhm=band.get("fwhm", 40.0),
+            )
+        )
+
+    match_response = match_ftir_bands(observed_bands_for_match)
+    candidates_data = [
+        {
+            "phase_id": c.phase_id,
+            "phase_label": c.phase_label,
+            "formula": c.formula,
+            "db_source": c.db_source,
+            "match_score": round(c.match_score * 100, 1),
+            "confidence_level": c.confidence_level,
+            "caveat": c.caveat,
+        }
+        for c in match_response.candidates
+    ]
 
     return {
         "point_count": point_count,
@@ -532,8 +569,12 @@ def _handle_ftir_upload_stub(file_bytes: bytes, filename: str) -> dict:
         "axis_unit": "cm⁻¹",
         "value_unit": "%",
         "parsed_features": parsed_features,
+        "layer2_match": {
+            "status_summary": match_response.status_summary,
+            "candidates": candidates_data,
+        },
         "stub": False,
-        "message": f"FTIR analysis completed. Extracted {len(detected_bands)} band regions from raw data.",
+        "message": f"FTIR analysis completed. Extracted {len(detected_bands)} band regions. {match_response.status_summary}.",
     }
 
 
@@ -586,8 +627,8 @@ def _handle_raman_upload_stub(file_bytes: bytes, filename: str) -> dict:
 
 TECHNIQUE_HANDLERS: Dict[str, Callable] = {
     "XRD": _handle_xrd_upload,
-    "XPS": _handle_xps_upload_stub,
-    "FTIR": _handle_ftir_upload_stub,
+    "XPS": _handle_xps_upload,
+    "FTIR": _handle_ftir_upload,
     "Raman": _handle_raman_upload_stub,
 }
 

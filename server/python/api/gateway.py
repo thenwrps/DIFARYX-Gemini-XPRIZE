@@ -1192,7 +1192,7 @@ SKILL_REGISTRY: Dict[str, ScienceSkill] = {
         description="Deconstructs surface photoemission envelopes into chemical assignments.",
         inputs="Core-level photoemission spectra",
         outputs="Skill-derived chemical state and oxidation envelopes",
-        status="inactive",
+        status="active",
     ),
     "ftir-science-skill": ScienceSkill(
         skill_id="ftir-science-skill",
@@ -1201,7 +1201,7 @@ SKILL_REGISTRY: Dict[str, ScienceSkill] = {
         description="Analyzes IR transmittance patterns for functional groups.",
         inputs="Transmittance/absorbance IR spectra",
         outputs="Skill-derived vibrational bands and functional bonds",
-        status="inactive",
+        status="active",
     ),
     "raman-science-skill": ScienceSkill(
         skill_id="raman-science-skill",

@@ -121,6 +121,10 @@ export interface FtirInterpretation {
   ambiguities: string[];               // Overlapping regions, multiple candidates
   caveats: string[];                   // Limitations, uncertainties, artifacts
   summary: string;                     // One-line summary
+  primaryPhase?: string;
+  formula?: string;
+  dbSource?: string;
+  catalogId?: string;
 }
 
 export interface FtirExecutionLogEntry {
@@ -209,3 +213,48 @@ export interface StateAggregation {
   confidence: 'high' | 'medium' | 'low';
   caveats: string[];
 }
+
+// ============================================================================
+// Layer 2 Reference Database & Boundary Types
+// ============================================================================
+
+export interface FtirPhaseBand {
+  positionCm1: number;
+  toleranceCm1: number;
+  relativeIntensity: number;
+  assignment: string;
+  site?: 'tetrahedral' | 'octahedral' | 'surface' | 'lattice';
+}
+
+export interface FtirPhaseReference {
+  phaseId: string;
+  phaseLabel: string;
+  formula: string;
+  dbSource: 'RRUFF' | 'literature';
+  rruffId?: string;
+  sourceDoi?: string;
+  bands: FtirPhaseBand[];
+  caveat?: string;
+  matchSource: 'layer2_db';
+}
+
+export interface FtirBandMatchDetail {
+  observedWavenumber: number;
+  referenceWavenumber: number;
+  delta: number;
+}
+
+export interface FtirPhaseMatch {
+  phaseReference: FtirPhaseReference;
+  matchedBands: FtirBandMatchDetail[];
+  matchScore: number;
+  confidenceLevel: 'high' | 'medium' | 'low';
+  provenance: string;
+  caveat?: string;
+}
+
+export const FTIR_TECHNIQUE_BOUNDARY =
+  'FTIR supports functional-group and phase EVIDENCE; it CANNOT assert phase purity or composition without complementary validation (XRD/XPS).';
+
+export const FTIR_FERRITE_CAVEAT =
+  'All spinel ferrites show only two broad IR bands (~600 and ~400 cm⁻¹) that are largely composition-insensitive; FTIR alone CANNOT reliably discriminate among CuFe₂O₄, NiFe₂O₄, and CoFe₂O₄.';
