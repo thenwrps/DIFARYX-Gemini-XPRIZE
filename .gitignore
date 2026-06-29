@@ -110,3 +110,5 @@ walkthrough.md
 
 scripts/bin/unzip.cmd
 scripts/bin/unzip.py
+.vercel
+.env*
