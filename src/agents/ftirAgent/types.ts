@@ -72,6 +72,14 @@ export interface FtirFunctionalGroupCandidate {
   score: number;                // Confidence score (0-1)
   confidenceLevel: 'high' | 'medium' | 'low';
   ambiguity: string | null;     // Ambiguity description if multiple candidates
+  dbSource?: string;
+  sourceId?: string;
+  sourceDoi?: string;
+  matchSource?: string;
+  formula?: string;
+  summary?: string;
+  tolerance?: number;
+  rawConfidence?: number;
 }
 
 // ============================================================================

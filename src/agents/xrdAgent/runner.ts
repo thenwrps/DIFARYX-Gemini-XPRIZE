@@ -442,6 +442,12 @@ export function score_phase_candidates(
         unexplainedStrongPeakPenalty: roundTo(unexplainedPeakPenalty, 3),
         score,
         confidenceLevel: confidenceLevel(score),
+        dbSource: result.phase.dbSource ?? 'COD',
+        sourceId: result.phase.codId ?? result.phase.jcpdsCard ?? result.phase.icddPdf ?? result.phase.id,
+        matchSource: result.phase.referenceNote,
+        formula: result.phase.formula,
+        summary: `${result.phase.name} (${result.phase.formula})`,
+        rawConfidence: score,
       };
     })
     .sort((a, b) => b.score - a.score);

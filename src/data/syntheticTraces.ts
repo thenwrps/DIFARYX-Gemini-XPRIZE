@@ -133,7 +133,7 @@ export function generateFtirTrace(count = 260): SyntheticTracePoint[] {
 export function generateXpsTrace(count = 260): SyntheticTracePoint[] {
   const cu2pRegion: Peak[] = [
     { center: 933.5, width: 1.42, amplitude: 88 },
-    { center: 942.4, width: 2.55, amplitude: 27 },
+    { center: 942.2, width: 2.55, amplitude: 27 },
     { center: 953.3, width: 1.62, amplitude: 43 },
     { center: 962.2, width: 2.7, amplitude: 14 },
   ];

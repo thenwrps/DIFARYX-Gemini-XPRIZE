@@ -91,6 +91,14 @@ export interface XrdPhaseCandidate extends XrdPhaseSearchResult {
   unexplainedStrongPeakPenalty: number;
   score: number;
   confidenceLevel: XrdConfidenceLevel;
+  dbSource?: string;
+  sourceId?: string;
+  sourceDoi?: string;
+  matchSource?: string;
+  formula?: string;
+  summary?: string;
+  tolerance?: number;
+  rawConfidence?: number;
 }
 
 export interface XrdImpurityFlag {

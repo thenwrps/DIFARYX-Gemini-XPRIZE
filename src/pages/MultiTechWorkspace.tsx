@@ -19,6 +19,7 @@ import {
 } from '../data/demoProjects';
 import { formatChemicalFormula } from '../utils';
 import { evaluate as evaluateFusionEngine, createEvidenceNodes, type EvidenceNode, type FusionResult, type EvidenceCategory, type PeakInput } from '../engines/fusionEngine';
+import { runUniversalFusionAgent } from '../agents/fusionAgent/runner';
 import {
   createProcessingResultFromXrdDemo,
   saveProcessingResult,
@@ -577,24 +578,33 @@ Use spinel ferrite assignment as a working interpretation for ${projectName}; ph
 `;
 }
 
-function generateCrossTechConsistency(claim: CrossTechClaim, evidence: CrossTechEvidence[]): string {
-  const techniques = [...new Set(evidence.map((e) => e.technique))];
-
-  if (claim.id === 'spinel-ferrite') {
-    return 'Raman vibrational symmetry and XRD long-range order independently converge on cubic spinel structure. FTIR metal-oxygen band provides additional support. No contradictions observed across techniques.';
-  } else if (claim.id === 'oxidation-state') {
-    return 'XPS surface analysis provides oxidation-state context. Complementary techniques provide structural context but do not directly probe oxidation states. Surface vs bulk consistency requires validation.';
-  } else if (claim.id === 'metal-oxygen') {
-    return 'FTIR metal-oxygen stretching and Raman vibrational modes provide complementary evidence for ferrite bonding framework. XPS oxidation states are consistent with expected metal-oxygen coordination. Evidence converges across techniques.';
-  } else if (claim.id === 'surface-hydroxyl') {
-    return 'FTIR is the primary technique for detecting surface hydroxyl/water species. XPS could provide complementary O 1s analysis but is not included in current dataset. Other techniques do not directly probe surface hydration.';
-  } else if (claim.id === 'carbonate-surface') {
-    return 'FTIR carbonate bands are observed, but corresponding XPS C 1s analysis is absent. Raman does not show clear carbonate features. Single-technique observation keeps assignment validation-limited.';
-  } else if (claim.id === 'carbonaceous-residue') {
-    return 'Raman shows no evidence of carbonaceous species. FTIR carbonate bands do not correspond to Raman-active carbon. XPS C 1s would provide stronger surface carbon speciation but is not included.';
+export function generateCrossTechConsistency(claim: CrossTechClaim, evidence: CrossTechEvidence[]): string {
+  const findings = runUniversalFusionAgent();
+  if (!findings || findings.length === 0) {
+    return 'No verified canonical phase matches produced by unweighted fusion evaluation.';
   }
 
-  return `${techniques.length} technique${techniques.length === 1 ? '' : 's'} provide${techniques.length === 1 ? 's' : ''} evidence for this interpretation. Cross-technique consistency supports the conclusion.`;
+  const matchingFinding = findings.find(f => 
+    claim.interpretation?.toLowerCase().includes(f.canonicalFormula.toLowerCase()) ||
+    claim.description?.toLowerCase().includes(f.canonicalFormula.toLowerCase())
+  ) || findings[0];
+
+  const supportingTechs = matchingFinding.supportingContributions.map(c => c.technique).join(', ') || 'None';
+  const contestingTechs = matchingFinding.contestingContributions.map(c => c.technique).join(', ') || 'None';
+  const absentTechs = matchingFinding.absentTechniques.join(', ') || 'None';
+
+  let summary = `Evaluation Tier: [${matchingFinding.formulaTier}] for ${matchingFinding.canonicalFormula}. Supporting techniques: ${supportingTechs}.`;
+  if (matchingFinding.contestingContributions.length > 0) {
+    summary += ` Contesting techniques: ${contestingTechs}.`;
+  }
+  if (matchingFinding.isSurfaceBulkDiscrepancy) {
+    summary += ` Surface vs. Bulk Discrepancy identified between XPS and bulk structural probes.`;
+  }
+  if (matchingFinding.absentTechniques.length > 0) {
+    summary += ` Absent techniques: ${absentTechs}.`;
+  }
+
+  return summary;
 }
 
 function generateDecision(claim: CrossTechClaim): string {
@@ -1442,6 +1452,7 @@ ${result.decision}
                 </div>
               )}
               <select
+                aria-label="Select project"
                 value={project.id}
                 onChange={(event) => {
                   const newProjectId = event.target.value;
@@ -1468,8 +1479,7 @@ ${result.decision}
                             type="checkbox"
                             checked={activeTechniques.has(technique)}
                             onChange={() => toggleTechnique(technique)}
-                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                            style={{ backgroundColor: 'white' }}
+                            className="h-4 w-4 rounded border-gray-300 bg-white text-primary focus:ring-primary"
                           />
                           <span className="text-sm font-medium text-text-main">{technique}</span>
                         </label>
@@ -1588,7 +1598,7 @@ ${result.decision}
                 <h2 className="text-sm font-bold text-text-main">Add supporting dataset</h2>
                 <span className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">Public beta</span>
               </div>
-              <button type="button" onClick={() => setUploadPanelExpanded(false)} className="rounded-md p-1 text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors">
+              <button type="button" aria-label="Close" onClick={() => setUploadPanelExpanded(false)} className="rounded-md p-1 text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors">
                 <X size={18} />
               </button>
             </div>
@@ -1602,6 +1612,7 @@ ${result.decision}
                       Technique
                     </label>
                     <select
+                      aria-label="Select technique"
                       value={selectedUploadTechnique}
                       onChange={(event) => handleUploadedTechniqueChange(event.target.value as UploadedTechnique)}
                       className="mt-1 h-9 w-full rounded border border-border bg-surface px-3 text-sm text-text-main outline-none focus:border-primary"
@@ -1638,6 +1649,7 @@ ${result.decision}
                         X-axis label
                       </label>
                       <input
+                        aria-label="X-axis label"
                         value={xAxisLabel}
                         onChange={(event) => setXAxisLabel(event.target.value)}
                         className="mt-1 h-9 w-full rounded border border-border bg-surface px-3 text-sm text-text-main outline-none focus:border-primary"
@@ -1648,6 +1660,7 @@ ${result.decision}
                         Y-axis label
                       </label>
                       <input
+                        aria-label="Y-axis label"
                         value={yAxisLabel}
                         onChange={(event) => setYAxisLabel(event.target.value)}
                         className="mt-1 h-9 w-full rounded border border-border bg-surface px-3 text-sm text-text-main outline-none focus:border-primary"
@@ -1734,6 +1747,7 @@ ${result.decision}
                           X column
                         </label>
                         <select
+                          aria-label="Map X-axis column"
                           value={xColumn}
                           onChange={(event) => setXColumn(Number(event.target.value))}
                           className="mt-1 h-8 w-full rounded border border-border bg-surface px-2 text-xs text-text-main outline-none focus:border-primary"
@@ -1750,6 +1764,7 @@ ${result.decision}
                           Y column
                         </label>
                         <select
+                          aria-label="Map Y-axis column"
                           value={yColumn}
                           onChange={(event) => setYColumn(Number(event.target.value))}
                           className="mt-1 h-8 w-full rounded border border-border bg-surface px-2 text-xs text-text-main outline-none focus:border-primary"
@@ -2214,6 +2229,7 @@ ${result.decision}
                     <div className="flex items-center gap-2 px-1">
                       <span className="text-[10px] font-semibold text-text-muted">Primary:</span>
                       <select
+                        aria-label="Select primary technique"
                         value={primaryTechniqueKey}
                         onChange={(e) => setPrimaryTechniqueKey(e.target.value as Technique)}
                         className="h-7 rounded border border-border bg-background px-2 text-xs font-semibold text-text-main outline-none hover:border-primary/40 focus:border-primary"

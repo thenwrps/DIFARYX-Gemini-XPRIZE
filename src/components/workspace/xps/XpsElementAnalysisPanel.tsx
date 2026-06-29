@@ -93,6 +93,8 @@ export function XpsElementAnalysisPanel({
   useEffect(() => {
     if (!onElementEvidence || !result || !regionWindow) return;
     const elementAggregations = aggregations.filter((agg) => agg.element === element);
+    const elementMatches = result.matches?.filter((m) => m.element === element) ?? [];
+    const firstMatch = elementMatches[0];
     const evidence: XpsElementEvidence = {
       selectedElement: element,
       candidateStates: elementAggregations.map((agg) => ({
@@ -103,6 +105,11 @@ export function XpsElementAnalysisPanel({
       satellitePresent: elementAggregations.some((agg) => agg.hasSatellite),
       regionWindow: { min: regionWindow.min, max: regionWindow.max },
       caveats: result.caveats,
+      dbSource: firstMatch?.dbSource,
+      sourceId: firstMatch?.sourceId,
+      sourceDoi: firstMatch?.sourceDoi,
+      matchSource: firstMatch?.matchSource,
+      formula: firstMatch?.formula,
     };
     onElementEvidence(evidence);
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -107,6 +107,11 @@ export interface XpsElementEvidence {
   satellitePresent: boolean;
   regionWindow?: { min: number; max: number };
   caveats: string[];
+  dbSource?: string;
+  sourceId?: string;
+  sourceDoi?: string;
+  matchSource?: string;
+  formula?: string;
 }
 
 /**

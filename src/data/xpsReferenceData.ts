@@ -48,6 +48,11 @@ export interface XpsCoreLevelReference {
   
   /** Literature source citation */
   literatureSource: string;
+  dbSource?: string;
+  sourceId?: string;
+  sourceDoi?: string;
+  matchSource?: string;
+  formula?: string;
 }
 
 /**
@@ -67,25 +72,35 @@ export const XPS_REFERENCE_DATA: XpsCoreLevelReference[] = [
     element: 'Cu',
     oxidationState: '2+',
     coreLevel: '2p3/2',
-    bindingEnergy: 933.5,
+    bindingEnergy: 933.6,
     uncertainty: 0.5,
     fwhm: [2.0, 3.0],
     spinOrbitSplitting: 19.8,
-    satelliteOffset: 9.0,
+    satelliteOffset: 8.6,
     satelliteIntensity: 0.4,
-    literatureSource: 'Biesinger et al., Appl. Surf. Sci. 257, 887 (2011)'
+    literatureSource: 'Biesinger 2010',
+    dbSource: 'literature',
+    sourceId: 'biesinger-2010-cu',
+    sourceDoi: '10.1016/j.apsusc.2010.07.086',
+    matchSource: 'literature',
+    formula: 'CuO'
   },
   {
     element: 'Cu',
     oxidationState: '2+',
     coreLevel: '2p1/2',
-    bindingEnergy: 953.3,
+    bindingEnergy: 953.4,
     uncertainty: 0.5,
     fwhm: [2.0, 3.0],
     spinOrbitSplitting: 19.8,
-    satelliteOffset: 9.0,
+    satelliteOffset: 8.6,
     satelliteIntensity: 0.4,
-    literatureSource: 'Biesinger et al., Appl. Surf. Sci. 257, 887 (2011)'
+    literatureSource: 'Biesinger 2010',
+    dbSource: 'literature',
+    sourceId: 'biesinger-2010-cu',
+    sourceDoi: '10.1016/j.apsusc.2010.07.086',
+    matchSource: 'literature',
+    formula: 'CuO'
   },
   
   // Iron 2p doublet (Fe³⁺ oxidation state)
@@ -93,21 +108,29 @@ export const XPS_REFERENCE_DATA: XpsCoreLevelReference[] = [
     element: 'Fe',
     oxidationState: '3+',
     coreLevel: '2p3/2',
-    bindingEnergy: 710.8,
+    bindingEnergy: 711.0,
     uncertainty: 0.5,
     fwhm: [2.5, 3.5],
     spinOrbitSplitting: 13.5,
-    literatureSource: 'Biesinger et al., Appl. Surf. Sci. 257, 2717 (2009)'
+    literatureSource: 'Biesinger et al., Appl. Surf. Sci. 257 (2011) 2717',
+    dbSource: 'literature',
+    sourceDoi: '10.1016/j.apsusc.2010.10.051',
+    matchSource: 'literature',
+    formula: 'Fe2O3'
   },
   {
     element: 'Fe',
     oxidationState: '3+',
     coreLevel: '2p1/2',
-    bindingEnergy: 724.3,
+    bindingEnergy: 724.5,
     uncertainty: 0.5,
     fwhm: [2.5, 3.5],
     spinOrbitSplitting: 13.5,
-    literatureSource: 'Biesinger et al., Appl. Surf. Sci. 257, 2717 (2009)'
+    literatureSource: 'Biesinger et al., Appl. Surf. Sci. 257 (2011) 2717',
+    dbSource: 'literature',
+    sourceDoi: '10.1016/j.apsusc.2010.10.051',
+    matchSource: 'literature',
+    formula: 'Fe2O3'
   },
   
   // Oxygen 1s (lattice oxygen in spinel structure)
@@ -141,7 +164,11 @@ export const XPS_REFERENCE_DATA: XpsCoreLevelReference[] = [
     uncertainty: 0.3,
     fwhm: [1.8, 2.6],
     spinOrbitSplitting: 19.8,
-    literatureSource: 'NIST XPS Database; Biesinger et al., Appl. Surf. Sci. 257, 887 (2011)'
+    literatureSource: 'NIST XPS Database; Biesinger et al., Appl. Surf. Sci. 257, 887 (2011)',
+    dbSource: 'nist',
+    sourceDoi: undefined,
+    matchSource: 'literature',
+    formula: 'Cu2O'
   },
   {
     element: 'Cu',
@@ -151,7 +178,11 @@ export const XPS_REFERENCE_DATA: XpsCoreLevelReference[] = [
     uncertainty: 0.3,
     fwhm: [1.8, 2.6],
     spinOrbitSplitting: 19.8,
-    literatureSource: 'NIST XPS Database; Biesinger et al., Appl. Surf. Sci. 257, 887 (2011)'
+    literatureSource: 'NIST XPS Database; Biesinger et al., Appl. Surf. Sci. 257, 887 (2011)',
+    dbSource: 'nist',
+    sourceDoi: undefined,
+    matchSource: 'literature',
+    formula: 'Cu2O'
   },
 
   // Cobalt 2p doublet (mixed Co(II)/Co(III) surface states in spinel ferrite)
@@ -399,21 +430,29 @@ export const XPS_REFERENCE_DATA: XpsCoreLevelReference[] = [
     element: 'Zn',
     oxidationState: '2+',
     coreLevel: '2p3/2',
-    bindingEnergy: 1021.8,
+    bindingEnergy: 1021.7,
     uncertainty: 0.3,
     fwhm: [1.5, 2.2],
     spinOrbitSplitting: 23.0,
-    literatureSource: 'NIST XPS Database — zinc oxide / Zn(II)'
+    literatureSource: 'Biesinger et al., Appl. Surf. Sci. 257 (2010) 887',
+    dbSource: 'literature',
+    sourceDoi: '10.1016/j.apsusc.2010.07.086',
+    matchSource: 'literature',
+    formula: 'ZnO'
   },
   {
     element: 'Zn',
     oxidationState: '2+',
     coreLevel: '2p1/2',
-    bindingEnergy: 1044.8,
+    bindingEnergy: 1044.7,
     uncertainty: 0.3,
     fwhm: [1.5, 2.2],
     spinOrbitSplitting: 23.0,
-    literatureSource: 'NIST XPS Database — zinc oxide / Zn(II)'
+    literatureSource: 'Biesinger et al., Appl. Surf. Sci. 257 (2010) 887',
+    dbSource: 'literature',
+    sourceDoi: '10.1016/j.apsusc.2010.07.086',
+    matchSource: 'literature',
+    formula: 'ZnO'
   },
 
   // Fluorine 1s references
@@ -443,21 +482,29 @@ export const XPS_REFERENCE_DATA: XpsCoreLevelReference[] = [
     element: 'Ti',
     oxidationState: '4+',
     coreLevel: '2p3/2',
-    bindingEnergy: 458.5,
+    bindingEnergy: 458.6,
     uncertainty: 0.4,
     fwhm: [1.2, 2.0],
     spinOrbitSplitting: 5.7,
-    literatureSource: 'NIST XPS Database — titanium dioxide'
+    literatureSource: 'Biesinger et al., Appl. Surf. Sci. 257 (2010) 887',
+    dbSource: 'literature',
+    sourceDoi: '10.1016/j.apsusc.2010.07.086',
+    matchSource: 'literature',
+    formula: 'TiO2'
   },
   {
     element: 'Ti',
     oxidationState: '4+',
     coreLevel: '2p1/2',
-    bindingEnergy: 464.2,
+    bindingEnergy: 464.3,
     uncertainty: 0.4,
     fwhm: [1.2, 2.0],
     spinOrbitSplitting: 5.7,
-    literatureSource: 'NIST XPS Database — titanium dioxide'
+    literatureSource: 'Biesinger et al., Appl. Surf. Sci. 257 (2010) 887',
+    dbSource: 'literature',
+    sourceDoi: '10.1016/j.apsusc.2010.07.086',
+    matchSource: 'literature',
+    formula: 'TiO2'
   },
 
   // Chromium 2p references (Doublet)

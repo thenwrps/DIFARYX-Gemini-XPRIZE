@@ -244,6 +244,11 @@ interface XpsReference {
   satelliteExpected: boolean;
   satelliteRange?: [number, number];
   source: string;
+  dbSource?: string;
+  sourceId?: string;
+  sourceDoi?: string;
+  matchSource?: string;
+  formula?: string;
 }
 
 /**
@@ -302,6 +307,11 @@ function buildReferenceDatabaseFromCanonical(
       satelliteExpected,
       satelliteRange,
       source: ref.literatureSource,
+      dbSource: ref.dbSource,
+      sourceId: ref.sourceId,
+      sourceDoi: ref.sourceDoi,
+      matchSource: ref.matchSource,
+      formula: ref.formula,
     };
   });
 }
@@ -649,6 +659,14 @@ function assignChemicalStates(
     oxidationState: match.reference.state,
     assignment: `${match.reference.element} ${match.reference.orbital} (${match.reference.state})`,
     confidence: match.score,
+    dbSource: match.reference.dbSource ?? match.reference.source,
+    sourceId: match.reference.sourceId,
+    sourceDoi: match.reference.sourceDoi,
+    matchSource: match.reference.matchSource ?? match.reference.source,
+    formula: match.reference.formula,
+    summary: `${match.reference.element} ${match.reference.state}`,
+    tolerance: match.reference.tolerance,
+    rawConfidence: match.score,
   }));
   
   return { 

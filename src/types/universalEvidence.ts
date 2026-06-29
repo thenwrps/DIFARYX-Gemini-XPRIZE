@@ -363,6 +363,14 @@ export interface EvidenceProvenance {
   createdAt: string;
   /** Engine/agent version that produced this evidence. */
   engineVersion?: string;
+  dbSource?: string;
+  sourceId?: string;
+  sourceDoi?: string;
+  matchSource?: string;
+  formula?: string;
+  summary?: string;
+  tolerance?: number;
+  rawConfidence?: number;
 }
 
 // ---------------------------------------------------------------------------

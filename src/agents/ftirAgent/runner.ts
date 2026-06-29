@@ -720,6 +720,10 @@ function matchFunctionalGroups(
       score: finalScore,
       confidenceLevel: confidenceLevel,
       ambiguity: ambiguity,
+      dbSource: 'literature',
+      matchSource: bestMatch.referenceRange.literatureSource,
+      summary: bestMatch.referenceRange.assignment,
+      rawConfidence: finalScore,
     });
   }
   

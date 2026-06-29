@@ -399,3 +399,43 @@ export function adaptFtirProcessingResult(
     caveats: [], // ← reasoning layer's responsibility
   };
 }
+
+/**
+ * Convert FTIR candidates to UniversalEvidenceNode array for transparent fusion.
+ */
+export function adaptFtirEvidence(
+  result: FtirProcessingResult,
+  datasetId: string,
+  sampleName?: string,
+): UniversalEvidenceNode[] {
+  if (!result || !Array.isArray(result.functionalGroupCandidates)) return [];
+  const nowIso = new Date().toISOString();
+  return result.functionalGroupCandidates.map((candidate, idx) => {
+    const primaryBand = candidate.matches[0]?.observedBand;
+    return {
+      id: `ftir-cand-${idx + 1}`,
+      technique: 'FTIR',
+      primaryAxis: primaryBand?.wavenumber ?? 0,
+      primaryAxisUnit: 'cm⁻¹',
+      value: candidate.score,
+      valueUnit: 'confidence_score',
+      label: candidate.functionalGroup,
+      concept: 'bonding',
+      role: 'primary',
+      confidence: candidate.confidenceLevel,
+      provenance: {
+        datasetId,
+        sampleName,
+        createdAt: nowIso,
+        dbSource: candidate.dbSource,
+        sourceId: candidate.sourceId,
+        sourceDoi: candidate.sourceDoi,
+        matchSource: candidate.matchSource,
+        formula: candidate.formula,
+        summary: candidate.summary,
+        tolerance: candidate.tolerance,
+        rawConfidence: candidate.rawConfidence ?? candidate.score,
+      },
+    };
+  });
+}

@@ -282,6 +282,10 @@ function matchModes(
       sourceDoi: ref.sourceDoi,
       excitationNm: ref.excitationNm,
       caveat: ref.caveat,
+      sourceId: ref.rruffId ?? ref.phaseId,
+      matchSource: ref.dbSource,
+      summary: `${mode} (${ref.formula ?? ''})`,
+      rawConfidence: finalScore,
     });
   }
   

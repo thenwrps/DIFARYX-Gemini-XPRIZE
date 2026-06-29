@@ -23,6 +23,14 @@ export interface XpsChemicalStateMatch {
   oxidationState: string;
   assignment: string;
   confidence: number; // 0-1
+  dbSource?: string;
+  sourceId?: string;
+  sourceDoi?: string;
+  matchSource?: string;
+  formula?: string;
+  summary?: string;
+  tolerance?: number;
+  rawConfidence?: number;
 }
 
 export interface XpsDataset {
@@ -62,7 +70,7 @@ function generateCu2pSpectrum(): { bindingEnergy: number[]; intensity: number[] 
     const cu2p1_cu2 = 5100 * Math.exp(-Math.pow((be - 953.1) / 1.8, 2));
     
     // Satellite features (characteristic of Cu²⁺)
-    const satellite1 = 1400 * Math.exp(-Math.pow((be - 942.5) / 2.5, 2));
+    const satellite1 = 1400 * Math.exp(-Math.pow((be - 942.2) / 2.5, 2));
     const satellite2 = 900 * Math.exp(-Math.pow((be - 962.0) / 2.8, 2));
     
     signal += cu2p3_cu2 + cu2p1_cu2 + satellite1 + satellite2;
@@ -123,7 +131,7 @@ export const xpsDemoData: XpsDataset = {
     },
     {
       id: 'peak-2',
-      bindingEnergy: 942.5,
+      bindingEnergy: 942.2,
       intensity: 1400,
       fwhm: 2.5,
       area: 4050,

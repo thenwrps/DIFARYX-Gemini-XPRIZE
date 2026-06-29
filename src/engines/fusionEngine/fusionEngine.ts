@@ -3,6 +3,10 @@
 import type { FusionInput, FusionResult, EvidenceNode, Claim, ReasoningTraceItem, ClaimStatus, EvidenceCategory, Technique } from './types';
 import { evaluateClaimGraph } from '../claimGraph';
 import type { RawEvidenceInput as ClaimGraphRawInput } from '../claimGraph';
+import type { UniversalEvidenceNode } from '../../types/universalEvidence.js';
+import type { FusedFinding, FusionTier, TechniqueContribution } from '../../agents/fusionAgent/types.js';
+import { CANONICAL_PHASE_REGISTRY, matchesPhase, matchesOxidationState } from './consistencyRegistry.js';
+
 
 // ============================================================================
 // CENTRAL EVIDENCE NODE CREATION
@@ -1097,3 +1101,313 @@ function generateGenericDominantResult(
     highlightedEvidenceIds,
   };
 }
+
+// ============================================================================
+// TRANSPARENT MULTI-TECHNIQUE FUSION ENGINE (PHASE 2a)
+// ============================================================================
+
+/**
+ * Evaluate Transparent Multi-Technique Fusion Phase 2a
+ * Combines UniversalEvidenceNode[] into FusedFinding[] with auditable tiers and zero magic weights.
+ */
+export function evaluateFusionEngine(nodes: UniversalEvidenceNode[]): FusedFinding[] {
+  if (!nodes || !Array.isArray(nodes) || nodes.length === 0) {
+    return [];
+  }
+
+  interface PhaseCandidate {
+    formula: string;
+    polymorph?: string;
+  }
+  const candidateMap = new Map<string, PhaseCandidate>();
+
+  function extractPolymorph(text?: string): string | undefined {
+    if (!text) return undefined;
+    const lower = text.toLowerCase();
+    if (lower.includes('anatase')) return 'Anatase';
+    if (lower.includes('rutile')) return 'Rutile';
+    if (lower.includes('hematite')) return 'Hematite';
+    if (lower.includes('maghemite')) return 'Maghemite';
+    if (lower.includes('magnetite')) return 'Magnetite';
+    if (lower.includes('tenorite')) return 'Tenorite';
+    if (lower.includes('cuprite')) return 'Cuprite';
+    if (lower.includes('zincite')) return 'Zincite';
+    if (lower.includes('tetragonal')) return 'Tetragonal';
+    if (lower.includes('cubic')) return 'Cubic';
+    if (lower.includes('quartz')) return 'Alpha-Quartz';
+    return undefined;
+  }
+
+  for (const node of nodes) {
+    let matchedFormula: string | undefined = node.provenance?.formula;
+
+    for (const [regKey, regEntry] of Object.entries(CANONICAL_PHASE_REGISTRY)) {
+      if (
+        (matchedFormula && matchedFormula.toUpperCase() === regEntry.formula.toUpperCase()) ||
+        matchesPhase(node, { id: 'ref', technique: 'XRD', primaryAxis: 0, primaryAxisUnit: '', value: 0, valueUnit: '', label: regEntry.formula, provenance: { createdAt: '', datasetId: '', formula: regEntry.formula } })
+      ) {
+        matchedFormula = regEntry.formula;
+        break;
+      }
+    }
+
+    if (!matchedFormula) {
+      const poly = extractPolymorph(`${node.label} ${node.provenance?.summary || ''}`);
+      if (poly === 'Anatase' || poly === 'Rutile') matchedFormula = 'TiO2';
+      else if (poly === 'Hematite' || poly === 'Maghemite') matchedFormula = 'Fe2O3';
+      else if (poly === 'Magnetite') matchedFormula = 'Fe3O4';
+      else if (poly === 'Tenorite') matchedFormula = 'CuO';
+      else if (poly === 'Cuprite') matchedFormula = 'Cu2O';
+      else if (poly === 'Zincite') matchedFormula = 'ZnO';
+      else if (poly === 'Tetragonal' || poly === 'Cubic') matchedFormula = 'CuFe2O4';
+      else if (poly === 'Alpha-Quartz') matchedFormula = 'SiO2';
+    }
+
+    if (!matchedFormula && node.technique === 'XPS') {
+      for (const [regKey, regEntry] of Object.entries(CANONICAL_PHASE_REGISTRY)) {
+        for (const compatState of regEntry.compatibleOxidationStates) {
+          if (matchesOxidationState(node, compatState)) {
+            matchedFormula = regEntry.formula;
+            break;
+          }
+        }
+        if (matchedFormula) break;
+      }
+    }
+
+    if (matchedFormula) {
+      const poly = extractPolymorph(`${node.label} ${node.provenance?.summary || ''}`);
+      const key = `${matchedFormula}::${poly || ''}`;
+      if (!candidateMap.has(key)) {
+        candidateMap.set(key, { formula: matchedFormula, polymorph: poly });
+      }
+    }
+  }
+
+  // Consolidate candidates: if a formula has specific polymorph candidates, remove the generic (no polymorph) candidate for that formula.
+  const formulasWithPolymorph = new Set<string>();
+  for (const cand of candidateMap.values()) {
+    if (cand.polymorph) {
+      formulasWithPolymorph.add(cand.formula);
+    }
+  }
+  for (const [key, cand] of candidateMap.entries()) {
+    if (!cand.polymorph && formulasWithPolymorph.has(cand.formula)) {
+      candidateMap.delete(key);
+    }
+  }
+
+  const findings: FusedFinding[] = [];
+  const surfaceStratifiedNodes = new Set<UniversalEvidenceNode>();
+  const allTechniques = ['XRD', 'Raman', 'FTIR', 'XPS'];
+
+  for (const candidate of candidateMap.values()) {
+
+    const supportingContributions: TechniqueContribution[] = [];
+    const contestingContributions: TechniqueContribution[] = [];
+    const inheritedCaveats: string[] = [];
+    const presentTechniques = new Set<string>();
+
+    const regEntry = CANONICAL_PHASE_REGISTRY[candidate.formula.toUpperCase()];
+
+    for (const node of nodes) {
+      let isSupported = false;
+      let contributionType: TechniqueContribution['contributionType'] = 'PHASE_MATCH';
+
+      if (node.technique === 'XRD' || node.technique === 'Raman') {
+        const nodePoly = extractPolymorph(`${node.label} ${node.provenance?.summary || ''}`);
+        const nodeFormula = node.provenance?.formula;
+        const phaseMatch = (nodeFormula && nodeFormula.toUpperCase() === candidate.formula.toUpperCase()) ||
+          matchesPhase(node, { id: 'ref', technique: 'XRD', primaryAxis: 0, primaryAxisUnit: '', value: 0, valueUnit: '', label: candidate.formula, provenance: { createdAt: '', datasetId: '', formula: candidate.formula } }) ||
+          (nodePoly && candidate.polymorph && nodePoly === candidate.polymorph);
+
+        if (phaseMatch) {
+          isSupported = true;
+          contributionType = 'PHASE_MATCH';
+        }
+      } else if (node.technique === 'XPS') {
+        const nodeFormula = node.provenance?.formula;
+        let compat = false;
+        if (nodeFormula && nodeFormula.toUpperCase() === candidate.formula.toUpperCase()) {
+          compat = true;
+        } else if (regEntry) {
+          for (const state of regEntry.compatibleOxidationStates) {
+            if (matchesOxidationState(node, state)) {
+              compat = true;
+              break;
+            }
+          }
+        }
+        if (compat) {
+          isSupported = true;
+          contributionType = 'OXIDATION_STATE_CONSISTENCY';
+        }
+      } else if (node.technique === 'FTIR') {
+        if (node.concept === 'bonding' || !node.provenance?.matchSource || node.provenance.matchSource !== 'reference_db') {
+          isSupported = true;
+          contributionType = 'FUNCTIONAL_GROUP_SUPPORT';
+        } else {
+          isSupported = true;
+          contributionType = 'PHASE_MATCH';
+        }
+      }
+
+      if (isSupported) {
+        presentTechniques.add(node.technique);
+        supportingContributions.push({
+          technique: node.technique,
+          contributionType,
+          sourceNode: node,
+          rawConfidence: node.provenance?.rawConfidence ?? node.value ?? 0.8,
+        });
+      }
+    }
+
+    if (supportingContributions.length === 0) continue;
+
+    let isSurfaceBulkDiscrepancy = false;
+    const hasBulkSupport = supportingContributions.some(c => c.technique === 'XRD' || c.technique === 'Raman');
+    const supporterOrigins = new Set(supportingContributions.map(c => c.sourceNode.provenance?.processingHash || c.sourceNode.provenance?.datasetId || c.sourceNode.id));
+
+    for (const node of nodes) {
+      if (supportingContributions.some(sc => sc.sourceNode === node)) continue;
+
+      if (node.technique === 'XPS' && regEntry) {
+        const matchesForbidden = regEntry.forbiddenStates.some(state => matchesOxidationState(node, state));
+        if (matchesForbidden) {
+          const isSurfaceLayer = hasBulkSupport && (
+            (candidate.formula.toUpperCase() === 'CU2O' && matchesOxidationState(node, '2+')) ||
+            (candidate.formula.toUpperCase() === 'FE3O4' && matchesOxidationState(node, '3+')) ||
+            (candidate.formula.toUpperCase() === 'CU' && (matchesOxidationState(node, '1+') || matchesOxidationState(node, '2+')))
+          );
+
+          if (isSurfaceLayer) {
+            isSurfaceBulkDiscrepancy = true;
+            surfaceStratifiedNodes.add(node);
+            presentTechniques.add('XPS');
+            supportingContributions.push({
+              technique: 'XPS',
+              contributionType: 'OXIDATION_STATE_CONSISTENCY',
+              sourceNode: node,
+              rawConfidence: node.provenance?.rawConfidence ?? node.value ?? 0.8,
+            });
+            if (!inheritedCaveats.includes('Surface/bulk stratification detected: XPS indicates surface layer differing from bulk structural phase')) {
+              inheritedCaveats.push('Surface/bulk stratification detected: XPS indicates surface layer differing from bulk structural phase');
+            }
+          } else {
+            const nodeOrigin = node.provenance?.processingHash || node.provenance?.datasetId || node.id;
+            if (!supporterOrigins.has(nodeOrigin)) {
+              presentTechniques.add('XPS');
+              contestingContributions.push({
+                technique: 'XPS',
+                contributionType: 'CONTRADICTION',
+                sourceNode: node,
+                rawConfidence: node.provenance?.rawConfidence ?? node.value ?? 0.8,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const absentTechniques = allTechniques.filter(t => !presentTechniques.has(t)).sort();
+
+    const nonStratifiedContributions = supportingContributions.filter(c => !surfaceStratifiedNodes.has(c.sourceNode));
+    const formulaEval = computeLevelTier(nonStratifiedContributions, 'formula');
+    const polymorphEval = computeLevelTier(nonStratifiedContributions, 'polymorph');
+
+    let formulaTier = formulaEval.tier;
+    let polymorphTier: FusionTier = candidate.polymorph ? polymorphEval.tier : 'UNVERIFIED';
+
+    if (contestingContributions.length > 0) {
+      formulaTier = 'CONTESTED';
+      if (polymorphTier !== 'UNVERIFIED') {
+        polymorphTier = 'CONTESTED';
+      }
+    }
+
+    if (formulaEval.sameOriginDetected || polymorphEval.sameOriginDetected) {
+      if (!inheritedCaveats.includes('Demonstration Mode: Same-Origin Synthetic Data')) {
+        inheritedCaveats.push('Demonstration Mode: Same-Origin Synthetic Data');
+      }
+    }
+
+    if (regEntry?.polymorphResolutionCap && !inheritedCaveats.includes(regEntry.polymorphResolutionCap)) {
+      inheritedCaveats.push(regEntry.polymorphResolutionCap);
+    }
+
+    findings.push({
+      canonicalFormula: candidate.formula,
+      canonicalPolymorph: candidate.polymorph,
+      formulaTier,
+      polymorphTier,
+      supportingContributions,
+      contestingContributions,
+      absentTechniques,
+      isSurfaceBulkDiscrepancy,
+      inheritedCaveats,
+    });
+  }
+
+  return findings.filter(f => {
+    const hasBulkSupport = f.supportingContributions.some(c => c.technique === 'XRD' || c.technique === 'Raman');
+    if (!hasBulkSupport && f.supportingContributions.length > 0 && f.supportingContributions.every(c => surfaceStratifiedNodes.has(c.sourceNode))) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function computeLevelTier(
+  contributions: TechniqueContribution[],
+  level: 'formula' | 'polymorph'
+): { tier: FusionTier; sameOriginDetected: boolean } {
+  const applicable = level === 'polymorph'
+    ? contributions.filter(c => c.contributionType === 'PHASE_MATCH')
+    : contributions;
+
+  if (applicable.length === 0) {
+    return { tier: 'UNVERIFIED', sameOriginDetected: false };
+  }
+
+  const origins = new Set<string>();
+  const techniques = new Set<string>();
+  let sameOriginDetected = false;
+
+  for (const c of applicable) {
+    const originKey = c.sourceNode.provenance?.processingHash
+      || c.sourceNode.provenance?.datasetId
+      || c.sourceNode.id;
+    if (origins.has(originKey) && !techniques.has(c.technique)) {
+      sameOriginDetected = true;
+    }
+    origins.add(originKey);
+    techniques.add(c.technique);
+  }
+
+  const phaseMatchOrigins = new Set<string>();
+  for (const c of applicable) {
+    if (c.contributionType === 'PHASE_MATCH') {
+      const originKey = c.sourceNode.provenance?.processingHash
+        || c.sourceNode.provenance?.datasetId
+        || c.sourceNode.id;
+      phaseMatchOrigins.add(originKey);
+    }
+  }
+
+  let tier: FusionTier = 'SINGLE-SOURCE';
+
+  if (origins.size >= 2) {
+    if (level === 'polymorph') {
+      tier = phaseMatchOrigins.size >= 2 ? 'CORROBORATED' : 'SUPPORTED';
+    } else {
+      tier = 'CORROBORATED';
+    }
+  } else {
+    // origins.size <= 1 caps out at SINGLE-SOURCE (e.g. multiple peaks from one technique or same origin)
+    tier = 'SINGLE-SOURCE';
+  }
+
+  return { tier, sameOriginDetected };
+}
+

@@ -466,9 +466,11 @@ def _handle_xps_upload(file_bytes: bytes, filename: str) -> dict:
     candidates_data = [
         {
             "phase_id": c.phase_id,
+            "source_id": c.phase_id,
             "phase_label": c.phase_label,
             "formula": c.formula,
             "db_source": c.db_source,
+            "source_doi": c.source_doi,
             "match_score": round(c.match_score * 100, 1),
             "confidence_level": c.confidence_level,
             "caveat": c.caveat,

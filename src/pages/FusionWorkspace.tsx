@@ -1,24 +1,15 @@
 import React, { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
-  ArrowRight,
   CheckCircle2,
-  Database,
-  Sparkles,
   Layers,
   Zap,
 } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { EmptyStateCard } from '../components/ui/EmptyStateCard';
-import { runFusionAnalysis } from '../agents/fusionAgent/runner';
-import { runXpsProcessing } from '../agents/xpsAgent/runner';
-import { runFtirProcessing } from '../agents/ftirAgent/runner';
-import { runRamanProcessing } from '../agents/ramanAgent/runner';
-import { xpsDemoData } from '../data/xpsDemoData';
-import { ftirDemoData } from '../data/ftirDemoData';
-import { ramanDemoData } from '../data/ramanDemoData';
-import type { FusionResult } from '../agents/fusionAgent/types';
+import { runUniversalFusionAgent } from '../agents/fusionAgent/runner';
+import type { FusedFinding, FusionTier } from '../agents/fusionAgent/types';
 import { getRegistryProject, normalizeRegistryProjectId } from '../data/demoProjectRegistry';
 import { DEFAULT_PROJECT_ID } from '../data/demoProjects';
 import { runWhenIdle } from '../utils/idle';
@@ -27,79 +18,45 @@ export default function FusionWorkspace() {
   const [searchParams] = useSearchParams();
   const registryProject = getRegistryProject(normalizeRegistryProjectId(searchParams.get('project')) || DEFAULT_PROJECT_ID);
   const [activeTab, setActiveTab] = useState<'decision' | 'matrix' | 'claims' | 'contradictions' | 'report'>('decision');
-  const [fusionResult, setFusionResult] = useState<FusionResult | null>(null);
+  const [fusedFindings, setFusedFindings] = useState<FusedFinding[] | null>(null);
   const requiredFusionTechniques = ['xps', 'ftir', 'raman'] as const;
   const missingFusionTechniques = requiredFusionTechniques.filter(
     (technique) => !registryProject.selectedTechniques.includes(technique),
   );
   const hasFusionBundle = missingFusionTechniques.length === 0;
-  
+
   // Run fusion analysis
   const handleRunFusion = () => {
     if (!hasFusionBundle) {
-      setFusionResult(null);
+      setFusedFindings(null);
       return;
     }
 
-    // Import processed results from demo data
-    const xpsResult = runXpsProcessing(xpsDemoData);
-    const ftirResult = runFtirProcessing(ftirDemoData);
-    const ramanResult = runRamanProcessing(ramanDemoData);
-    
-    // Run fusion analysis
-    const result = runFusionAnalysis(xpsResult, ftirResult, ramanResult);
-    setFusionResult(result);
+    const findings = runUniversalFusionAgent();
+    setFusedFindings(findings);
   };
-  
+
   // Auto-run fusion on mount
   React.useEffect(() => {
     return runWhenIdle(handleRunFusion);
   }, [registryProject.id, hasFusionBundle]);
-  
-  // Get conclusion badge color
-  const getConclusionBadgeColor = (status: 'strongly-supported' | 'supported' | 'partial') => {
-    switch (status) {
-      case 'strongly-supported':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'supported':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'partial':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    }
-  };
-  
-  // Get support badge color
-  const getSupportBadgeColor = (support: 'supports' | 'contradicts' | 'neutral' | 'ambiguous') => {
-    switch (support) {
-      case 'supports':
-        return 'bg-green-100 text-green-800';
-      case 'contradicts':
-        return 'bg-red-100 text-red-800';
-      case 'ambiguous':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'neutral':
-        return 'bg-gray-100 text-gray-600';
-    }
-  };
-  
-  // Get severity badge color
-  const getSeverityBadgeColor = (severity: 'none' | 'low' | 'medium' | 'high') => {
-    switch (severity) {
-      case 'high':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'none':
-        return 'bg-gray-100 text-gray-600 border-gray-200';
+
+  const getTierBadgeColor = (tier: FusionTier) => {
+    switch (tier) {
+      case 'CORROBORATED':
+        return 'bg-green-100 text-green-800 border-green-300';
+      case 'SUPPORTED':
+        return 'bg-blue-100 text-blue-800 border-blue-300';
+      case 'SINGLE-SOURCE':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'CONTESTED':
+        return 'bg-red-100 text-red-800 border-red-300';
+      case 'UNVERIFIED':
+      default:
+        return 'bg-gray-100 text-gray-700 border-gray-300';
     }
   };
 
-  const formatReviewStatus = (value: number) => (
-    value >= 0.9 ? 'Supported' : value >= 0.75 ? 'Requires validation' : 'Validation-limited'
-  );
-  
   // Left Panel Content
   const leftPanel = (
     <div className="space-y-4">
@@ -117,7 +74,7 @@ export default function FusionWorkspace() {
           </div>
         </div>
       </div>
-      
+
       {/* Included Techniques */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Included Techniques</h3>
@@ -138,7 +95,7 @@ export default function FusionWorkspace() {
           ))}
         </div>
       </div>
-      
+
       {/* Fusion Rules */}
       <div className="bg-blue-50 rounded-lg border border-blue-200 p-4">
         <h3 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
@@ -146,15 +103,15 @@ export default function FusionWorkspace() {
           Fusion Rules
         </h3>
         <div className="text-xs text-blue-800 space-y-1">
-          <div>• <strong>XPS:</strong> Authority for oxidation states</div>
-          <div>• <strong>Raman:</strong> Authority for structure</div>
-          <div>• <strong>FTIR:</strong> Authority for functional groups</div>
+          <div>• <strong>Unweighted Counting:</strong> Tiers derive strictly from independent evidence sources</div>
+          <div>• <strong>Registry Pinned:</strong> Forbidden oxidation states trigger CONTESTED tier</div>
+          <div>• <strong>Surface Stratification:</strong> XPS surface states vs bulk structural phases</div>
           <div className="mt-2 pt-2 border-t border-blue-200">
-            Status based on evidence agreement, not averaging
+            Status based on unweighted independent convergence
           </div>
         </div>
       </div>
-      
+
       {/* Run Fusion Button */}
       <button
         onClick={handleRunFusion}
@@ -166,88 +123,156 @@ export default function FusionWorkspace() {
       </button>
     </div>
   );
-  
+
+  // Helper rendering FusedFinding card
+  const renderFindingCard = (finding: FusedFinding, index: number) => (
+    <div key={index} className="bg-white rounded-lg border border-gray-200 p-6 space-y-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+        <h3 className="text-base font-bold text-gray-900">
+          {finding.canonicalFormula} {finding.canonicalPolymorph ? `(${finding.canonicalPolymorph})` : ''}
+        </h3>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 font-semibold">Formula Tier:</span>
+          <span className={`px-2.5 py-0.5 rounded text-xs font-bold border ${getTierBadgeColor(finding.formulaTier)}`}>
+            {finding.formulaTier}
+          </span>
+          <span className="text-xs text-gray-500 font-semibold ml-2">Polymorph Tier:</span>
+          <span className={`px-2.5 py-0.5 rounded text-xs font-bold border ${getTierBadgeColor(finding.polymorphTier)}`}>
+            {finding.polymorphTier}
+          </span>
+        </div>
+      </div>
+
+      {finding.isSurfaceBulkDiscrepancy && (
+        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-xs font-medium text-amber-900 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <span>Surface vs. Bulk Discrepancy Detected: XPS surface chemistry diverges from bulk structural phases.</span>
+        </div>
+      )}
+
+      <div>
+        <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Supporting Contributions ({finding.supportingContributions.length})</h4>
+        {finding.supportingContributions.length > 0 ? (
+          <div className="space-y-2">
+            {finding.supportingContributions.map((c, idx) => {
+              const prov = c.sourceNode.provenance;
+              return (
+                <div key={idx} className="rounded border border-gray-200 bg-gray-50 p-2.5 text-xs text-gray-800">
+                  <div className="font-semibold flex items-center justify-between">
+                    <span>{c.technique} — {c.contributionType}</span>
+                    <span className="text-gray-500 font-normal">Raw Conf: {Math.round(c.rawConfidence * 100)}%</span>
+                  </div>
+                  <div className="text-[11px] text-gray-600 mt-1 font-mono break-all">
+                    Provenance: dbSource={prov?.dbSource ?? 'undefined'} | sourceId={prov?.sourceId ?? 'undefined'} | sourceDoi={prov?.sourceDoi ?? 'undefined'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-xs text-gray-500 italic">No supporting contributions recorded.</div>
+        )}
+      </div>
+
+      <div>
+        <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Contesting Contributions ({finding.contestingContributions.length})</h4>
+        {finding.contestingContributions.length > 0 ? (
+          <div className="space-y-2">
+            {finding.contestingContributions.map((c, idx) => {
+              const prov = c.sourceNode.provenance;
+              return (
+                <div key={idx} className="rounded border border-red-200 bg-red-50 p-2.5 text-xs text-red-900">
+                  <div className="font-semibold flex items-center justify-between">
+                    <span>{c.technique} — {c.contributionType}</span>
+                    <span className="text-red-700 font-normal">Raw Conf: {Math.round(c.rawConfidence * 100)}%</span>
+                  </div>
+                  <div className="text-[11px] text-red-800 mt-1 font-mono break-all">
+                    Provenance: dbSource={prov?.dbSource ?? 'undefined'} | sourceId={prov?.sourceId ?? 'undefined'} | sourceDoi={prov?.sourceDoi ?? 'undefined'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-xs text-gray-500 italic">No contesting contributions recorded.</div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100 text-xs">
+        <div>
+          <span className="font-bold text-gray-700 block mb-1">Absent Techniques:</span>
+          <span className="text-gray-600">{finding.absentTechniques.length > 0 ? finding.absentTechniques.join(', ') : 'None'}</span>
+        </div>
+        <div>
+          <span className="font-bold text-gray-700 block mb-1">Inherited Caveats:</span>
+          <span className="text-gray-600">{finding.inheritedCaveats.length > 0 ? finding.inheritedCaveats.join('; ') : 'None'}</span>
+        </div>
+      </div>
+    </div>
+  );
+
   // Right Panel Content
-  const rightPanel = fusionResult ? (
+  const rightPanel = fusedFindings ? (
     <div className="space-y-4">
       {/* Characterization Overview */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Characterization Overview</h3>
         <p className="text-sm text-gray-700 leading-relaxed">
-          {fusionResult.decision.primaryConclusion}
+          {fusedFindings.length > 0
+            ? `Identified ${fusedFindings.length} canonical phase match(es). Primary finding: ${fusedFindings[0].canonicalFormula} (${fusedFindings[0].formulaTier}).`
+            : 'No verified canonical phases evaluated (UNVERIFIED).'}
         </p>
       </div>
-      
-      {/* Interpretation */}
+
+      {/* Interpretation Stats */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Interpretation</h3>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Evaluation Tiers</h3>
         <div className="space-y-3">
           <div>
-            <div className="text-xs text-gray-500 mb-1">Overall Status</div>
+            <div className="text-xs text-gray-500 mb-1">Highest Tier</div>
             <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getConclusionBadgeColor(fusionResult.decision.confidenceScore >= 0.9 ? 'strongly-supported' : fusionResult.decision.confidenceScore >= 0.75 ? 'supported' : 'partial')}`}>
-                {formatReviewStatus(fusionResult.decision.confidenceScore)}
+              <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getTierBadgeColor(fusedFindings[0]?.formulaTier ?? 'UNVERIFIED')}`}>
+                {fusedFindings[0]?.formulaTier ?? 'UNVERIFIED'}
               </span>
             </div>
           </div>
           <div>
-            <div className="text-xs text-gray-500 mb-1">Supporting Data</div>
+            <div className="text-xs text-gray-500 mb-1">Total Findings Evaluated</div>
             <div className="text-lg font-semibold text-gray-900">
-              {fusionResult.supportedClaims.length} / {fusionResult.claims.length}
+              {fusedFindings.length}
             </div>
           </div>
           <div>
-            <div className="text-xs text-gray-500 mb-1">Contradictions</div>
+            <div className="text-xs text-gray-500 mb-1">Contested Findings</div>
             <div className="text-lg font-semibold text-gray-900">
-              {fusionResult.contradictions.length}
+              {fusedFindings.filter(f => f.formulaTier === 'CONTESTED' || f.polymorphTier === 'CONTESTED').length}
             </div>
           </div>
         </div>
       </div>
-      
-      {/* Supporting Data */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Supporting Data</h3>
-        <div className="space-y-2 text-xs">
-          {fusionResult.claims
-            .filter(c => c.status === 'supported')
-            .slice(0, 3)
-            .map((claim, idx) => (
-              <div key={claim.id} className="flex items-start gap-2">
-                <span className="text-gray-400 font-medium">{idx + 1}.</span>
-                <div>
-                  <div className="font-medium text-gray-900">{claim.title}</div>
-                  <div className="text-gray-600 mt-0.5">
-                    {claim.supportingTechniques
-                      .filter(t => t.support === 'supports')
-                      .map(t => t.technique)
-                      .join(', ')}
-                  </div>
-                </div>
-              </div>
-            ))}
-        </div>
-      </div>
-      
+
       {/* Recommended Validation */}
       <div className="bg-amber-50 rounded-lg border border-amber-200 p-4">
         <h3 className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4" />
-          Recommended Validation
+          Validation Gaps & Caveats
         </h3>
         <ul className="text-xs text-amber-800 space-y-1">
-          {fusionResult.recommendedValidation.slice(0, 3).map((rec, idx) => (
+          {fusedFindings.flatMap(f => f.inheritedCaveats).slice(0, 4).map((rec, idx) => (
             <li key={idx}>• {rec}</li>
           ))}
+          {fusedFindings.flatMap(f => f.inheritedCaveats).length === 0 && (
+            <li>• No critical validation caveats reported.</li>
+          )}
         </ul>
       </div>
     </div>
   ) : (
     <div className="p-4">
-      <EmptyStateCard 
-        type={hasFusionBundle ? "not_executed" : "missing_evidence"} 
-        title={hasFusionBundle ? "Fusion Analysis Not Executed" : "Fusion Evidence Pending"} 
-        description={hasFusionBundle ? "Run fusion to see cross-technique results." : `Missing ${missingFusionTechniques.map((t) => t.toUpperCase()).join(', ')} evidence.`} 
+      <EmptyStateCard
+        type={hasFusionBundle ? "not_executed" : "missing_evidence"}
+        title={hasFusionBundle ? "Fusion Analysis Not Executed" : "Fusion Evidence Pending"}
+        description={hasFusionBundle ? "Run fusion to evaluate cross-technique results." : `Missing ${missingFusionTechniques.map((t) => t.toUpperCase()).join(', ')} evidence.`}
         actionText={hasFusionBundle ? "Run Fusion" : undefined}
         onAction={hasFusionBundle ? handleRunFusion : undefined}
       />
@@ -255,7 +280,7 @@ export default function FusionWorkspace() {
   );
 
   // Center Panel Content
-  const centerPanel = fusionResult ? (
+  const centerPanel = fusedFindings ? (
     <div className="h-full flex flex-col">
       {/* Tab Bar */}
       <div className="flex border-b border-gray-200 bg-white">
@@ -310,107 +335,54 @@ export default function FusionWorkspace() {
           Report
         </button>
       </div>
-      
+
       {/* Tab Content */}
       <div className="flex-1 overflow-auto p-6 bg-gray-50">
         {activeTab === 'decision' && (
           <div className="space-y-6">
-            {/* Report-ready Discussion Card */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Report-ready Discussion</h3>
-              <p className="text-gray-700 leading-relaxed mb-4">
-                {fusionResult.decision.primaryConclusion}
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">Report-Ready Fusion Summary</h3>
+              <p className="text-gray-700 leading-relaxed mb-4 text-sm">
+                Cross-technique review evaluated {fusedFindings.length} phase candidates across independent evidence streams. Tiers are derived strictly from independent evidence counting and canonical phase compatibility.
               </p>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-600">Evidence status:</span>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getConclusionBadgeColor(fusionResult.decision.confidenceScore >= 0.9 ? 'strongly-supported' : fusionResult.decision.confidenceScore >= 0.75 ? 'supported' : 'partial')}`}>
-                  {formatReviewStatus(fusionResult.decision.confidenceScore)}
-                </span>
-              </div>
             </div>
-            
-            {/* Supporting Data */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-3">Supporting Data</h3>
-              <ul className="space-y-2">
-                {fusionResult.claims
-                  .filter(c => c.status === 'supported')
-                  .map(claim => (
-                    <li key={claim.id} className="flex items-start gap-2 text-sm">
-                      <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                      <span className="text-gray-700">{claim.title}</span>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium border ${getConclusionBadgeColor(claim.confidenceScore >= 0.9 ? 'strongly-supported' : claim.confidenceScore >= 0.75 ? 'supported' : 'partial')}`}>
-                        {formatReviewStatus(claim.confidenceScore)}
-                      </span>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-            
-            {/* Pending Review */}
-            {fusionResult.unresolvedClaims.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="text-base font-semibold text-gray-900 mb-3">Pending Review</h3>
-                <ul className="space-y-2">
-                  {fusionResult.claims
-                    .filter(c => c.status === 'unresolved')
-                    .map(claim => (
-                      <li key={claim.id} className="flex items-start gap-2 text-sm">
-                        <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                        <span className="text-gray-700">{claim.title}</span>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            )}
-            
-            {/* Caveats */}
-            {fusionResult.caveats.length > 0 && (
-              <div className="bg-amber-50 rounded-lg border border-amber-200 p-6">
-                <h3 className="text-base font-semibold text-amber-900 mb-3">Caveats</h3>
-                <ul className="space-y-2 text-sm text-amber-800">
-                  {fusionResult.caveats.map((caveat, idx) => (
-                    <li key={idx}>• {caveat}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            {fusedFindings.map((finding, idx) => renderFindingCard(finding, idx))}
           </div>
         )}
-        
+
         {activeTab === 'matrix' && (
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Claim</th>
-                    <th className="px-4 py-3 text-center font-semibold text-gray-700">XPS</th>
-                    <th className="px-4 py-3 text-center font-semibold text-gray-700">FTIR</th>
-                    <th className="px-4 py-3 text-center font-semibold text-gray-700">Raman</th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Canonical Phase</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-700">Formula Tier</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-700">Supporting Techniques</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-700">Contesting Techniques</th>
+                    <th className="px-4 py-3 text-center font-semibold text-gray-700">Absent Techniques</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {fusionResult.evidenceMatrix.claims.map((claim, claimIdx) => (
-                    <tr key={claim.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">{claim.title}</td>
-                      {fusionResult.evidenceMatrix.techniques.map((technique, techIdx) => {
-                        const cell = fusionResult.evidenceMatrix.cells[claimIdx][techIdx];
-                        return (
-                          <td key={technique} className="px-4 py-3 text-center">
-                            <div className="flex flex-col items-center gap-1">
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${getSupportBadgeColor(cell.support)}`}>
-                                {cell.support}
-                              </span>
-                              {cell.evidenceText && cell.evidenceText !== 'No evidence' && (
-                                <span className="text-xs text-gray-600 max-w-[200px] truncate" title={cell.evidenceText}>
-                                  {cell.evidenceText}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        );
-                      })}
+                  {fusedFindings.map((finding, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        {finding.canonicalFormula} {finding.canonicalPolymorph ? `(${finding.canonicalPolymorph})` : ''}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`px-2 py-1 rounded text-xs font-bold border ${getTierBadgeColor(finding.formulaTier)}`}>
+                          {finding.formulaTier}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs text-gray-700">
+                        {finding.supportingContributions.map(c => c.technique).join(', ') || 'None'}
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs text-red-700 font-medium">
+                        {finding.contestingContributions.map(c => c.technique).join(', ') || 'None'}
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs text-gray-500">
+                        {finding.absentTechniques.join(', ') || 'None'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -418,110 +390,47 @@ export default function FusionWorkspace() {
             </div>
           </div>
         )}
-        
+
         {activeTab === 'claims' && (
-          <div className="space-y-4">
-            {fusionResult.claims.map(claim => (
-              <div key={claim.id} className="bg-white rounded-lg border border-gray-200 p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <h3 className="text-base font-semibold text-gray-900">{claim.title}</h3>
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getConclusionBadgeColor(claim.confidenceScore >= 0.9 ? 'strongly-supported' : claim.confidenceScore >= 0.75 ? 'supported' : 'partial')}`}>
-                    {formatReviewStatus(claim.confidenceScore)}
-                  </span>
-                </div>
-                
-                <p className="text-sm text-gray-600 mb-4">{claim.description}</p>
-                
-                {/* Supporting Techniques */}
-                <div className="mb-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Cross-Technique Insights</h4>
-                  <div className="space-y-2">
-                    {claim.supportingTechniques
-                      .filter(t => t.support === 'supports')
-                      .map(tech => (
-                        <div key={tech.technique} className="flex items-start gap-2 text-sm">
-                          <span className="font-medium text-gray-900 min-w-[60px]">{tech.technique}:</span>
-                          <span className="text-gray-600">{tech.reasoning}</span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-                
-                {/* Evidence Items */}
-                {claim.supportingTechniques.some(t => t.evidenceItems.length > 0) && (
-                  <div className="mb-4">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Evidence Items</h4>
-                    <ul className="space-y-1 text-sm text-gray-600">
-                      {claim.supportingTechniques
-                        .flatMap(t => t.evidenceItems)
-                        .map((item, idx) => (
-                          <li key={idx}>• {item.label}</li>
-                        ))}
-                    </ul>
-                  </div>
-                )}
-                
-                {/* Caveats */}
-                {claim.caveats.length > 0 && (
-                  <div className="bg-amber-50 rounded border border-amber-200 p-3">
-                    <h4 className="text-sm font-semibold text-amber-900 mb-1">Limitations and Follow-up Validation</h4>
-                    <ul className="space-y-1 text-xs text-amber-800">
-                      {claim.caveats.map((caveat, idx) => (
-                        <li key={idx}>• {caveat}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="space-y-6">
+            {fusedFindings.map((finding, idx) => renderFindingCard(finding, idx))}
           </div>
         )}
-        
+
         {activeTab === 'contradictions' && (
-          <div className="space-y-4">
-            {fusionResult.contradictions.length === 0 ? (
-              <EmptyStateCard 
-                type="generic" 
-                title="No Contradictions Detected" 
-                description="Cross-technique review indicates consistent evidence boundaries. No conflicts identified." 
+          <div className="space-y-6">
+            {fusedFindings.filter(f => f.formulaTier === 'CONTESTED' || f.polymorphTier === 'CONTESTED' || f.contestingContributions.length > 0 || f.isSurfaceBulkDiscrepancy).length === 0 ? (
+              <EmptyStateCard
+                type="generic"
+                title="No Contradictions Detected"
+                description="Cross-technique evaluation indicates consistent evidence boundaries. No conflicts identified."
               />
             ) : (
-              fusionResult.contradictions.map(contradiction => (
-                <div key={contradiction.id} className="bg-white rounded-lg border border-gray-200 p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <h3 className="text-base font-semibold text-gray-900">{contradiction.id}</h3>
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getSeverityBadgeColor(contradiction.severity)}`}>
-                      {contradiction.severity.toUpperCase()}
-                    </span>
-                  </div>
-                  
-                  <div className="space-y-3 text-sm">
-                    <div>
-                      <span className="font-semibold text-gray-700">Techniques Involved:</span>
-                      <span className="ml-2 text-gray-600">{contradiction.techniques.join(', ')}</span>
-                    </div>
-                    
-                    <div>
-                      <span className="font-semibold text-gray-700">Explanation:</span>
-                      <p className="mt-1 text-gray-600">{contradiction.explanation}</p>
-                    </div>
-                    
-                    <div>
-                      <span className="font-semibold text-gray-700">Effect on Claim Boundary:</span>
-                      <p className="mt-1 text-gray-600">{contradiction.effectOnConfidence}</p>
-                    </div>
-                  </div>
-                </div>
-              ))
+              fusedFindings
+                .filter(f => f.formulaTier === 'CONTESTED' || f.polymorphTier === 'CONTESTED' || f.contestingContributions.length > 0 || f.isSurfaceBulkDiscrepancy)
+                .map((finding, idx) => renderFindingCard(finding, idx))
             )}
           </div>
         )}
-        
+
         {activeTab === 'report' && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <div className="prose prose-sm max-w-none">
               <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">
-                {fusionResult.report}
+{`# Cross-Technique Evidence Fusion Report
+
+## 1. Evaluated Phase Findings
+${fusedFindings.map(f => `
+### ${f.canonicalFormula} ${f.canonicalPolymorph ? `(${f.canonicalPolymorph})` : ''}
+- **Formula Tier**: ${f.formulaTier}
+- **Polymorph Tier**: ${f.polymorphTier}
+- **Surface/Bulk Discrepancy**: ${f.isSurfaceBulkDiscrepancy ? 'Yes' : 'No'}
+- **Supporting Contributions**: ${f.supportingContributions.map(c => `${c.technique} (${c.contributionType}) [dbSource: ${c.sourceNode.provenance?.dbSource ?? 'undefined'}, sourceId: ${c.sourceNode.provenance?.sourceId ?? 'undefined'}, DOI: ${c.sourceNode.provenance?.sourceDoi ?? 'undefined'}]`).join('; ') || 'None'}
+- **Contesting Contributions**: ${f.contestingContributions.map(c => `${c.technique} (${c.contributionType})`).join('; ') || 'None'}
+- **Absent Techniques**: ${f.absentTechniques.join(', ') || 'None'}
+- **Inherited Caveats**: ${f.inheritedCaveats.join('; ') || 'None'}
+`).join('\n')}
+`}
               </pre>
             </div>
           </div>
@@ -530,14 +439,14 @@ export default function FusionWorkspace() {
     </div>
   ) : (
     <div className="h-full flex items-center justify-center bg-gray-50 p-4">
-      <EmptyStateCard 
-        type="not_executed" 
-        title="Fusion Results Not Loaded" 
-        description="Execute cross-technique fusion from the controls on the left." 
+      <EmptyStateCard
+        type="not_executed"
+        title="Fusion Results Not Loaded"
+        description="Execute cross-technique fusion from the controls on the left."
       />
     </div>
   );
-  
+
   return (
     <DashboardLayout>
       <div className="flex-1 overflow-y-auto bg-gray-50">

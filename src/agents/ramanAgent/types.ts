@@ -84,6 +84,11 @@ export interface RamanModeCandidate {
   sourceDoi?: string;
   excitationNm?: number;
   caveat?: string;
+  sourceId?: string;
+  matchSource?: string;
+  summary?: string;
+  tolerance?: number;
+  rawConfidence?: number;
 }
 
 // ============================================================================
