@@ -12,7 +12,8 @@
     "test": "server\\python\\venv\\Scripts\\python.exe server/python/api/database_indexer.py && server\\python\\venv\\Scripts\\python.exe server/python/api/raman_database_indexer.py && server\\python\\venv\\Scripts\\python.exe server/python/api/test_raman_allowlist.py && server\\python\\venv\\Scripts\\python.exe server/python/api/ftir_database_indexer.py && server\\python\\venv\\Scripts\\python.exe server/python/api/test_ftir_allowlist.py && server\\python\\venv\\Scripts\\python.exe server/python/api/xps_database_indexer.py && server\\python\\venv\\Scripts\\python.exe server/python/api/test_xps_allowlist.py && tsx src/utils/__tests__/techniqueDatasetAdapters.test.ts && tsx src/agents/xrdAgent/__tests__/spinelMillerIndexing.test.ts && tsx src/agents/xrdAgent/__tests__/codMatching.test.ts && tsx src/agents/ramanAgent/__tests__/ramanPhaseIdentification.test.ts && tsx src/utils/__tests__/localStorageSafe.test.ts && tsx src/utils/__tests__/signalParser.test.ts && tsx src/evidence/__tests__/evidenceAdapters.test.ts && tsx src/engines/fusionEngine/__tests__/consistencyRegistry.test.ts && tsx src/engines/fusionEngine/__tests__/fusionEngine.test.ts && tsx src/engines/fusionEngine/__tests__/uiFusionWiring.test.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "validate": "tsx src/validation/validationHarness.ts"
   },
   "dependencies": {
     "@vercel/speed-insights": "^2.0.0",

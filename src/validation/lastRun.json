@@ -1,0 +1,1503 @@
+{
+  "timestamp": "2026-06-30T12:34:39.812Z",
+  "disclaimer": "V1 synthetic self-consistency validation against curated/perturbed labels — NOT real-instrument accuracy.",
+  "xrd": {
+    "metrics": {
+      "totalCases": 23,
+      "top1Accuracy": 0.6521739130434783,
+      "precision": 1,
+      "recall": 0.5,
+      "f1Score": 0.6666666666666666,
+      "truePositives": 8,
+      "falsePositives": 0,
+      "trueNegatives": 7,
+      "falseNegatives": 8,
+      "confusionPairs": [
+        {
+          "expected": "cufe2o4",
+          "actual": "cofe2o4",
+          "count": 1
+        },
+        {
+          "expected": "nife2o4",
+          "actual": "cofe2o4",
+          "count": 2
+        }
+      ],
+      "familyAware": {
+        "f1Score": 0.8148148148148148,
+        "precision": 1,
+        "recall": 0.6875,
+        "tp": 11,
+        "fp": 0,
+        "tn": 7,
+        "fn": 5
+      },
+      "missDecomposition": {
+        "below_threshold": 4,
+        "matched_isostructural_spinel": 3,
+        "known_limitation": 1,
+        "beyond_tolerance_expected": 0,
+        "genuinely_wrong": 0
+      },
+      "perturbationBreakdown": {
+        "within_tolerance_shift": {
+          "total": 10,
+          "correct": 5,
+          "accuracy": 0.5,
+          "recall": 0.5
+        },
+        "beyond_tolerance_shift": {
+          "total": 2,
+          "correct": 2,
+          "accuracy": 1,
+          "recall": 0
+        },
+        "noise": {
+          "total": 3,
+          "correct": 3,
+          "accuracy": 1,
+          "recall": 1
+        },
+        "missing_peak": {
+          "total": 2,
+          "correct": 1,
+          "accuracy": 0.5,
+          "recall": 0.5
+        },
+        "extra_peak": {
+          "total": 4,
+          "correct": 1,
+          "accuracy": 0.25,
+          "recall": 0.25
+        },
+        "combined": {
+          "total": 3,
+          "correct": 2,
+          "accuracy": 0.6666666666666666,
+          "recall": 0.6666666666666666
+        }
+      }
+    },
+    "results": [
+      {
+        "caseId": "xrd-a1-fe3o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "fe3o4",
+        "actualScore": 0.59,
+        "perturbations": [
+          "within_tolerance_shift",
+          "extra_peak",
+          "combined"
+        ]
+      },
+      {
+        "caseId": "xrd-a2-hematite",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "alpha-fe2o3",
+        "actualPhase": "alpha-fe2o3",
+        "actualScore": 0.73,
+        "perturbations": [
+          "within_tolerance_shift",
+          "noise",
+          "combined"
+        ]
+      },
+      {
+        "caseId": "xrd-a3-maghemite",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "maghemite_gamma_fe2o3",
+        "actualScore": 0.567,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xrd-a4-cufe2o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "cufe2o4",
+        "actualPhase": "cofe2o4",
+        "actualScore": 0.695,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xrd-a5-cofe2o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "cofe2o4",
+        "actualPhase": "cofe2o4",
+        "actualScore": 0.816,
+        "perturbations": [
+          "within_tolerance_shift",
+          "extra_peak",
+          "combined"
+        ]
+      },
+      {
+        "caseId": "xrd-a6-nife2o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "nife2o4",
+        "actualPhase": "cofe2o4",
+        "actualScore": 0.771,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xrd-a7-zno",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "zincite_zno",
+        "actualPhase": "zincite_zno",
+        "actualScore": 0.778,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xrd-a8-cuo",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "cuo",
+        "actualScore": 0.346,
+        "perturbations": [
+          "within_tolerance_shift"
+        ],
+        "knownLimitation": {
+          "reason": "CuO monoclinic reference is sparse (4 peaks); current XRD scorer drops below 0.65 threshold even with reference-faithful input within tolerance."
+        }
+      },
+      {
+        "caseId": "xrd-a9-anatase",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "anatase_tio2",
+        "actualPhase": "anatase_tio2",
+        "actualScore": 0.794,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xrd-a10-hematite-noise",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "alpha-fe2o3",
+        "actualPhase": "alpha-fe2o3",
+        "actualScore": 0.73,
+        "perturbations": [
+          "noise"
+        ]
+      },
+      {
+        "caseId": "xrd-a11-zno-noise",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "zincite_zno",
+        "actualPhase": "zincite_zno",
+        "actualScore": 0.778,
+        "perturbations": [
+          "noise"
+        ]
+      },
+      {
+        "caseId": "xrd-a12-anatase-missing",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "anatase_tio2",
+        "actualPhase": "anatase_tio2",
+        "actualScore": 0.726,
+        "perturbations": [
+          "missing_peak"
+        ]
+      },
+      {
+        "caseId": "xrd-a13-fe3o4-missing",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "fe3o4",
+        "actualScore": 0.263,
+        "perturbations": [
+          "missing_peak"
+        ]
+      },
+      {
+        "caseId": "xrd-a14-cufe2o4-extra",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "cufe2o4",
+        "actualScore": 0.607,
+        "perturbations": [
+          "extra_peak"
+        ]
+      },
+      {
+        "caseId": "xrd-a15-nife2o4-extra",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "nife2o4",
+        "actualPhase": "cofe2o4",
+        "actualScore": 0.736,
+        "perturbations": [
+          "extra_peak"
+        ]
+      },
+      {
+        "caseId": "xrd-b1-quartz",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0
+      },
+      {
+        "caseId": "xrd-b2-batio3",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0
+      },
+      {
+        "caseId": "xrd-b3-nacl",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0
+      },
+      {
+        "caseId": "xrd-b4-calcite",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0
+      },
+      {
+        "caseId": "xrd-b5-rutile",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0
+      },
+      {
+        "caseId": "xrd-c1-in-tolerance",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "fe3o4",
+        "actualPhase": "fe3o4",
+        "actualScore": 0.681,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xrd-c2-out-tolerance",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xrd-c3-out-tolerance-zno",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      }
+    ]
+  },
+  "raman": {
+    "metrics": {
+      "totalCases": 25,
+      "top1Accuracy": 0.6,
+      "precision": 1,
+      "recall": 0.5,
+      "f1Score": 0.6666666666666666,
+      "truePositives": 10,
+      "falsePositives": 0,
+      "trueNegatives": 5,
+      "falseNegatives": 10,
+      "confusionPairs": [
+        {
+          "expected": "fe3o4",
+          "actual": "cofe2o4",
+          "count": 1
+        }
+      ],
+      "familyAware": {
+        "f1Score": 0.6666666666666666,
+        "precision": 1,
+        "recall": 0.5,
+        "tp": 10,
+        "fp": 0,
+        "tn": 5,
+        "fn": 10
+      },
+      "missDecomposition": {
+        "below_threshold": 9,
+        "matched_isostructural_spinel": 0,
+        "known_limitation": 0,
+        "beyond_tolerance_expected": 1,
+        "genuinely_wrong": 0
+      },
+      "perturbationBreakdown": {
+        "within_tolerance_shift": {
+          "total": 10,
+          "correct": 5,
+          "accuracy": 0.5,
+          "recall": 0.5
+        },
+        "beyond_tolerance_shift": {
+          "total": 3,
+          "correct": 1,
+          "accuracy": 0.3333333333333333,
+          "recall": 0
+        },
+        "noise": {
+          "total": 2,
+          "correct": 1,
+          "accuracy": 0.5,
+          "recall": 0.5
+        },
+        "missing_peak": {
+          "total": 2,
+          "correct": 2,
+          "accuracy": 1,
+          "recall": 1
+        },
+        "extra_peak": {
+          "total": 2,
+          "correct": 1,
+          "accuracy": 0.5,
+          "recall": 0.5
+        },
+        "combined": {
+          "total": 2,
+          "correct": 1,
+          "accuracy": 0.5,
+          "recall": 0.5
+        }
+      }
+    },
+    "results": [
+      {
+        "caseId": "raman-a1-fe3o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "fe3o4",
+        "actualPhase": "fe3o4",
+        "actualScore": 0.75,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a2-hematite",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "hematite",
+        "actualPhase": "hematite",
+        "actualScore": 0.75,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a3-anatase",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "anatase",
+        "actualPhase": "anatase",
+        "actualScore": 0.75,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a4-rutile",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "rutile",
+        "actualPhase": "rutile",
+        "actualScore": 0.875,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a5-zincite",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "zincite",
+        "actualScore": 0.125,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a6-tenorite",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "tenorite",
+        "actualScore": 0.1125,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a7-cufe2o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "cufe2o4",
+        "actualScore": 0.36749999999999994,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a8-cofe2o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "cofe2o4",
+        "actualPhase": "cofe2o4",
+        "actualScore": 0.75,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a9-nife2o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "nife2o4",
+        "actualScore": 0.2,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a10-fe3o4-noise",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "fe3o4",
+        "actualScore": 0,
+        "perturbations": [
+          "noise"
+        ]
+      },
+      {
+        "caseId": "raman-a11-hematite-noise",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "hematite",
+        "actualPhase": "hematite",
+        "actualScore": 1,
+        "perturbations": [
+          "noise"
+        ]
+      },
+      {
+        "caseId": "raman-a12-anatase-missing",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "anatase",
+        "actualPhase": "anatase",
+        "actualScore": 1,
+        "perturbations": [
+          "missing_peak"
+        ]
+      },
+      {
+        "caseId": "raman-a13-zincite-missing",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "zincite",
+        "actualPhase": "zincite",
+        "actualScore": 1,
+        "perturbations": [
+          "missing_peak"
+        ]
+      },
+      {
+        "caseId": "raman-a14-rutile-extra",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "rutile",
+        "actualPhase": "rutile",
+        "actualScore": 1,
+        "perturbations": [
+          "extra_peak"
+        ]
+      },
+      {
+        "caseId": "raman-a15-tenorite-extra",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "tenorite",
+        "actualScore": 0.225,
+        "perturbations": [
+          "extra_peak"
+        ]
+      },
+      {
+        "caseId": "raman-a16-beyond-fe3o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "fe3o4",
+        "actualPhase": "cofe2o4",
+        "actualScore": 0.75,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a17-beyond-hematite",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "hematite",
+        "actualScore": 0,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-a18-combined-cufe2o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "cufe2o4",
+        "actualScore": 0.36749999999999994,
+        "perturbations": [
+          "combined"
+        ]
+      },
+      {
+        "caseId": "raman-a19-combined-anatase",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "anatase",
+        "actualPhase": "anatase",
+        "actualScore": 0.75,
+        "perturbations": [
+          "combined"
+        ]
+      },
+      {
+        "caseId": "raman-b1-quartz",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": []
+      },
+      {
+        "caseId": "raman-b2-calcite",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0.24499999999999997,
+        "perturbations": []
+      },
+      {
+        "caseId": "raman-b3-batio3",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0.125,
+        "perturbations": []
+      },
+      {
+        "caseId": "raman-b4-nacl",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": []
+      },
+      {
+        "caseId": "raman-c1-in-tolerance",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "fe3o4",
+        "actualScore": 0.125,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "raman-c2-out-tolerance",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0.125,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      }
+    ]
+  },
+  "ftir": {
+    "metrics": {
+      "totalCases": 21,
+      "top1Accuracy": 0.23809523809523808,
+      "precision": 0,
+      "recall": 0,
+      "f1Score": 0,
+      "truePositives": 0,
+      "falsePositives": 0,
+      "trueNegatives": 5,
+      "falseNegatives": 16,
+      "confusionPairs": [
+        {
+          "expected": "cufe2o4",
+          "actual": "Surface hydroxyl, Adsorbed water, Metal-oxygen vibration",
+          "count": 2
+        },
+        {
+          "expected": "fe3o4",
+          "actual": "Metal-oxygen vibration, Surface hydroxyl",
+          "count": 3
+        },
+        {
+          "expected": "carbonate_oxide",
+          "actual": "Carbonate, Metal-oxygen vibration, Surface hydroxyl",
+          "count": 2
+        },
+        {
+          "expected": "carboxylate_oxide",
+          "actual": "Carboxylate, Metal-oxygen vibration, Surface hydroxyl",
+          "count": 1
+        },
+        {
+          "expected": "aliphatic_oxide",
+          "actual": "Metal-oxygen vibration, Aliphatic C–H",
+          "count": 1
+        },
+        {
+          "expected": "cufe2o4",
+          "actual": "Adsorbed water, Surface hydroxyl, Metal-oxygen vibration",
+          "count": 2
+        },
+        {
+          "expected": "cufe2o4",
+          "actual": "Metal-oxygen vibration, Adsorbed water, Carboxylate",
+          "count": 1
+        },
+        {
+          "expected": "carbonate_oxide",
+          "actual": "Metal-oxygen vibration, Surface hydroxyl",
+          "count": 1
+        }
+      ],
+      "familyAware": {
+        "f1Score": 0.896551724137931,
+        "precision": 1,
+        "recall": 0.8125,
+        "tp": 13,
+        "fp": 0,
+        "tn": 5,
+        "fn": 3
+      },
+      "missDecomposition": {
+        "below_threshold": 3,
+        "matched_isostructural_spinel": 13,
+        "known_limitation": 0,
+        "beyond_tolerance_expected": 0,
+        "genuinely_wrong": 0
+      },
+      "perturbationBreakdown": {
+        "within_tolerance_shift": {
+          "total": 6,
+          "correct": 0,
+          "accuracy": 0,
+          "recall": 0
+        },
+        "beyond_tolerance_shift": {
+          "total": 3,
+          "correct": 1,
+          "accuracy": 0.3333333333333333,
+          "recall": 0
+        },
+        "noise": {
+          "total": 2,
+          "correct": 0,
+          "accuracy": 0,
+          "recall": 0
+        },
+        "missing_peak": {
+          "total": 2,
+          "correct": 0,
+          "accuracy": 0,
+          "recall": 0
+        },
+        "extra_peak": {
+          "total": 2,
+          "correct": 0,
+          "accuracy": 0,
+          "recall": 0
+        },
+        "combined": {
+          "total": 2,
+          "correct": 0,
+          "accuracy": 0,
+          "recall": 0
+        }
+      }
+    },
+    "results": [
+      {
+        "caseId": "ftir-a1-cufe2o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "cufe2o4",
+        "actualPhase": "Surface hydroxyl, Adsorbed water, Metal-oxygen vibration",
+        "actualScore": 0.6086416666666667,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "ftir-a2-fe3o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "fe3o4",
+        "actualPhase": "Metal-oxygen vibration, Surface hydroxyl",
+        "actualScore": 0.57115,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "ftir-a3-carbonate",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "carbonate_oxide",
+        "actualPhase": "Carbonate, Metal-oxygen vibration, Surface hydroxyl",
+        "actualScore": 0.5488000000000001,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "ftir-a4-carboxylate",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "carboxylate_oxide",
+        "actualPhase": "Carboxylate, Metal-oxygen vibration, Surface hydroxyl",
+        "actualScore": 0.5447555555555555,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "ftir-a5-aliphatic",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "aliphatic_oxide",
+        "actualPhase": "Metal-oxygen vibration, Aliphatic C–H",
+        "actualScore": 0.42659393939393936,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "ftir-a6-cufe2o4-noise",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "cufe2o4",
+        "actualPhase": "Adsorbed water, Surface hydroxyl, Metal-oxygen vibration",
+        "actualScore": 0.6567666666666667,
+        "perturbations": [
+          "noise"
+        ]
+      },
+      {
+        "caseId": "ftir-a7-fe3o4-noise",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "fe3o4",
+        "actualPhase": "Metal-oxygen vibration, Surface hydroxyl",
+        "actualScore": 0.5885333333333334,
+        "perturbations": [
+          "noise"
+        ]
+      },
+      {
+        "caseId": "ftir-a8-cufe2o4-missing",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "cufe2o4",
+        "actualPhase": "Metal-oxygen vibration, Adsorbed water, Carboxylate",
+        "actualScore": 0.4356888888888888,
+        "perturbations": [
+          "missing_peak"
+        ]
+      },
+      {
+        "caseId": "ftir-a9-carbonate-missing",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "carbonate_oxide",
+        "actualPhase": "Metal-oxygen vibration, Surface hydroxyl",
+        "actualScore": 0.5885333333333334,
+        "perturbations": [
+          "missing_peak"
+        ]
+      },
+      {
+        "caseId": "ftir-a10-cufe2o4-extra",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "cufe2o4",
+        "actualPhase": "Adsorbed water, Surface hydroxyl, Metal-oxygen vibration",
+        "actualScore": 0.6567666666666667,
+        "perturbations": [
+          "extra_peak"
+        ]
+      },
+      {
+        "caseId": "ftir-a11-fe3o4-extra",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "fe3o4",
+        "actualPhase": "Metal-oxygen vibration, Surface hydroxyl",
+        "actualScore": 0.5385333333333333,
+        "perturbations": [
+          "extra_peak"
+        ]
+      },
+      {
+        "caseId": "ftir-a12-beyond-cufe2o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "cufe2o4",
+        "actualScore": 0.31371666666666664,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "ftir-a13-beyond-fe3o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "fe3o4",
+        "actualScore": 0.3716499999999999,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "ftir-a14-combined-cufe2o4",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "cufe2o4",
+        "actualPhase": "Surface hydroxyl, Adsorbed water, Metal-oxygen vibration",
+        "actualScore": 0.6086416666666667,
+        "perturbations": [
+          "combined"
+        ]
+      },
+      {
+        "caseId": "ftir-a15-combined-carbonate",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "carbonate_oxide",
+        "actualPhase": "Carbonate, Metal-oxygen vibration, Surface hydroxyl",
+        "actualScore": 0.5447555555555555,
+        "perturbations": [
+          "combined"
+        ]
+      },
+      {
+        "caseId": "ftir-b1-quartz",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": []
+      },
+      {
+        "caseId": "ftir-b2-caf2",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": []
+      },
+      {
+        "caseId": "ftir-b3-si3n4",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": []
+      },
+      {
+        "caseId": "ftir-b4-kbr",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": []
+      },
+      {
+        "caseId": "ftir-c1-in-tolerance",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "metal_oxide",
+        "actualScore": 0.1293333333333333,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "ftir-c2-out-tolerance",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      }
+    ]
+  },
+  "xps": {
+    "metrics": {
+      "totalCases": 21,
+      "top1Accuracy": 0.8095238095238095,
+      "precision": 1,
+      "recall": 0.75,
+      "f1Score": 0.8571428571428571,
+      "truePositives": 12,
+      "falsePositives": 0,
+      "trueNegatives": 5,
+      "falseNegatives": 4,
+      "confusionPairs": [],
+      "familyAware": {
+        "f1Score": 0.8571428571428571,
+        "precision": 1,
+        "recall": 0.75,
+        "tp": 12,
+        "fp": 0,
+        "tn": 5,
+        "fn": 4
+      },
+      "missDecomposition": {
+        "below_threshold": 2,
+        "matched_isostructural_spinel": 0,
+        "known_limitation": 2,
+        "beyond_tolerance_expected": 0,
+        "genuinely_wrong": 0
+      },
+      "perturbationBreakdown": {
+        "within_tolerance_shift": {
+          "total": 9,
+          "correct": 7,
+          "accuracy": 0.7777777777777778,
+          "recall": 0.7777777777777778
+        },
+        "beyond_tolerance_shift": {
+          "total": 3,
+          "correct": 1,
+          "accuracy": 0.3333333333333333,
+          "recall": 0
+        },
+        "noise": {
+          "total": 2,
+          "correct": 2,
+          "accuracy": 1,
+          "recall": 1
+        },
+        "missing_peak": {
+          "total": 0,
+          "correct": 0,
+          "accuracy": 0,
+          "recall": 0
+        },
+        "extra_peak": {
+          "total": 2,
+          "correct": 2,
+          "accuracy": 1,
+          "recall": 1
+        },
+        "combined": {
+          "total": 1,
+          "correct": 1,
+          "accuracy": 1,
+          "recall": 1
+        }
+      }
+    },
+    "results": [
+      {
+        "caseId": "xps-a1-cu2p",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Cu²⁺",
+        "actualPhase": "Cu²⁺",
+        "actualScore": 0.27803730045323455,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xps-a2-fe3p",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Fe³⁺",
+        "actualPhase": "Fe³⁺",
+        "actualScore": 1,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xps-a3-fe2p",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "Fe²⁺",
+        "actualScore": 0,
+        "perturbations": [
+          "within_tolerance_shift"
+        ],
+        "knownLimitation": {
+          "reason": "Fe²⁺ vs Fe³⁺ disambiguation from a single 2p3/2 main line requires multiplet/satellite modeling not implemented in the current XPS scorer."
+        }
+      },
+      {
+        "caseId": "xps-a4-ti2p",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Ti⁴⁺",
+        "actualPhase": "Ti⁴⁺",
+        "actualScore": 0.8824969025845453,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xps-a5-zn2p",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "Zn²⁺",
+        "actualScore": 0.13533528323669475,
+        "perturbations": [
+          "within_tolerance_shift"
+        ],
+        "knownLimitation": {
+          "reason": "Zn²⁺ 2p3/2 scores below threshold even with reference-exact input within tolerance — XPS scorer under-weights single-peak matches in the high-BE Zn region. Verdict B confirmed empirically."
+        }
+      },
+      {
+        "caseId": "xps-a6-co2p",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Co(II/III)",
+        "actualPhase": "Co(II/III)",
+        "actualScore": 1,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xps-a7-ni2p",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Ni²⁺",
+        "actualPhase": "Ni²⁺",
+        "actualScore": 0.27803730045323455,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xps-a8-o1s",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "O²⁻",
+        "actualPhase": "O²⁻",
+        "actualScore": 0.41111229050702125,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xps-a9-cu2p-noise",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Cu²⁺",
+        "actualPhase": "Cu²⁺",
+        "actualScore": 0.9231163463866022,
+        "perturbations": [
+          "noise"
+        ]
+      },
+      {
+        "caseId": "xps-a10-fe3p-noise",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Fe³⁺",
+        "actualPhase": "Fe³⁺",
+        "actualScore": 1,
+        "perturbations": [
+          "noise"
+        ]
+      },
+      {
+        "caseId": "xps-a11-cu2p-extra",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Cu²⁺",
+        "actualPhase": "Cu²⁺",
+        "actualScore": 0.9231163463866022,
+        "perturbations": [
+          "extra_peak"
+        ]
+      },
+      {
+        "caseId": "xps-a12-fe3p-extra",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Fe³⁺",
+        "actualPhase": "Fe³⁺",
+        "actualScore": 1,
+        "perturbations": [
+          "extra_peak"
+        ]
+      },
+      {
+        "caseId": "xps-a13-beyond-cu2p",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "Cu²⁺",
+        "actualScore": 0,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xps-a14-beyond-fe3p",
+        "expectedShouldMatch": true,
+        "actualDidMatch": false,
+        "expectedPhase": "Fe³⁺",
+        "actualScore": 0,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xps-a15-combined-cu2p",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Cu²⁺",
+        "actualPhase": "Cu²⁺",
+        "actualScore": 0.27803730045323455,
+        "perturbations": [
+          "combined"
+        ]
+      },
+      {
+        "caseId": "xps-b1-lead",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": []
+      },
+      {
+        "caseId": "xps-b2-silver",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": []
+      },
+      {
+        "caseId": "xps-b3-bromine",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": []
+      },
+      {
+        "caseId": "xps-b4-sodium",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": []
+      },
+      {
+        "caseId": "xps-c1-in-tolerance",
+        "expectedShouldMatch": true,
+        "actualDidMatch": true,
+        "expectedPhase": "Cu²⁺",
+        "actualPhase": "Cu²⁺",
+        "actualScore": 0.27803730045323455,
+        "perturbations": [
+          "within_tolerance_shift"
+        ]
+      },
+      {
+        "caseId": "xps-c2-out-tolerance",
+        "expectedShouldMatch": false,
+        "actualDidMatch": false,
+        "actualScore": 0,
+        "perturbations": [
+          "beyond_tolerance_shift"
+        ]
+      }
+    ]
+  },
+  "fusion": {
+    "metrics": {
+      "totalCases": 14,
+      "formulaAccuracy": 1,
+      "tierConfusionMatrix": {
+        "CORROBORATED": {
+          "CORROBORATED": 7,
+          "SUPPORTED": 0,
+          "SINGLE-SOURCE": 0,
+          "CONTESTED": 0,
+          "UNVERIFIED": 0,
+          "NONE": 0
+        },
+        "SUPPORTED": {
+          "CORROBORATED": 0,
+          "SUPPORTED": 0,
+          "SINGLE-SOURCE": 0,
+          "CONTESTED": 0,
+          "UNVERIFIED": 0,
+          "NONE": 0
+        },
+        "SINGLE-SOURCE": {
+          "CORROBORATED": 0,
+          "SUPPORTED": 0,
+          "SINGLE-SOURCE": 0,
+          "CONTESTED": 0,
+          "UNVERIFIED": 0,
+          "NONE": 0
+        },
+        "CONTESTED": {
+          "CORROBORATED": 0,
+          "SUPPORTED": 0,
+          "SINGLE-SOURCE": 0,
+          "CONTESTED": 3,
+          "UNVERIFIED": 0,
+          "NONE": 0
+        },
+        "UNVERIFIED": {
+          "CORROBORATED": 0,
+          "SUPPORTED": 0,
+          "SINGLE-SOURCE": 0,
+          "CONTESTED": 0,
+          "UNVERIFIED": 0,
+          "NONE": 0
+        },
+        "NONE": {
+          "CORROBORATED": 0,
+          "SUPPORTED": 0,
+          "SINGLE-SOURCE": 0,
+          "CONTESTED": 0,
+          "UNVERIFIED": 0,
+          "NONE": 0
+        }
+      },
+      "contradiction": {
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "tn": 11,
+        "recall": 1,
+        "falseContradictionRate": 0
+      },
+      "surfaceDetection": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "tn": 13,
+        "rate": 1
+      },
+      "polymorphCapAdherence": 1,
+      "independenceGuardCorrectness": 1
+    },
+    "results": [
+      {
+        "caseId": "fus-d1-tio2",
+        "category": "D",
+        "description": "Independent XRD and Raman evidence agreeing on TiO2 Anatase.",
+        "findingsCount": 1,
+        "topFormula": "TiO2",
+        "topFormulaTier": "CORROBORATED",
+        "topPolymorphTier": "CORROBORATED",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Requires XRD or Raman for polymorph resolution (anatase vs rutile)"
+        ]
+      },
+      {
+        "caseId": "fus-d2-fe3o4",
+        "category": "D",
+        "description": "Independent XRD and FTIR evidence agreeing on Fe3O4 Magnetite.",
+        "findingsCount": 1,
+        "topFormula": "Fe3O4",
+        "topFormulaTier": "CORROBORATED",
+        "topPolymorphTier": "SINGLE-SOURCE",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Spinel inverse structure confirmed via combined Raman A1g and XPS Fe 2p satellite absence"
+        ]
+      },
+      {
+        "caseId": "fus-d3-zno",
+        "category": "D",
+        "description": "Independent XRD and XPS evidence agreeing on ZnO Zincite.",
+        "findingsCount": 2,
+        "topFormula": "ZnO",
+        "topFormulaTier": "CORROBORATED",
+        "topPolymorphTier": "SINGLE-SOURCE",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Hexagonal wurtzite structure"
+        ]
+      },
+      {
+        "caseId": "fus-d4-fe2o3",
+        "category": "D",
+        "description": "Independent XRD and Raman evidence agreeing on Fe2O3 Hematite.",
+        "findingsCount": 1,
+        "topFormula": "Fe2O3",
+        "topFormulaTier": "CORROBORATED",
+        "topPolymorphTier": "CORROBORATED",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Requires XRD or Raman for polymorph resolution (hematite vs maghemite)"
+        ]
+      },
+      {
+        "caseId": "fus-d5-cuo-recovery",
+        "category": "D",
+        "description": "Multi-technique recovery combining low-confidence XRD (CuO), Raman (Tenorite), and XPS (Cu²⁺).",
+        "findingsCount": 1,
+        "topFormula": "CuO",
+        "topFormulaTier": "CORROBORATED",
+        "topPolymorphTier": "CORROBORATED",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Monoclinic tenorite structure"
+        ]
+      },
+      {
+        "caseId": "fus-e1-tio2-ti0",
+        "category": "E",
+        "description": "Contradiction between XRD indicating TiO2 oxide and XPS indicating metallic Ti0.",
+        "findingsCount": 1,
+        "topFormula": "TiO2",
+        "topFormulaTier": "CONTESTED",
+        "topPolymorphTier": "CONTESTED",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Requires XRD or Raman for polymorph resolution (anatase vs rutile)"
+        ]
+      },
+      {
+        "caseId": "fus-e2-fe2o3-fe0",
+        "category": "E",
+        "description": "Contradiction between XRD indicating Fe2O3 oxide and XPS indicating metallic Fe0.",
+        "findingsCount": 1,
+        "topFormula": "Fe2O3",
+        "topFormulaTier": "CONTESTED",
+        "topPolymorphTier": "CONTESTED",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Requires XRD or Raman for polymorph resolution (hematite vs maghemite)"
+        ]
+      },
+      {
+        "caseId": "fus-e3-zno-zn0",
+        "category": "E",
+        "description": "Contradiction between XRD indicating ZnO oxide and XPS indicating metallic Zn0.",
+        "findingsCount": 1,
+        "topFormula": "ZnO",
+        "topFormulaTier": "CONTESTED",
+        "topPolymorphTier": "CONTESTED",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Hexagonal wurtzite structure"
+        ]
+      },
+      {
+        "caseId": "fus-f1-cu2o-cu2",
+        "category": "F",
+        "description": "Surface stratification: XRD shows bulk Cu2O cuprite while XPS detects Cu2+ oxide surface layer.",
+        "findingsCount": 1,
+        "topFormula": "Cu2O",
+        "topFormulaTier": "SINGLE-SOURCE",
+        "topPolymorphTier": "SINGLE-SOURCE",
+        "isSurfaceBulkDiscrepancy": true,
+        "caveats": [
+          "Surface/bulk stratification detected: XPS indicates surface layer differing from bulk structural phase",
+          "Cubic cuprite structure"
+        ]
+      },
+      {
+        "caseId": "fus-f2-fe3o4-fe3",
+        "category": "F",
+        "description": "Intrinsic mixed-valence: XRD shows bulk Fe3O4 magnetite and XPS detects Fe3+ (intrinsic to bulk Fe3O4). Should NOT flag surface stratification.",
+        "findingsCount": 2,
+        "topFormula": "Fe3O4",
+        "topFormulaTier": "CORROBORATED",
+        "topPolymorphTier": "SINGLE-SOURCE",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Spinel inverse structure confirmed via combined Raman A1g and XPS Fe 2p satellite absence"
+        ]
+      },
+      {
+        "caseId": "fus-g1-same-origin-tio2",
+        "category": "G",
+        "description": "Independence guard: XRD and Raman sharing the exact same processingHash cannot reach CORROBORATED tier.",
+        "findingsCount": 1,
+        "topFormula": "TiO2",
+        "topFormulaTier": "SINGLE-SOURCE",
+        "topPolymorphTier": "SINGLE-SOURCE",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Demonstration Mode: Same-Origin Synthetic Data",
+          "Requires XRD or Raman for polymorph resolution (anatase vs rutile)"
+        ]
+      },
+      {
+        "caseId": "fus-g2-same-origin-zno",
+        "category": "G",
+        "description": "Independence guard: XRD and XPS sharing the exact same processingHash cannot reach CORROBORATED tier.",
+        "findingsCount": 2,
+        "topFormula": "ZnO",
+        "topFormulaTier": "SINGLE-SOURCE",
+        "topPolymorphTier": "SINGLE-SOURCE",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Demonstration Mode: Same-Origin Synthetic Data",
+          "Hexagonal wurtzite structure"
+        ]
+      },
+      {
+        "caseId": "fus-h1-polymorph-tio2",
+        "category": "H",
+        "description": "Polymorph cap: XPS formula-level confirmation cannot raise polymorph tier above SINGLE-SOURCE cap.",
+        "findingsCount": 1,
+        "topFormula": "TiO2",
+        "topFormulaTier": "CORROBORATED",
+        "topPolymorphTier": "SINGLE-SOURCE",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Requires XRD or Raman for polymorph resolution (anatase vs rutile)"
+        ]
+      },
+      {
+        "caseId": "fus-h2-polymorph-fe2o3",
+        "category": "H",
+        "description": "Polymorph cap: XPS formula-level confirmation cannot raise Fe2O3 polymorph tier above SINGLE-SOURCE cap.",
+        "findingsCount": 1,
+        "topFormula": "Fe2O3",
+        "topFormulaTier": "CORROBORATED",
+        "topPolymorphTier": "SINGLE-SOURCE",
+        "isSurfaceBulkDiscrepancy": false,
+        "caveats": [
+          "Requires XRD or Raman for polymorph resolution (hematite vs maghemite)"
+        ]
+      }
+    ]
+  }
+}
