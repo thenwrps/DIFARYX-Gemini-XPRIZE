@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-30T12:34:39.812Z",
+  "timestamp": "2026-07-01T16:24:26.294Z",
   "disclaimer": "V1 synthetic self-consistency validation against curated/perturbed labels — NOT real-instrument accuracy.",
   "xrd": {
     "metrics": {
@@ -1055,7 +1055,7 @@
           "within_tolerance_shift"
         ],
         "knownLimitation": {
-          "reason": "Fe²⁺ vs Fe³⁺ disambiguation from a single 2p3/2 main line requires multiplet/satellite modeling not implemented in the current XPS scorer."
+          "reason": "No Fe²⁺ 2p3/2 reference in the seeded DB — only Fe³⁺ at 711.0 eV; the Fe²⁺ main line at 709.5 eV cannot match (deltaBE 1.5 > 0.5 tol). Confirmed by reference-faithful probe (score 0.000)."
         }
       },
       {
@@ -1079,7 +1079,7 @@
           "within_tolerance_shift"
         ],
         "knownLimitation": {
-          "reason": "Zn²⁺ 2p3/2 scores below threshold even with reference-exact input within tolerance — XPS scorer under-weights single-peak matches in the high-BE Zn region. Verdict B confirmed empirically."
+          "reason": "within_tolerance_shift lands deltaBE at the 0.3 eV tolerance edge; Gaussian kernel sigma=tol/2=0.15 collapses the score to 0.135 (< 0.25 threshold); effective single-peak detection window ±0.25 eV is narrower than the declared 0.3 eV tolerance. Reference-exact probe scores 0.411 (PASS) — scorer-kernel finding, not a material limitation."
         }
       },
       {

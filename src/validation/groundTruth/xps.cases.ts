@@ -89,20 +89,21 @@ export const XPS_GROUND_TRUTH_CASES: XpsTestCase[] = [
     perturbations: ['within_tolerance_shift'],
   },
   {
-    // Known limitation (Verdict B): Fe²⁺ 2p3/2 at 709.5 eV (Biesinger 2010)
-    // scores 0.000 in the current XPS engine even with reference-faithful input
-    // perturbed by +0.1 eV (within 0.5 eV tolerance). The Fe²⁺ vs Fe³⁺
-    // disambiguation is genuinely hard from a single 2p3/2 main line — multiplet
-    // splitting and satellite structure are the true discriminators and are not
-    // modeled in the current scorer. This is a real engine limitation, not
-    // malformed input. Ref: Biesinger et al., Appl. Surf. Sci. 257, 887 (2010).
+    // Known limitation (missing reference, confirmed by reference-faithful probe):
+    // The seeded XPS reference table (xpsReferenceData.ts) contains NO Fe²⁺ 2p3/2
+    // entry — only Fe³⁺ at 711.0 eV. The Fe²⁺ main line at 709.5 eV
+    // (Biesinger 2010) therefore cannot match (deltaBE 1.5 > 0.5 eV tolerance)
+    // and scores 0.000 even with reference-faithful input (probe B, 2026-07-01:
+    // shift -0.0125 -> effective 709.5 eV -> score 0.000, FAIL). This is a real
+    // DB-coverage limitation (missing Fe²⁺ reference), not malformed input and
+    // not a scorer-kernel issue. Ref: Biesinger et al., Appl. Surf. Sci. 257, 887 (2010).
     id: 'xps-a3-fe2p',
     category: 'A',
     description: 'Fe²⁺ 2p3/2 core level shifted within tolerance',
     input: perturbPeaks(RAW_FE2P_2, XPS_CONFIG, { shift: 0.1 }),
     expected: { shouldMatch: true, topPhase: 'Fe²⁺' },
     perturbations: ['within_tolerance_shift'],
-    knownLimitation: { reason: 'Fe²⁺ vs Fe³⁺ disambiguation from a single 2p3/2 main line requires multiplet/satellite modeling not implemented in the current XPS scorer.' },
+    knownLimitation: { reason: 'No Fe²⁺ 2p3/2 reference in the seeded DB — only Fe³⁺ at 711.0 eV; the Fe²⁺ main line at 709.5 eV cannot match (deltaBE 1.5 > 0.5 tol). Confirmed by reference-faithful probe (score 0.000).' },
   },
   {
     id: 'xps-a4-ti2p',
@@ -113,14 +114,22 @@ export const XPS_GROUND_TRUTH_CASES: XpsTestCase[] = [
     perturbations: ['within_tolerance_shift'],
   },
   {
-    // Known limitation (Verdict B): Zn²⁺ 2p3/2 at 1021.8 eV (Biesinger 2010)
-    // scores ~0.135 in the current XPS engine even with reference-faithful
-    // input perturbed by +0.2 eV (effective 1022.0 eV, well within 0.5 eV
-    // tolerance). Empirically verified: setting RAW_ZN2P to the reference-exact
-    // 1021.7 eV still produced a sub-threshold score, confirming this is a
-    // real engine limitation (Verdict B), not malformed input (Verdict A).
-    // The Zn 2p3/2 line is narrow and the scorer's tolerance kernel under-
-    // weights single-peak matches in the high-BE Zn region.
+    // Known limitation (scorer-kernel finding, NOT a material limitation):
+    // The +0.2 eV within_tolerance_shift lands the effective peak at 1022.0 eV,
+    // i.e. deltaBE = 0.3 eV — exactly at the declared Zn 2p3/2 tolerance edge
+    // (ref 1021.7 eV, uncertainty 0.3 eV). The XPS match kernel
+    // (calculateMatchScore in xpsAgent/runner.ts) uses a Gaussian with
+    // sigma = tolerance/2 = 0.15 eV, so at deltaBE = 0.3 the score collapses to
+    // exp(-(0.3^2)/(2*0.15^2)) = 0.135 (< 0.25 threshold) -> FAIL.
+    // Reference-exact probe A (2026-07-01): shift -0.1125 -> effective 1021.7 eV
+    // -> score 0.411, PASS. This PROVES Zn²⁺ is NOT a material limitation; the
+    // failure is purely the scorer's effective single-peak detection window
+    // (±0.25 eV = sigma*sqrt(-2*ln(0.25))) being NARROWER than the declared
+    // 0.3 eV tolerance. Per decision (a) the +0.2 shift and red flag are KEPT
+    // to document this kernel/tolerance inconsistency; the kernel fix is tracked
+    // as V2 tech-debt (see baselines.ts header / VALIDATION_BACKLOG) and must be
+    // re-validated against all negatives (c2-out-tolerance, b1-b4) and beyond-
+    // tolerance cases (a13/a14) before adoption.
     // Ref: NIST XPS Database; Biesinger et al., Appl. Surf. Sci. 257, 887 (2010).
     id: 'xps-a5-zn2p',
     category: 'A',
@@ -128,7 +137,7 @@ export const XPS_GROUND_TRUTH_CASES: XpsTestCase[] = [
     input: perturbPeaks(RAW_ZN2P, XPS_CONFIG, { shift: 0.2 }),
     expected: { shouldMatch: true, topPhase: 'Zn²⁺' },
     perturbations: ['within_tolerance_shift'],
-    knownLimitation: { reason: 'Zn²⁺ 2p3/2 scores below threshold even with reference-exact input within tolerance — XPS scorer under-weights single-peak matches in the high-BE Zn region. Verdict B confirmed empirically.' },
+    knownLimitation: { reason: 'within_tolerance_shift lands deltaBE at the 0.3 eV tolerance edge; Gaussian kernel sigma=tol/2=0.15 collapses the score to 0.135 (< 0.25 threshold); effective single-peak detection window ±0.25 eV is narrower than the declared 0.3 eV tolerance. Reference-exact probe scores 0.411 (PASS) — scorer-kernel finding, not a material limitation.' },
   },
   {
     // Scientific rationale: Co 2p3/2 alone cannot disambiguate Co²⁺ from Co³⁺

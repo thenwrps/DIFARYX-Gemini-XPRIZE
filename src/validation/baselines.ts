@@ -7,6 +7,31 @@ import type { ValidationRunData } from './report.js';
  * Enforces hard safety gates, regression guards against historical floors, and case-floor criteria.
  */
 
+// ============================================================================
+// V2 TECH-DEBT — XPS scorer kernel / tolerance consistency (tracked, NOT fixed in V1-b)
+// ============================================================================
+// Finding (2026-07-01 honest re-audit): the XPS match kernel in
+// xpsAgent/runner.ts#calculateMatchScore uses sigma = tolerance/2, so the
+// effective single-peak detection window (score >= 0.25 threshold) is
+//   ±sigma*sqrt(-2*ln(0.25)) = ±0.25 eV for a 0.3 eV uncertainty ref (Zn),
+//   which is NARROWER than the declared 0.3 eV tolerance.
+// Consequence: a within_tolerance_shift that lands deltaBE at the tolerance
+// edge (e.g. xps-a5-zn2p, +0.2 eV -> deltaBE 0.3 -> score 0.135) fails
+// detection even though it is nominally "within tolerance." This is documented
+// on the case (xps.cases.ts xps-a5-zn2p) and counted as known_limitation.
+// Reference-exact Zn (probe A) scores 0.411 -> PASS, proving the failure is a
+// kernel/tolerance inconsistency, NOT a material limitation.
+//
+// FIX (requires authorization — engine change, diagnose-only in V1-b):
+//   reconcile sigma vs declared tolerance (e.g. sigma = tolerance so the kernel
+//   spans the full declared window, or raise/lower the 0.25 threshold).
+// MANDATORY re-validation before adoption — must NOT regress:
+//   * xps-c2-out-tolerance (Cu²⁺ +0.8 eV) must STILL be rejected,
+//   * xps-b1..b4 negatives must stay FP = 0,
+//   * xps-a13-beyond-cu2p / xps-a14-beyond-fe3p must STILL miss,
+//   * XPS State F1 must not drop below the then-locked value.
+// ============================================================================
+
 export interface ValidationBaselines {
   safety: {
     multiTech: {
