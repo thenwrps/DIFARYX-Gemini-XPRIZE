@@ -432,14 +432,59 @@ def match_peaks(
                 tolerance,
             )
 
-    # Determine primary phase: the phase with the highest total confidence
+    # =========================================================================
+    # Hanawalt / Fink Search-Match Eligibility & Intensity-Weighted Coverage
+    # =========================================================================
+    MIN_MAJOR_INTENSITY_RATIO: float = 0.30        # Lines with relative intensity >= 30% of max are major
+    MIN_MAJOR_LINE_COVERAGE_FRACTION: float = 0.40  # At least 40% of major lines must match
+    MIN_PRIMARY_SCORE_THRESHOLD: float = 0.25       # Normalized weighted intensity-coverage score must be >= 0.25
+
+    # Group markers by phase label
+    markers_by_label: Dict[str, List[ReferenceMarker]] = {}
+    for m in all_markers:
+        markers_by_label.setdefault(m.phase_label, []).append(m)
+
+    phase_weighted_scores: Dict[str, float] = {}
+    eligible_phases: Dict[str, float] = {}
+
+    for plabel, pmarkers in markers_by_label.items():
+        max_int: float = max((m.relative_intensity for m in pmarkers), default=100.0)
+        major_threshold: float = max_int * MIN_MAJOR_INTENSITY_RATIO
+        major_markers = [m for m in pmarkers if m.relative_intensity >= major_threshold]
+
+        # Matched peaks for this phase
+        matched_for_phase = [pm for pm in matched if pm.reference_marker.phase_label == plabel]
+        matched_positions = {pm.reference_marker.position_2theta for pm in matched_for_phase}
+
+        # Gate A: Strongest line (>= 80% max intensity) must be matched within tolerance
+        strong_markers = [m for m in pmarkers if m.relative_intensity >= 0.80 * max_int]
+        has_strong_match: bool = any(m.position_2theta in matched_positions for m in strong_markers)
+
+        # Gate B: Major lines coverage fraction
+        matched_major_count: int = sum(1 for m in major_markers if m.position_2theta in matched_positions)
+        major_coverage: float = matched_major_count / len(major_markers) if major_markers else 0.0
+
+        # Gate C: Intensity-weighted coverage score calculation
+        total_ref_int: float = sum(m.relative_intensity for m in pmarkers)
+        matched_int_score: float = sum(pm.reference_marker.relative_intensity * pm.confidence for pm in matched_for_phase)
+        weighted_score: float = round(matched_int_score / total_ref_int, 4) if total_ref_int > 0 else 0.0
+
+        phase_weighted_scores[plabel] = weighted_score
+
+        is_eligible: bool = (
+            has_strong_match
+            and (major_coverage >= MIN_MAJOR_LINE_COVERAGE_FRACTION)
+            and (weighted_score >= MIN_PRIMARY_SCORE_THRESHOLD)
+        )
+
+        if is_eligible:
+            eligible_phases[plabel] = weighted_score
+
+    # Primary phase selection: highest weighted score among ELIGIBLE phases
     primary_phase: str = "Unknown"
-    if matched:
-        phase_scores: Dict[str, float] = {}
-        for pm in matched:
-            label: str = pm.reference_marker.phase_label
-            phase_scores[label] = phase_scores.get(label, 0.0) + pm.confidence
-        primary_phase = max(phase_scores, key=phase_scores.get)  # type: ignore[arg-type]
+    if eligible_phases:
+        primary_phase = max(eligible_phases, key=eligible_phases.get)  # type: ignore[arg-type]
+
 
     # Build summary
     n_matched: int = len(matched)

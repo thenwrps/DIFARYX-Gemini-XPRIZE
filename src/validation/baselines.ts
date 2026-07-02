@@ -31,6 +31,16 @@ import type { ValidationRunData } from './report.js';
 //   * xps-a13-beyond-cu2p / xps-a14-beyond-fe3p must STILL miss,
 //   * XPS State F1 must not drop below the then-locked value.
 // ============================================================================
+// V2 TECH-DEBT — Backend /match greedy peak assignment sensitivity (tracked, safe degradation)
+// ============================================================================
+// Finding: Backend /match uses greedy nearest-marker assignment across all phases.
+// Shifted peaks for phases overlapping dense references (e.g. Anatase TiO₂ / Tenorite CuO
+// shifted +0.15° near Brookite TiO₂ 49 lines) get assigned to the dense neighbor, causing
+// the true phase to fail Hanawalt Gate A (characteristic line) / Gate B (major line coverage).
+// Impact: Safe degradation to "Unknown" (0 false positives).
+// V2 FIX: Multi-phase peak assignment (joint global assignment / residual unmixing).
+// ============================================================================
+
 
 export interface ValidationBaselines {
   safety: {
