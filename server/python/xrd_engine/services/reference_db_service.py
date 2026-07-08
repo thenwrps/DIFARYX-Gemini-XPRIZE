@@ -349,6 +349,12 @@ def match_peaks(
 
     # Load markers dynamically from SQLite xrd_reference.db
     if not _DB_PATH.exists():
+        allow_mock = _os.environ.get("XRD_ALLOW_MOCK_DB", "0").lower() in ("1", "true", "yes")
+        if not allow_mock:
+            raise RuntimeError(
+                f"CRITICAL: Authoritative reference DB file not found at {_DB_PATH}. "
+                "Auto-seeding and mock fallbacks are disabled in production (XRD_ALLOW_MOCK_DB!=1)."
+            )
         try:
             from api.database_indexer import seed_mock_data
             seed_mock_data(_DB_PATH)
@@ -380,7 +386,14 @@ def match_peaks(
         finally:
             conn.close()
     else:
-        # DEPRECATED fallback
+        allow_mock = _os.environ.get("XRD_ALLOW_MOCK_DB", "0").lower() in ("1", "true", "yes")
+        if not allow_mock:
+            raise RuntimeError(
+                f"CRITICAL: Authoritative reference DB file not present at {_DB_PATH} "
+                "and mock fallback is disabled (XRD_ALLOW_MOCK_DB!=1)."
+            )
+        # Historical task-57/63 mock emission cause is UNRESOLVED (most likely pre-guard stale uvicorn process).
+        # DEPRECATED fallback for explicit dev mock mode
         for phase_markers in REFERENCE_REGISTRY.values():
             all_markers.extend(phase_markers)
 
@@ -486,21 +499,35 @@ def match_peaks(
         primary_phase = max(eligible_phases, key=eligible_phases.get)  # type: ignore[arg-type]
 
 
-    # Build summary
+    # Build catalog_id and summary dynamically from matched primary phase
     n_matched: int = len(matched)
     n_total: int = len(evidence_peaks)
-    summary_template: str = db_meta["summary_template"]
-    summary: str = summary_template.format(
-        n_matched=n_matched,
-        n_total=n_total,
-        db_type=db_type,
-    )
+
+    primary_cod_id: Optional[str] = None
+    if primary_phase != "Unknown":
+        for pm in matched:
+            if pm.reference_marker.phase_label == primary_phase and pm.reference_marker.cod_id:
+                primary_cod_id = pm.reference_marker.cod_id
+                break
+
+    if primary_phase != "Unknown":
+        catalog_id = f"COD-{primary_cod_id}" if primary_cod_id else f"{db_type}-MATCHED"
+        summary = (
+            f"Matched against {db_type} reference library. "
+            f"Primary phase resolved: {primary_phase} ({n_matched}/{n_total} peak markers matched)."
+        )
+    else:
+        catalog_id = f"{db_type}-UNRESOLVED"
+        summary = (
+            f"Matched against {db_type} reference library. "
+            f"No primary phase met search-match criteria ({n_matched}/{n_total} peak markers matched)."
+        )
 
     result = PhaseMatchResult(
         primary_phase=primary_phase,
         matched_peaks=matched,
         db_source=db_type,
-        catalog_id=db_meta["catalog_id"],
+        catalog_id=catalog_id,
         summary=summary,
     )
 
@@ -1071,9 +1098,11 @@ import os as _os
 import sqlite3 as _sqlite3
 from pathlib import Path as _Path
 
-# Default path to the local reference database
-_DB_DIR: _Path = _Path(__file__).resolve().parent.parent.parent / "data"
-_DB_PATH: _Path = _DB_DIR / "xrd_reference.db"
+# Default path to the local reference database (env-driven or deterministic Path(__file__) relative)
+_DEFAULT_DB_DIR: _Path = _Path(__file__).resolve().parent.parent.parent / "data"
+_ENV_DB_PATH = _os.environ.get("XRD_DB_PATH")
+_DB_DIR: _Path = _Path(_ENV_DB_PATH).parent if _ENV_DB_PATH else _DEFAULT_DB_DIR
+_DB_PATH: _Path = _Path(_ENV_DB_PATH).resolve() if _ENV_DB_PATH else (_DEFAULT_DB_DIR / "xrd_reference.db")
 
 # FOM algorithm constants
 _SIGMA_DIVISOR: float = 2.0          # σ = tolerance / SIGMA_DIVISOR

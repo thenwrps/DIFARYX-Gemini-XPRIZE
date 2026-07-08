@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+﻿import React, { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Activity,
@@ -700,10 +700,10 @@ const TECHNIQUE_DISPLAY: Record<TechniqueContext, {
 }> = {
   XRD: {
     featureLabel: 'Detected peaks',
-    rangeLabel: '2Î¸ range',
+    rangeLabel: '2ÃŽÂ¸ range',
     dominantLabel: 'Dominant reflections',
     qualityLabel: 'Signal quality',
-    observedLabel: 'Observed peaks (2Î¸)',
+    observedLabel: 'Observed peaks (2ÃŽÂ¸)',
     formatRange: (min, max) => `${min.toFixed(1)} deg - ${max.toFixed(1)} deg`,
     formatPosition: (value) => `${value.toFixed(1)} deg`,
   },
@@ -738,7 +738,7 @@ const TECHNIQUE_DISPLAY: Record<TechniqueContext, {
 
 function getUnitForTechnique(technique: Technique): string {
   switch (technique) {
-    case 'XRD': return '2Î¸';
+    case 'XRD': return '2ÃŽÂ¸';
     case 'Raman': return 'cm-1';
     case 'FTIR': return 'cm-1';
     case 'XPS': return 'eV';
@@ -759,7 +759,7 @@ function makePendingDatasetOption(project: DemoProject, context: TechniqueContex
       technique: context,
       fileName: `${project.name} ${context} evidence pending`,
       sampleName: project.name,
-      xLabel: context === 'XRD' ? '2θ (°)' : context === 'XPS' ? 'Binding Energy (eV)' : context === 'FTIR' ? 'Wavenumber (cm⁻¹)' : 'Raman Shift (cm⁻¹)',
+      xLabel: context === 'XRD' ? '2Î¸ (Â°)' : context === 'XPS' ? 'Binding Energy (eV)' : context === 'FTIR' ? 'Wavenumber (cmâ»Â¹)' : 'Raman Shift (cmâ»Â¹)',
       yLabel: 'Signal',
       dataPoints: [],
       metadata: {
@@ -1934,7 +1934,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
   const contextConfig = CONTEXT_CONFIG[agentState.context];
   const stages = contextConfig.stages;
   const modeConfig = AGENT_MODES[agentState.mode];
-  // ── Param-version reads (cheap localStorage reads; change when user edits ──
+  // â”€â”€ Param-version reads (cheap localStorage reads; change when user edits â”€â”€
   // params in the workspace panel).  Used as useMemo deps so analysis
   // re-runs whenever effective parameters change, not only when the project
   // id changes (Patch 10.7E condition 1).
@@ -1959,9 +1959,9 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     [agentState.context, selectedDataset, selectedProject.id, xrdParamVersion],
   );
 
-  // ── Non-XRD analysis memos (Patch 10.7E) ──────────────────────────────────
+  // â”€â”€ Non-XRD analysis memos (Patch 10.7E) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Mirror the XRD pattern: compute only when the context matches; re-run
-  // when params or dataset change.  Empty dataPoints → null (Q1: callers
+  // when params or dataset change.  Empty dataPoints â†’ null (Q1: callers
   // fall back to detectedFeatures).
 
   const ramanAnalysis = useMemo(
@@ -2003,7 +2003,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     [agentState.context, selectedDataset, selectedProject.id, ftirParamVersion],
   );
 
-  // ── Analysis cache ref (Patch 10.7E condition 2: no double-compute) ───────
+  // â”€â”€ Analysis cache ref (Patch 10.7E condition 2: no double-compute) â”€â”€â”€â”€â”€â”€â”€
   // runAuto reads from this ref so it reuses whatever the memo already
   // computed.  The ref is updated synchronously during render (before any
   // async call in runAuto), so it always holds the values from the most
@@ -2016,7 +2016,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     context: agentState.context as TechniqueContext,
     datasetId: selectedDataset.id,
   });
-  // Synchronous update — intentionally outside useEffect so runAuto always
+  // Synchronous update â€” intentionally outside useEffect so runAuto always
   // reads the current render's values without waiting for a commit.
   analysisCache.current = {
     xrd: xrdAnalysis,
@@ -2363,11 +2363,11 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       ramanResult, xpsRunResult, ftirResult,
     );
 
-    // Collected XPS↔XRD oxidation-state contradictions, surfaced into the claim
+    // Collected XPSâ†”XRD oxidation-state contradictions, surfaced into the claim
     // boundary (hasContradictions) below as well as the basis/limitations.
     const xpsContradictions: string[] = [];
 
-    // ── Enrich with persisted XPS element-focused evidence (hedged, additive) ──
+    // â”€â”€ Enrich with persisted XPS element-focused evidence (hedged, additive) â”€â”€
     if (context === 'XPS' && xpsElementEvidence) {
       const ev = xpsElementEvidence;
       const xpsBasis: string[] = [];
@@ -2431,7 +2431,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       }
     }
 
-    // ── Enrich with persisted XRD backend evidence (additive, non-breaking) ──
+    // â”€â”€ Enrich with persisted XRD backend evidence (additive, non-breaking) â”€â”€
     if (context === 'XRD' && xrdBackendEvidence) {
       const be = xrdBackendEvidence;
       const qm = selectXrdQualityMetrics(be);
@@ -2539,10 +2539,10 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     };
     saveRun(agentRun);
 
-    // ── Claim boundary: structured reasoning signals -> deterministic renderer ──
+    // â”€â”€ Claim boundary: structured reasoning signals -> deterministic renderer â”€â”€
     // The reasoning engine (Vertex/LLM or deterministic) emits signals ONLY;
     // claimBoundaryPresentation.ts (via buildClaimBoundaryArtifact) authors the
-    // final user-facing wording. Validation gaps = deterministic ∪ Vertex.
+    // final user-facing wording. Validation gaps = deterministic âˆª Vertex.
     const reasoningProvider: ReasoningProvider =
       llmOutput &&
       (llmOutput.metadata?.provider === 'vertex-gemini' || llmOutput.metadata?.provider === 'gemma')
@@ -2555,7 +2555,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       technique: context,
       provider: reasoningProvider,
       confidence: llmOutput ? llmOutput.confidence : 0.6,
-      // XPS↔XRD oxidation-state contradictions participate in hasContradictions.
+      // XPSâ†”XRD oxidation-state contradictions participate in hasContradictions.
       contradictions: [...(llmOutput?.rejectedAlternatives ?? []), ...xpsContradictions],
       missingValidation,
     });
@@ -2607,7 +2607,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       ? { project: currentProject, dataset: evidenceSnapshot.activeDataset }
       : getDatasetOption(context, datasetId, agentState.projectId);
     const config = CONTEXT_CONFIG[context];
-    // ── XRD: reuse the memo result when context + dataset match (condition 2);
+    // â”€â”€ XRD: reuse the memo result when context + dataset match (condition 2);
     // fall back to a fresh compute only for context-switch calls where the
     // memo hasn't had a chance to update yet.
     const xrdResult: ReturnType<typeof runXrdPhaseIdentificationAgent> | null =
@@ -2638,10 +2638,10 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
           })()
         : null;
 
-    // ── Raman/XPS/FTIR: reuse memo result or compute fresh (Patch 10.7E) ────
+    // â”€â”€ Raman/XPS/FTIR: reuse memo result or compute fresh (Patch 10.7E) â”€â”€â”€â”€
     // Helper: reuse from analysisCache if context + dataset match; otherwise
     // run the processing function using the same selectedDataset the memo uses
-    // (not option.dataset) to guarantee graph ↔ decision consistency.
+    // (not option.dataset) to guarantee graph â†” decision consistency.
     const ramanResult: ReturnType<typeof runRamanProcessing> | null =
       context === 'Raman'
         ? (() => {
@@ -2770,7 +2770,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
           }));
           appendLog({
             stamp: `[${formatStamp(index)}]`,
-            message: formatLiteratureSearchTrace(lit.trace).replace(/\n/g, ' · '),
+            message: formatLiteratureSearchTrace(lit.trace).replace(/\n/g, ' Â· '),
             type: 'tool',
           });
         }
@@ -2950,7 +2950,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         }));
         appendLog({
           stamp: `[${formatStamp(nextIndex)}]`,
-          message: formatLiteratureSearchTrace(litStep.trace).replace(/\n/g, ' · '),
+          message: formatLiteratureSearchTrace(litStep.trace).replace(/\n/g, ' Â· '),
           type: 'tool',
         });
       }
@@ -3657,7 +3657,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
               title="Reasoning Engine"
             >
               <option value="deterministic">Deterministic</option>
-              <option value="vertex-gemini">Gemini 1.5 Flash</option>
+              <option value="vertex-gemini">Gemini 2.5 Flash</option>
               <option value="gemma">Gemma</option>
             </select>
             <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -3934,4 +3934,5 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     </div>
   );
 }
+
 

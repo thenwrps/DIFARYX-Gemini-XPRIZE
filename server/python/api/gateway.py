@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import sys
 import time
 import uuid
@@ -173,13 +174,45 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to load XRD processing engine", error=str(e))
     
-    # Check reference registry
+    # Check reference registry and verify authoritative SQLite DB
     try:
-        from xrd_engine.services.reference_db_service import match_peaks
+        from xrd_engine.services.reference_db_service import _DB_PATH
+        import sqlite3
+
+        if not _DB_PATH.exists():
+            allow_mock = os.environ.get("XRD_ALLOW_MOCK_DB", "0").lower() in ("1", "true", "yes")
+            if not allow_mock:
+                raise RuntimeError(
+                    f"CRITICAL: Authoritative reference DB missing at {_DB_PATH}. "
+                    "Set XRD_ALLOW_MOCK_DB=1 if explicitly running dev mock."
+                )
+
+        conn = sqlite3.connect(str(_DB_PATH))
+        try:
+            phase_count = conn.execute("SELECT COUNT(*) FROM reference_phases").fetchone()[0]
+            cofe2o4_row = conn.execute(
+                "SELECT phase_label FROM reference_phases WHERE database_ref LIKE '%5910063%'"
+            ).fetchone()
+            cofe2o4_label = cofe2o4_row[0] if cofe2o4_row else None
+
+            if phase_count != 15:
+                raise ValueError(f"Expected 15 phases in authoritative DB, found {phase_count}")
+            if cofe2o4_label != "Cobalt Ferrite":
+                raise ValueError(f"Expected 'Cobalt Ferrite' for COD-5910063, found '{cofe2o4_label}'")
+
+            logger.info(
+                "Authoritative reference registry loaded and verified",
+                db_path=str(_DB_PATH.resolve()),
+                phase_count=phase_count,
+                cod_5910063_label=cofe2o4_label,
+            )
+        finally:
+            conn.close()
+
         _reference_registry_loaded = True
-        logger.info("Reference registry loaded successfully")
     except Exception as e:
-        logger.error("Failed to load reference registry", error=str(e))
+        _reference_registry_loaded = False
+        logger.error("Failed to load or verify reference registry", error=str(e))
     
     yield
     logger.info("DIFARYX XRD Gateway shutting down")
@@ -236,13 +269,18 @@ async def request_id_middleware(request: Request, call_next):
     return response
 
 
-# CORS — allow frontend dev server and production origins
+# CORS — allow frontend dev server and production origins (env-driven with sane defaults)
+allowed_origins_env = os.environ.get(
+    "XRD_ALLOWED_ORIGINS",
+    "https://difaryx.dfryxlab.xyz,http://localhost:5173,http://localhost:5174",
+)
+allowed_origins = [
+    origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5174",  # Frontend React dev server (Vite)
-        "*",  # Allow all origins (tighten in production)
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1101,6 +1139,15 @@ async def match_reference(request: MatchRequest):
     Accepts a list of fitted peak objects (with center, amplitude, fwhm)
     and returns phase identification results.
     """
+    if not _reference_registry_loaded:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Reference database is not loaded or failed startup verification. "
+                "Phase matching service is unready."
+            ),
+        )
+
     if not request.peaks:
         raise HTTPException(
             status_code=400,
