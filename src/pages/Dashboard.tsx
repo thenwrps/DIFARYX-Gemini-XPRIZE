@@ -1,70 +1,48 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { Card } from '../components/ui/Card';
 import {
   AlertTriangle,
   ArrowRight,
-  BookOpen,
-  Bot,
+  BrainCircuit,
   CheckCircle2,
-  Clock,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
   Download,
-  FileText,
   FlaskConical,
   Layers,
   Lightbulb,
+  LogIn,
   Plus,
-  Target,
+  Shield,
   Upload,
-  Workflow,
 } from 'lucide-react';
-import { Button } from '../components/ui/Button';
+import { Button, cn } from '../components/ui/Button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ActivityTimelineWidget } from '../components/dashboard/ActivityTimelineWidget';
 import { ExperimentModal } from '../components/workspace/ExperimentModal';
 import { CreateMenu } from '../components/dashboard/CreateMenu';
 import { ProjectNotebookWizard } from '../components/dashboard/ProjectNotebookWizard';
 import { QuickExperimentSetup } from '../components/dashboard/QuickExperimentSetup';
 import { useAuth } from '../contexts/AuthContext';
-import {
-  DEFAULT_PROJECT_ID,
-  DemoExperiment,
-  Technique,
-  DemoProject,
-  demoProjects,
-  getDefaultTechnique,
-  getTechniqueLabels,
-  getLocalExperiments,
-  getNotebookPath,
-  getProject,
-  makeTechniquePattern,
-  getLocalProjectNotebooks,
-  getNotebookTypeBadge,
-  getNotebookActionLabel,
-  isNotebookSetupComplete,
-  deleteProjectNotebook,
-  type ProjectNotebook,
-} from '../data/demoProjects';
-import {
-  getConditionBoundaryNotes,
-  getConditionLockStatusLabel,
-} from '../data/experimentConditionLock';
+import { DEFAULT_PROJECT_ID } from '../data/demoProjects';
 import { formatChemicalFormula } from '../utils';
-import { ScientificConfidenceSummary, getEvidenceStrengthQualifier } from '../components/ui/ScientificConfidenceSummary';
 import {
-  claimStatusColorClass,
+  getEvidenceStrengthQualifier,
+  getConfidenceLevel,
+} from '../components/ui/ScientificConfidenceSummary';
+import {
   claimStatusLabel,
   demoProjectRegistry,
-  jobTypeBadgeClass,
   jobTypeLabel,
   type RegistryProject,
   type TechniqueId,
 } from '../data/demoProjectRegistry';
 import { DemoProjectGraph } from '../components/graphs/DemoProjectGraph';
 import { getProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
-import { getRuntimeBadgeClass, getRuntimeBadgeLabel } from '../runtime/difaryxRuntimeMode';
-import { getAnalysisSessions, deleteAnalysisSession, type AnalysisSession, seedAnalysisSessions } from '../data/analysisSessions';
-import { deleteUploadedSignalRun, getUploadedRunById } from '../data/uploadedSignalRuns';
+import {
+  getAnalysisSessions,
+  type AnalysisSession,
+} from '../data/analysisSessions';
 import {
   getStoredWorkspaceMode,
   setWorkspaceMode,
@@ -76,10 +54,9 @@ import {
 } from '../utils/workspaceMode';
 import { runWhenIdle } from '../utils/idle';
 import { downloadSessionBundle, importSessionBundle } from '../utils/sessionBundle';
-import { EmptyStateCard } from '../components/ui/EmptyStateCard';
+import './Dashboard.css';
 
-
-/* ─── workflow chain (top of dashboard) ─── */
+/* ─── Workflow strip labels ─── */
 const WORKFLOW_STEPS = [
   'Research Objective',
   'Experimental Context',
@@ -90,66 +67,326 @@ const WORKFLOW_STEPS = [
   'Notebook Memory',
 ];
 
-/* ─── severity / urgency helpers ─── */
-function gapSeverityColor(severity: string) {
-  if (severity === 'critical') return 'text-red-600 bg-red-50 border-red-200';
-  if (severity === 'moderate') return 'text-amber-600 bg-amber-50 border-amber-200';
-  return 'text-text-muted bg-surface border-border';
+/* ─── Types ─── */
+type DashMode = 'professional' | 'guidance';
+type MainTab = 'projects' | 'analysis';
+
+/* ──────────────────────────────────────────────────────────────
+   ModeToggle
+   ────────────────────────────────────────────────────────────── */
+function ModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: DashMode;
+  onChange: (m: DashMode) => void;
+}) {
+  return (
+    <div
+      className="flex items-center rounded-lg p-0.5 db-toggle-wrap"
+      role="group"
+      aria-label="Dashboard view mode"
+    >
+      {(['professional', 'guidance'] as DashMode[]).map((m) => {
+        const active = mode === m;
+        const Icon = m === 'professional' ? BrainCircuit : Lightbulb;
+        const label = m === 'professional' ? 'Professional' : 'Guidance';
+        const baseClass = cn(
+          'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-all select-none',
+          active ? 'bg-white shadow-sm db-heading' : 'hover:bg-white/60 db-inactive',
+        );
+        const iconClass = active ? 'db-indigo' : 'db-inactive';
+        return active ? (
+          <button key={m} type="button" onClick={() => onChange(m)} className={baseClass} aria-pressed="true">
+            <Icon size={13} className={iconClass} />{label}
+          </button>
+        ) : (
+          <button key={m} type="button" onClick={() => onChange(m)} className={baseClass} aria-pressed="false">
+            <Icon size={13} className={iconClass} />{label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
-function urgencyColor(urgency: string) {
-  if (urgency === 'high') return 'text-red-600';
-  if (urgency === 'medium') return 'text-amber-600';
-  return 'text-text-muted';
+/* ──────────────────────────────────────────────────────────────
+   SkillWorkflowStrip (Guidance-only)
+   ────────────────────────────────────────────────────────────── */
+function SkillWorkflowStrip() {
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <div className="flex items-center gap-2 rounded-[10px] px-3 py-2 shrink-0 db-card">
+      <span className="text-[10px] font-bold uppercase tracking-[0.06em] shrink-0 mr-1 db-muted">
+        Skill Workflow
+      </span>
+
+      {!collapsed && (
+        <div className="flex items-center gap-1 flex-wrap min-w-0">
+          {WORKFLOW_STEPS.map((step, i) => (
+            <React.Fragment key={step}>
+              <span
+                className="text-[11px] font-medium px-2 py-0.5 rounded-[5px] whitespace-nowrap db-workflow-step"
+              >
+                {step}
+              </span>
+              {i < WORKFLOW_STEPS.length - 1 && (
+                <ArrowRight size={10} className="db-muted" />
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        className="ml-auto shrink-0 rounded p-0.5 hover:bg-slate-100 transition-colors db-muted"
+        aria-label={collapsed ? 'Expand workflow strip' : 'Collapse workflow strip'}
+      >
+        {collapsed ? <ChevronRight size={14} /> : <ChevronUp size={14} />}
+      </button>
+    </div>
+  );
 }
 
-function claimStatusColor(status: string) {
-  if (status === 'strongly_supported') return 'text-emerald-600';
-  if (status === 'supported') return 'text-cyan';
-  if (status === 'partial') return 'text-amber-500';
-  return 'text-text-muted';
+/* ──────────────────────────────────────────────────────────────
+   DonutRing
+   ────────────────────────────────────────────────────────────── */
+function DonutRing({ percent, color, size = 36 }: { percent: number; color: string; size?: number }) {
+  const r = (size - 6) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (Math.max(0, Math.min(100, percent)) / 100) * circ;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#f0f1f3" strokeWidth={4} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth={4}
+        strokeDasharray={circ}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+      <text
+        x={size / 2}
+        y={size / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize="8.5"
+        fontWeight="700"
+        fontFamily="Inter, system-ui, sans-serif"
+        fill={color}
+      >
+        {percent}%
+      </text>
+    </svg>
+  );
 }
 
-function readinessBarColor(percent: number) {
-  if (percent >= 80) return 'bg-emerald-500';
-  if (percent >= 50) return 'bg-amber-500';
-  return 'bg-red-400';
+/* ──────────────────────────────────────────────────────────────
+   CoverageDots
+   ────────────────────────────────────────────────────────────── */
+function CoverageDots({ available, total }: { available: number; total: number }) {
+  const count = Math.max(total, 1);
+  const dots = Array.from({ length: count }, (_, i) => i < available);
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-[9.5px] font-semibold uppercase tracking-[0.06em] mr-0.5 tabular-nums db-muted">
+        {available}/{total}
+      </span>
+      {dots.map((filled, i) => (
+        <span
+          key={i}
+          className={cn(
+            'inline-block w-2 h-2 rounded-full border',
+            filled ? 'db-indigo-bg border-[#4f46e5]' : 'border-[#98a2b3] bg-transparent',
+          )}
+        />
+      ))}
+    </div>
+  );
 }
 
-function readinessLabelColor(percent: number) {
-  if (percent >= 80) return 'text-emerald-600';
-  if (percent >= 50) return 'text-amber-600';
-  return 'text-red-500';
-}
+/* ──────────────────────────────────────────────────────────────
+   ReadinessRow
+   ────────────────────────────────────────────────────────────── */
+function ReadinessRow({
+  project,
+  evidenceSnapshot,
+}: {
+  project: RegistryProject;
+  evidenceSnapshot: ReturnType<typeof getProjectEvidenceSnapshot>;
+}) {
+  const level = getConfidenceLevel(project.claimStatus);
+  const qualifier = getEvidenceStrengthQualifier(project.claimStatus);
+  const percent = project.reportReadiness;
+  const gaps = evidenceSnapshot.validationGaps;
+  const available = evidenceSnapshot.availableTechniques.length;
+  const total = available + evidenceSnapshot.pendingTechniques.length;
 
-// Project type labels come from `getProjectJobTypeLabel` / `getProjectJobTypeBadgeColor`
-// in `utils/projectEvidence.ts` so the Dashboard and Agent stay aligned.
+  const criticalCount = gaps.filter((g) => g.severity?.toLowerCase() === 'critical').length;
+  const highCount = gaps.filter((g) => {
+    const s = g.severity?.toLowerCase();
+    return s === 'high' || s === 'major' || s === 'moderate';
+  }).length;
+  const medCount = gaps.filter((g) => {
+    const s = g.severity?.toLowerCase();
+    return s === 'medium' || s === 'minor';
+  }).length;
+  const lowCount = gaps.filter((g) => g.severity?.toLowerCase() === 'low').length;
+  const conflictsCount = criticalCount;
 
-/* ─── evidence coverage bar ─── */
-function EvidenceCoverageBar({ project }: { project: DemoProject }) {
-  const total = project.techniqueMetadata.length;
-  const ready = project.techniqueMetadata.filter((t) => t.dataAvailable).length;
-  const percent = total > 0 ? Math.round((ready / total) * 100) : 0;
+  const ringColor =
+    level === 'HIGH' ? '#12b76a'
+    : level === 'MEDIUM-HIGH' ? '#4f46e5'
+    : level === 'MEDIUM' ? '#f79009'
+    : '#d32f2f';
+
+  const levelChipClass =
+    level === 'HIGH' ? 'db-emerald-chip'
+    : level === 'MEDIUM-HIGH' ? 'bg-[#f0f5ff] text-[#4f46e5] border-[#dbeafe]'
+    : level === 'MEDIUM' ? 'db-amber-chip'
+    : 'bg-[#fff1f2] text-[#d32f2f] border-[#fecdd3]';
+
+  const breakdownParts: string[] = [];
+  if (highCount > 0) breakdownParts.push(`${highCount} high`);
+  if (medCount > 0) breakdownParts.push(`${medCount} med`);
+  if (lowCount > 0) breakdownParts.push(`${lowCount} low`);
+  const breakdown = breakdownParts.join(', ');
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-[10px]">
-        <span className="text-text-muted font-medium">Evidence Coverage</span>
-        <span className="text-text-main font-semibold">{ready}/{total} sources</span>
+    <div className="mt-auto pt-2.5 flex items-center gap-2 flex-wrap db-hairline-t">
+      <DonutRing percent={percent} color={ringColor} size={36} />
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span
+            className={cn(
+              'text-[10px] font-bold uppercase tracking-[0.06em] px-1.5 py-0.5 rounded border',
+              levelChipClass,
+            )}
+          >
+            {level === 'MEDIUM-HIGH' ? 'MED-HIGH' : level}
+          </span>
+          <span className="text-[11px] db-body">{qualifier}</span>
+        </div>
+        <div className="text-[10px] mt-0.5 tabular-nums db-muted">
+          <span className={conflictsCount > 0 ? 'db-red' : 'db-muted'}>
+            Conflicts {conflictsCount}
+          </span>
+          {' | '}
+          <span>Gaps {gaps.length}</span>
+          {breakdown && <span className="ml-1 db-muted">· {breakdown}</span>}
+        </div>
       </div>
-      <div className="h-1.5 rounded-full bg-surface overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${percent >= 80 ? 'bg-emerald-500' : percent >= 50 ? 'bg-amber-500' : 'bg-red-400'}`}
-          style={{ width: `${percent}%` }}
-        />
+
+      <CoverageDots available={available} total={total} />
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────
+   AnalysisHighlights
+   ────────────────────────────────────────────────────────────── */
+function AnalysisHighlights({
+  project,
+  evidenceSnapshot,
+}: {
+  project: RegistryProject;
+  evidenceSnapshot: ReturnType<typeof getProjectEvidenceSnapshot>;
+}) {
+  const phaseText = evidenceSnapshot.supportedAssignment
+    ? formatChemicalFormula(evidenceSnapshot.supportedAssignment)
+    : formatChemicalFormula(project.evidenceSummary.slice(0, 80));
+  const qualifier = getEvidenceStrengthQualifier(project.claimStatus);
+
+  const boundaryText =
+    evidenceSnapshot.validationGaps[0]?.description ??
+    (evidenceSnapshot.claimBoundary as any).requiresValidation?.[0] ??
+    (evidenceSnapshot.claimBoundary as any).notSupportedYet?.[0] ??
+    'Claim boundary preserved.';
+
+  const hasConflict = evidenceSnapshot.validationGaps.some(
+    (g) => g.severity?.toLowerCase() === 'critical',
+  );
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Emerald — Phase */}
+      <div className="flex items-start gap-2">
+        <span className="shrink-0 flex items-center justify-center rounded-md w-[22px] h-[22px] db-emerald-icon-bg">
+          <Shield size={12} />
+        </span>
+        <div className="min-w-0">
+          <div className="text-[9.5px] font-bold uppercase tracking-[0.06em] mb-0.5 db-emerald-text">
+            Phase Indication
+          </div>
+          <div className="text-[11px] leading-snug db-body">
+            {phaseText}
+            {qualifier && <span className="db-muted"> — {qualifier}</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Amber — Validation boundary */}
+      <div className="flex items-start gap-2">
+        <span className="shrink-0 flex items-center justify-center rounded-md w-[22px] h-[22px] db-amber-icon-bg">
+          <AlertTriangle size={12} />
+        </span>
+        <div className="min-w-0">
+          <div className="text-[9.5px] font-bold uppercase tracking-[0.06em] mb-0.5 db-amber-text">
+            {hasConflict ? 'Conflict · Needs Resolution' : 'Validation Boundary'}
+          </div>
+          <div
+            className="text-[11px] leading-snug line-clamp-2 db-body"
+            title={boundaryText}
+          >
+            {boundaryText}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ─── project card — graph-first layout ─── */
-function ProjectCard({ project }: { project: RegistryProject }) {
-  const navigate = useNavigate();
+/* ──────────────────────────────────────────────────────────────
+   MoreMenu (card footer popover)
+   ────────────────────────────────────────────────────────────── */
+function MoreMenu({ project, open, onClose }: { project: RegistryProject; open: boolean; onClose: () => void }) {
+  if (!open) return null;
+  const items = [
+    { label: 'Review evidence', to: `/workspace/multi?project=${project.id}&mode=demo` },
+    { label: 'Open notebook', to: `/notebook?project=${project.id}&mode=demo` },
+    { label: 'Version history', to: `/history?project=${project.id}&mode=demo` },
+    { label: 'Export report', to: `/reports?project=${project.id}&mode=demo` },
+  ];
+  return (
+    <div className="absolute right-0 bottom-full mb-1 z-20 w-44 rounded-lg border bg-white py-1 shadow-lg db-more-menu">
+      {items.map((item) => (
+        <Link
+          key={item.label}
+          to={item.to}
+          onClick={onClose}
+          className="flex h-8 items-center px-3 text-[12px] font-medium hover:bg-slate-50 transition-colors db-body"
+        >
+          {item.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────
+   ProjectCardV5
+   ────────────────────────────────────────────────────────────── */
+function ProjectCardV5({ project }: { project: RegistryProject }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+
   const initialEvidenceSnapshot = useMemo(
     () => getProjectEvidenceSnapshot(project.id, { deferStoredContext: true }),
     [project.id],
@@ -162,651 +399,332 @@ function ProjectCard({ project }: { project: RegistryProject }) {
       setEvidenceSnapshot(getProjectEvidenceSnapshot(project.id));
     });
   }, [initialEvidenceSnapshot, project.id]);
-  const evidenceSourceCount = evidenceSnapshot.availableTechniques.length + evidenceSnapshot.pendingTechniques.length;
-  const evidenceCoverageLabel = `${evidenceSnapshot.availableTechniques.length}/${evidenceSourceCount || 0} sources`;
-  const firstValidationGap = evidenceSnapshot.validationGaps[0];
-  const claimBoundaryLabel =
-    evidenceSnapshot.claimBoundary.requiresValidation[0] ??
-    evidenceSnapshot.claimBoundary.notSupportedYet[0] ??
-    'Claim boundary preserved.';
-  const evidenceSummary = evidenceSnapshot.evidenceEntries[0]?.support ?? project.evidenceSummary;
-  const runtimeContext = {
-    sourceMode: evidenceSnapshot.sourceMode ?? 'demo_preloaded',
-    runtimeMode: evidenceSnapshot.runtimeMode ?? 'demo',
-    permissionMode: evidenceSnapshot.permissionMode ?? 'read_only',
-    sourceLabel: evidenceSnapshot.sourceLabel ?? 'Demo evidence',
-    approvalStatus: evidenceSnapshot.approvalStatus ?? 'not_required',
-  } as const;
 
-  // Canonical registry project — single source of truth shared across app
-  const projectJobLabel = `${jobTypeLabel(project.jobType)} PROJECT`;
-  const exportReady = project.reportReadiness >= 80;
-  const readinessLabel = evidenceSnapshot.pendingTechniques.length > 0
-    ? 'Validation-limited'
-    : project.reportReadiness >= 80
-      ? 'Reference-supported'
-      : project.reportReadiness >= 50
-        ? 'Validation-limited'
-        : 'Complementary required';
-  const readinessColor = project.reportReadiness >= 80
-    ? 'text-primary'
-    : project.reportReadiness >= 50
-    ? 'text-cyan'
-    : 'text-amber-600';
+  const techniqueCount =
+    evidenceSnapshot.availableTechniques.length + evidenceSnapshot.pendingTechniques.length;
+
+  const availableTechs = useMemo(() => {
+    return Object.keys(project.workspaceGraphs || {}) as TechniqueId[];
+  }, [project.workspaceGraphs]);
+
+  const [selectedTech, setSelectedTech] = useState<TechniqueId>(() => {
+    return (project.graphPreview?.type as TechniqueId) || availableTechs[0] || 'xrd';
+  });
+
+  const currentSource = useMemo(() => {
+    return project.workspaceGraphs?.[selectedTech] || project.graphPreview;
+  }, [project.workspaceGraphs, selectedTech, project.graphPreview]);
+
+  // Type tag styles
+  const typeTagClass =
+    project.jobType === 'research'
+      ? 'db-tag-research'
+      : project.jobType === 'rd'
+        ? 'db-tag-rd'
+        : 'bg-[#f0fdf4] text-[#166534] border-[#bbf7d0]';
+
+  // Status chip
+  const isReportReady =
+    project.claimStatus === 'supported_assignment' || project.claimStatus === 'report_ready';
+  const statusDotClass  = isReportReady ? 'db-emerald-icon-bg' : 'bg-[#f79009]';
+  const statusText      = isReportReady ? 'Report ready' : claimStatusLabel(project.claimStatus).slice(0, 22);
+  const statusChipClass = isReportReady ? 'db-emerald-chip' : 'db-amber-chip';
 
   return (
-    <Card
-      className="cursor-pointer hover:border-primary/50 transition-colors group flex flex-col h-full"
-      onClick={() => navigate(`/workspace/analysis?project=${project.id}&mode=demo`)}
-    >
-      {/* header */}
-      <div className="p-4 border-b border-border bg-surface-hover/30 flex justify-between items-start">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${jobTypeBadgeClass(project.jobType)}`}>
-              {projectJobLabel}
-            </span>
-          </div>
-          <h3 className="font-bold text-sm text-text-main group-hover:text-primary transition-colors">
-            {formatChemicalFormula(project.title)}
-          </h3>
-          <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-1">
-            <Clock size={11} /> {project.createdLabel}
-          </div>
+    <div className="flex flex-col rounded-[12px] overflow-visible transition-shadow hover:shadow-md db-card">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 pt-3.5 pb-2.5">
+        <span
+          className={cn(
+            'text-[9.5px] font-bold uppercase tracking-[0.06em] px-2 py-0.5 rounded-[5px] border',
+            typeTagClass,
+          )}
+        >
+          {jobTypeLabel(project.jobType)} Project
+        </span>
+        <span
+          className={cn(
+            'flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border',
+            statusChipClass,
+          )}
+        >
+          <span className={cn('inline-block w-1.5 h-1.5 rounded-full', statusDotClass)} />
+          {statusText}
+        </span>
+      </div>
+
+      {/* Title + subtitle */}
+      <div className="px-4 pb-2">
+        <h3 className="text-[15px] font-bold leading-snug db-heading">
+          {formatChemicalFormula(project.title)}
+        </h3>
+        <p className="text-[11px] mt-0.5 tabular-nums db-muted">
+          {techniqueCount} technique{techniqueCount !== 1 ? 's' : ''} · updated {project.createdLabel}
+        </p>
+      </div>
+
+      {/* Spectrum hero — inner panel clips the graph, card stays overflow-visible for the popover */}
+      <div className="mx-3 mb-2.5 rounded-[8px] overflow-hidden db-inner-panel">
+        <div className="flex items-center justify-between px-3 py-1.5 db-inner-border-b">
+          <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] db-muted">
+            Spectrum Preview
+          </span>
+          {availableTechs.length > 0 && (
+            <select
+              value={selectedTech}
+              onChange={(e) => setSelectedTech(e.target.value as TechniqueId)}
+              title="Select analysis technique"
+              className="text-[10.5px] font-semibold bg-white border border-slate-200 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-indigo-400 db-body"
+            >
+              {availableTechs.map((tech) => (
+                <option key={tech} value={tech}>
+                  {tech === 'xrd' ? 'XRD Pattern' : tech === 'xps' ? 'XPS Spectra' : tech === 'ftir' ? 'FTIR Spectra' : tech === 'raman' ? 'Raman Spectra' : tech.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
-        <div className="text-right">
-          <div className={`text-xs font-bold ${claimStatusColorClass(project.claimStatus)}`}>{claimStatusLabel(project.claimStatus)}</div>
-          <div className="text-[9px] text-text-muted uppercase tracking-wider">Status</div>
+        <div className="h-[120px]">
+          <DemoProjectGraph
+            source={currentSource}
+            compact
+            height={110}
+            hideAxes={true}
+            hideGrid={true}
+          />
         </div>
       </div>
 
-      {/* graph — shared registry source so Dashboard/Workspace/Agent/History match */}
-      <div className="h-[180px] px-2 py-2 border-b border-border/50">
-        <DemoProjectGraph source={project.graphPreview} compact height="100%" />
+      {/* Analysis highlights */}
+      <div className="px-4 pb-2.5">
+        <AnalysisHighlights project={project} evidenceSnapshot={evidenceSnapshot} />
       </div>
 
-      {/* body */}
-      <div className="flex-1 p-4 flex flex-col gap-2">
-        <p className="text-[11px] text-text-muted leading-relaxed line-clamp-2">{formatChemicalFormula(evidenceSummary)}</p>
-
-        {/* technique pills + readiness */}
-        <div className="flex items-center justify-between">
-          <div className="flex flex-wrap gap-1">
-            {evidenceSnapshot.availableTechniques.map((tech) => (
-              <span key={tech} className="rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary">
-                {tech} Skill
-              </span>
-            ))}
-            {evidenceSnapshot.pendingTechniques.map((tech) => (
-              <span key={`pending-${tech}`} className="rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700">
-                {tech} pending
-              </span>
-            ))}
-          </div>
-          <div className="flex items-center gap-1">
-            <FileText size={11} className={readinessColor} />
-            <span className={`text-[10px] font-semibold ${readinessColor}`}>{readinessLabel}</span>
-          </div>
-        </div>
-
-        {/* mode / status / validation chips */}
-        <div className="flex flex-wrap gap-1">
-          <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[9px] font-medium text-text-muted">
-            {jobTypeLabel(project.jobType)} Mode
-          </span>
-          <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[9px] font-medium text-text-muted">
-            {project.statusLabel}
-          </span>
-          <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[9px] font-medium text-text-muted">
-            {evidenceSnapshot.validationGaps.length} validation gap{evidenceSnapshot.validationGaps.length === 1 ? '' : 's'}
-          </span>
-          <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[9px] font-medium text-text-muted">
-            {evidenceCoverageLabel}
-          </span>
-          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-medium ${getRuntimeBadgeClass(runtimeContext)}`}>
-            {getRuntimeBadgeLabel(runtimeContext)}
-          </span>
-        </div>
-
-        <ScientificConfidenceSummary
-          compact
-          claimStatus={project.claimStatus}
-          readinessPercent={project.reportReadiness}
-          validationGaps={evidenceSnapshot.validationGaps}
-          availableTechniques={evidenceSnapshot.availableTechniques}
-          pendingTechniques={evidenceSnapshot.pendingTechniques}
-          className="mt-1"
-        />
-
-        <div className="text-[10px] font-medium text-text-dim tracking-wide mt-1">
-          <span className="text-text-muted">Phase Indication:</span> {formatChemicalFormula(evidenceSnapshot.supportedAssignment)} ({getEvidenceStrengthQualifier(project.claimStatus)})
-        </div>
-        <div className="text-[10px] font-medium text-text-dim tracking-wide line-clamp-1" title={firstValidationGap?.description ?? claimBoundaryLabel}>
-          <span className="text-text-muted">Boundary:</span> {firstValidationGap?.description ?? claimBoundaryLabel}
-        </div>
-
-        {/* pipeline */}
-        <div className="text-[10px] font-medium text-text-dim tracking-wide">
-          Science Skill Execution <span className="text-primary/60">→</span> Validation Check <span className="text-primary/60">→</span> Notebook Memory
-        </div>
+      {/* Readiness row */}
+      <div className="px-4 pb-3">
+        <ReadinessRow project={project} evidenceSnapshot={evidenceSnapshot} />
       </div>
 
-      {/* footer actions */}
-      <div className="mt-auto p-3 pt-0 border-t border-border">
-        <div className="grid grid-cols-5 gap-1.5 pt-3">
+      {/* Footer */}
+      <div className="flex items-center gap-2 px-3 py-2.5 db-hairline-t">
+        {/* Split Analyze */}
+        <div className="flex rounded-[8px] overflow-visible flex-1">
           <Link
             to={`/workspace/analysis?project=${project.id}&mode=demo`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
+            className="flex-1 inline-flex items-center justify-center h-8 px-3 text-[12px] font-semibold text-white rounded-l-[8px] transition-colors hover:opacity-90 db-indigo-bg"
           >
             Analyze
           </Link>
-          <Link
-            to={`/workspace/multi?project=${project.id}&mode=demo`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
-            title="Review cross-technique comparison"
-          >
-            Review
-          </Link>
-          <Link
-            to={`/notebook?project=${project.id}&mode=demo`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
-          >
-            Notebook
-          </Link>
-          <Link
-            to={`/history?project=${project.id}&mode=demo`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-            aria-label={`View history for project ${project.title}`}
-            title={`View history for project ${project.title}`}
-          >
-            History
-          </Link>
-          {exportReady ? (
+          <div className="relative">
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/reports?project=${project.id}&mode=demo`);
-              }}
-              className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-              aria-label={`Export report for project ${project.title}`}
-              title={`Export report for project ${project.title}`}
+              onClick={(e) => { e.stopPropagation(); setMoreOpen((o) => !o); }}
+              className="h-8 px-2 inline-flex items-center border-l rounded-r-[8px] text-white transition-colors hover:opacity-90 db-indigo-dk-bg"
+              aria-label="More analyze actions"
             >
-              Export
+              <ChevronDown size={13} />
             </button>
-          ) : (
-            <button
-              type="button"
-              disabled
-              title="Report readiness too low for export."
-              className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted whitespace-nowrap opacity-50 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-              aria-label="Report readiness too low for export"
-            >
-              Export
-            </button>
-          )}
+            <MoreMenu project={project} open={moreOpen} onClose={() => setMoreOpen(false)} />
+          </div>
+        </div>
+
+        {/* Standalone More */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setMoreOpen((o) => !o); }}
+            className="inline-flex h-8 items-center gap-1 px-3 rounded-[8px] border text-[12px] font-medium transition-colors hover:bg-slate-50 db-card-border db-body"
+          >
+            More
+            <ChevronDown size={13} />
+          </button>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
-function makeGraphPoints(technique: string) {
-  const settings: Record<string, { min: number; max: number; peaks: Array<[number, number, number]> }> = {
-    xrd: {
-      min: 10,
-      max: 80,
-      peaks: [
-        [20.9, 26, 1.2],
-        [35.5, 92, 0.35],
-        [43.2, 52, 0.4],
-        [57.1, 38, 0.5],
-      ],
-    },
-    xps: {
-      min: 0,
-      max: 1200,
-      peaks: [
-        [284.8, 40, 16],
-        [531.4, 72, 20],
-        [710.8, 84, 18],
-        [933.4, 78, 22],
-      ],
-    },
-    ftir: {
-      min: 400,
-      max: 4000,
-      peaks: [
-        [620, 58, 45],
-        [1084, 80, 85],
-        [1625, 38, 75],
-        [3420, 42, 170],
-      ],
-    },
-    raman: {
-      min: 100,
-      max: 3200,
-      peaks: [
-        [382, 22, 28],
-        [585, 64, 28],
-        [690, 94, 34],
-        [1348, 42, 62],
-      ],
-    },
-  };
-  const config = settings[technique.toLowerCase()] || settings['xrd'];
-  const count = 150;
-  return Array.from({ length: count }, (_, index) => {
-    const x = config.min + ((config.max - config.min) * index) / (count - 1);
-    const base = technique.toLowerCase() === 'ftir' ? 92 : 8 + 3 * Math.sin(index / 12);
-    const y = config.peaks.reduce((sum, [center, height, width]) => {
-      const scaled = (x - center) / width;
-      const peak = height * Math.exp(-0.5 * scaled * scaled);
-      return technique.toLowerCase() === 'ftir' ? sum - peak * 0.45 : sum + peak;
-    }, base);
-    return { x: Number(x.toFixed(2)), y: Number(y.toFixed(3)) };
-  });
-}
-
-interface EvidenceCardProps {
-  session: AnalysisSession;
-  onDelete?: (session: AnalysisSession) => void;
-}
-
-function EvidenceCard({ session, onDelete }: EvidenceCardProps) {
-  const navigate = useNavigate();
-
-  const getTechniqueColor = (tech: string) => {
-    switch (tech.toLowerCase()) {
-      case 'xrd':
-        return {
-          bg: 'bg-blue-50 border-blue-200 text-blue-700',
-          accent: 'blue',
-          pill: 'border-blue-300 bg-blue-50/50 text-blue-700',
-          stroke: '#3b82f6'
-        };
-      case 'xps':
-        return {
-          bg: 'bg-indigo-50 border-indigo-200 text-indigo-700',
-          accent: 'indigo',
-          pill: 'border-indigo-300 bg-indigo-50/50 text-indigo-700',
-          stroke: '#6366f1'
-        };
-      case 'ftir':
-        return {
-          bg: 'bg-rose-50 border-rose-200 text-rose-700',
-          accent: 'rose',
-          pill: 'border-rose-300 bg-rose-50/50 text-rose-700',
-          stroke: '#f43f5e'
-        };
-      case 'raman':
-        return {
-          bg: 'bg-emerald-50 border-emerald-200 text-emerald-700',
-          accent: 'emerald',
-          pill: 'border-emerald-300 bg-emerald-50/50 text-emerald-700',
-          stroke: '#10b981'
-        };
-      default:
-        return {
-          bg: 'bg-slate-50 border-slate-200 text-slate-700',
-          accent: 'slate',
-          pill: 'border-slate-300 bg-slate-50/50 text-slate-700',
-          stroke: '#94a3b8'
-        };
-    }
-  };
-
-  const colors = getTechniqueColor(session.technique);
-  
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-      case 'saved':
-        return 'text-primary bg-primary/5 border-primary/20';
-      case 'draft':
-        return 'text-text-muted bg-surface border-border';
-      case 'needs-review':
-        return 'text-amber-600 bg-amber-50 border-amber-200';
-      default:
-        return 'text-text-muted bg-surface border-border';
-    }
-  };
-
-  const query = new URLSearchParams();
-  if (session.source === 'user_uploaded') {
-    query.set('source', 'user_uploaded');
+/* ──────────────────────────────────────────────────────────────
+   Technique badge helper for EvidencePanel
+   ────────────────────────────────────────────────────────────── */
+function getTechBadgeClass(technique: string): string {
+  switch (technique.toLowerCase()) {
+    case 'xrd':
+      return 'bg-[#eef2ff] text-[#4338ca] border-[#c7d2fe]';
+    case 'xps':
+      return 'db-amber-chip';
+    case 'ftir':
+      return 'bg-[#ecfeff] text-[#0e7490] border-[#a5f3fc]';
+    case 'raman':
+      return 'bg-[#f0fdf4] text-[#166534] border-[#bbf7d0]';
+    default:
+      return 'bg-[#f8fafc] db-body border-[#e2e8f0]';
   }
-  query.set('sessionId', session.analysisId);
-  if (session.uploadedRunId) query.set('upload', session.uploadedRunId);
-  if (session.projectId) query.set('project', session.projectId);
-  
-  const pathPrefix = session.source === 'user_uploaded' ? 'quick' : 'demo';
-  const workspacePath = `/workspace/${session.technique}?mode=${pathPrefix}&${query.toString()}`;
-
-  // Fetch real uploaded run if it's uploaded
-  const uploadedRun = session.uploadedRunId ? getUploadedRunById(session.uploadedRunId) : null;
-  const points = (uploadedRun && uploadedRun.points && uploadedRun.points.length > 0)
-    ? uploadedRun.points
-    : makeGraphPoints(session.technique);
-
-  return (
-    <Card
-      className="cursor-pointer hover:border-primary/50 transition-all duration-200 group flex flex-col h-full bg-white shadow-sm hover:shadow-md"
-      onClick={() => navigate(workspacePath)}
-    >
-      <div className="p-4 border-b border-border bg-surface-hover/20 flex justify-between items-start">
-        <div className="min-w-0 flex-1">
-          <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${colors.pill}`}>
-            {session.technique.toUpperCase()} Evidence
-          </span>
-          <h3 className="font-bold text-sm text-text-main group-hover:text-primary transition-colors mt-2 truncate">
-            {session.title}
-          </h3>
-          <div className="text-[10px] text-text-muted font-mono mt-1 truncate">
-            {session.fileName} {session.fileSizeLabel ? `(${session.fileSizeLabel})` : ''}
-          </div>
-        </div>
-        <div className="text-right ml-2 shrink-0">
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${getStatusBadge(session.status)}`}>
-            {session.status}
-          </span>
-          <div className="text-[9px] text-text-muted mt-1">{session.updatedLabel}</div>
-        </div>
-      </div>
-
-      <div className="h-[180px] px-2 py-2 border-b border-border/50 bg-white">
-        <DemoProjectGraph
-          source={{
-            kind: 'graph',
-            type: session.technique.toLowerCase() as TechniqueId,
-            xLabel: session.graphData.axisLabel,
-            yLabel: session.graphData.yLabel,
-            data: points,
-            peaks: session.graphData.markers.map((m) => ({
-              position: m.position,
-              intensity: m.intensity,
-              label: m.label,
-            })),
-          }}
-          compact
-          height="100%"
-        />
-      </div>
-
-      <div className="flex-1 p-4 flex flex-col justify-between gap-3 bg-surface/10">
-        <div className="space-y-1">
-          <p className="text-[11px] text-text-main font-semibold leading-relaxed line-clamp-1">
-            {session.processingState}
-          </p>
-          <ul className="space-y-1">
-            {session.interpretation.quick.slice(0, 2).map((bullet, idx) => (
-              <li key={idx} className="text-[10px] text-text-muted flex gap-1 items-start leading-tight">
-                <span className="text-primary">•</span>
-                <span className="line-clamp-2">{bullet}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="flex flex-wrap gap-1 mt-auto pt-2 border-t border-border/30">
-          <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[9px] font-medium text-text-muted">
-            {session.source ? session.source.replace('_', ' ') : 'quick analysis'}
-          </span>
-          {session.projectName && (
-            <span className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[9px] font-medium text-primary truncate max-w-[150px]" title={session.projectName}>
-              Linked: {session.projectName}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="p-3 border-t border-border bg-surface-hover/10">
-        <div className="grid grid-cols-4 gap-1.5">
-          <Link
-            to={workspacePath}
-            onClick={(e) => e.stopPropagation()}
-            className="col-span-2 inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
-          >
-            Open Workspace
-          </Link>
-          <Link
-            to={`/demo/agent?${query.toString()}`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-            aria-label={`Open Agent workspace for ${session.fileName}`}
-            title={`Open Agent workspace for ${session.fileName}`}
-          >
-            Agent
-          </Link>
-          {session.source === 'user_uploaded' && onDelete ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(session);
-              }}
-              className="inline-flex h-8 items-center justify-center rounded-md border border-red-200 px-2 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-              aria-label={`Delete evidence ${session.fileName}`}
-              title={`Delete evidence ${session.fileName}`}
-            >
-              Delete
-            </button>
-          ) : (
-            <Link
-              to={`/notebook?${query.toString()}`}
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-              aria-label={`Open Notebook for ${session.fileName}`}
-              title={`Open Notebook for ${session.fileName}`}
-            >
-              Notebook
-            </Link>
-          )}
-        </div>
-      </div>
-    </Card>
-  );
 }
 
-function ExperimentCard({ experiment }: { experiment: DemoExperiment }) {
-  const navigate = useNavigate();
-  const project = getProject(experiment.projectId);
-  if (!project) return null;
-  const workspaceTechnique = project.techniques.includes(experiment.technique)
-    ? experiment.technique
-    : getDefaultTechnique(project);
-  const conditionStatus = getConditionLockStatusLabel(experiment.conditionLock);
-
-  return (
-    <Card
-      className="cursor-pointer hover:border-primary/50 transition-colors group flex flex-col h-full bg-white"
-      onClick={() => navigate(`/workspace/${workspaceTechnique.toLowerCase()}?project=${project.id}&mode=demo`)}
-    >
-      <div className="p-4 border-b border-border bg-primary/5 flex justify-between items-start">
-        <div>
-          <span className="text-[9px] font-bold uppercase tracking-wider text-text-dim px-1.5 py-0.5 rounded border border-border bg-background">
-            QUICK EXPERIMENT
-          </span>
-          <h3 className="font-semibold text-sm text-text-main group-hover:text-primary transition-colors mt-1">
-            {experiment.title}
-          </h3>
-          <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-1">
-            <Clock size={11} /> {experiment.date}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-sm font-bold text-cyan">Demo</div>
-          <div className="text-[9px] text-text-muted uppercase tracking-wider">local</div>
-        </div>
-      </div>
-      <div className="flex-1 p-4 flex flex-col gap-2 bg-surface/10">
-        <p className="text-[11px] text-text-main leading-relaxed line-clamp-2">{experiment.notes}</p>
-        <div className="flex items-center gap-1">
-          <span className="px-2 py-0.5 bg-surface border border-border rounded text-[10px] font-medium text-text-dim uppercase tracking-wider">
-            {experiment.technique}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1 text-[9px]">
-          {['Research Mode', conditionStatus, 'Validation required'].map((badge) => (
-            <span key={badge} className="rounded-full border border-border bg-background px-2 py-0.5 font-medium text-text-muted">{badge}</span>
-          ))}
-        </div>
-      </div>
-      <div className="mt-auto p-4 pt-3 border-t border-border">
-        <div className="grid grid-cols-3 gap-1.5">
-          <Link
-            to={`/workspace/${workspaceTechnique.toLowerCase()}?project=${project.id}&mode=demo`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap"
-          >
-            Analyze
-          </Link>
-          <Link
-            to={`${getNotebookPath(project)}&mode=demo`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
-          >
-            Notebook
-          </Link>
-          <Link
-            to={`/project/${project.id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-main transition-colors whitespace-nowrap"
-          >
-            Details
-          </Link>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function NotebookCard({
-  notebook,
-  onDelete,
+/* ──────────────────────────────────────────────────────────────
+   EvidencePanel
+   ────────────────────────────────────────────────────────────── */
+function EvidencePanel({
+  sessions,
+  mode,
+  showDemoProjects,
+  fullWidth = false,
 }: {
-  notebook: ProjectNotebook;
-  onDelete: (id: string) => void;
+  sessions: AnalysisSession[];
+  mode: DashMode;
+  showDemoProjects: boolean;
+  fullWidth?: boolean;
 }) {
-  const navigate = useNavigate();
-  const typeBadge = getNotebookTypeBadge(notebook.mode);
-  const modeLabel = notebook.mode === 'research' ? 'Research' : notebook.mode === 'rd' ? 'R&D' : 'Analytical';
-  const setupComplete = isNotebookSetupComplete(notebook);
-  const statusLabel = notebook.workflowStatus === 'evidence_ready' ? 'Evidence ready' : notebook.workflowStatus === 'setup_ready' ? 'Setup ready' : (setupComplete ? 'Ready' : 'Setup required');
-  const statusColor = notebook.workflowStatus === 'evidence_ready' ? 'text-primary' : notebook.workflowStatus === 'setup_ready' ? 'text-amber-600' : (setupComplete ? 'text-primary' : 'text-amber-600');
+  const activeSessions = useMemo(() => {
+    return showDemoProjects
+      ? sessions.filter((s) => s.source !== 'user_uploaded')
+      : sessions.filter((s) => s.source === 'user_uploaded');
+  }, [sessions, showDemoProjects]);
 
   return (
-    <Card
-      className="cursor-pointer hover:border-primary/50 transition-colors group flex flex-col h-full bg-white"
-      onClick={() => navigate(`/notebook?project=${notebook.id}&mode=demo`)}
+    <div
+      className={cn(
+        'flex flex-col rounded-[12px] overflow-hidden h-full db-card',
+        fullWidth ? 'w-full' : 'w-[268px] shrink-0',
+      )}
     >
-      <div className="p-4 border-b border-border bg-surface-hover/30">
-        <div className="flex items-start justify-between">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-text-dim px-2 py-0.5 rounded border border-border bg-background">
-            {typeBadge}
-          </span>
-          <span className={`text-xs font-bold ${statusColor}`}>{statusLabel}</span>
-        </div>
-        <h3 className="font-semibold text-sm text-text-main group-hover:text-primary transition-colors mt-1">
-          {notebook.title}
-        </h3>
-        <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-1">
-          <Clock size={11} /> {new Date(notebook.lastUpdated).toLocaleDateString()}
-        </div>
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-3 db-hairline-b">
+        <FlaskConical size={15} className="db-indigo" />
+        <span className="text-[13px] font-semibold flex-1 db-heading">
+          Scientific Evidence
+        </span>
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full tabular-nums db-badge-indigo">
+          {activeSessions.length}
+        </span>
       </div>
-      <div className="flex-1 p-4 flex flex-col gap-2 bg-surface/10">
-        <div className="flex items-center gap-1.5">
-          <Target size={11} className="text-primary" />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Objective</span>
+
+      {/* Guidance caption */}
+      {mode === 'guidance' && (
+        <div className="px-4 py-2 text-[11px] italic leading-snug db-guidance-cap">
+          Datasets validated across techniques. Pending items need review before reporting.
         </div>
-        <p className="text-[11px] text-text-main leading-relaxed line-clamp-2">{notebook.objective}</p>
-        <div className="flex items-center gap-2 mt-1">
-          <span className="px-2 py-0.5 bg-surface border border-border rounded text-[10px] font-medium text-text-dim uppercase tracking-wider">{modeLabel}</span>
-          <span className="text-[10px] text-text-dim">{notebook.initialDataImport && !notebook.initialDataImport.skipped && notebook.initialDataImport.files.length > 0 ? 'Data attached' : 'Data pending'}</span>
-        </div>
+      )}
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {activeSessions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-[12px] db-muted">
+            <FlaskConical size={24} />
+            No evidence datasets
+          </div>
+        ) : (
+          <ul>
+            {activeSessions.map((session, i) => {
+              const isValidated = session.status === 'completed' || session.status === 'saved';
+              const badgeClass = getTechBadgeClass(session.technique);
+              return (
+                <li
+                  key={session.analysisId}
+                  className={cn(
+                    'flex items-start gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors cursor-pointer',
+                    i < activeSessions.length - 1 ? 'db-hairline-b' : '',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'text-[9px] font-bold uppercase tracking-[0.06em] px-1.5 py-0.5 rounded-[4px] border shrink-0 mt-0.5',
+                      badgeClass,
+                    )}
+                  >
+                    {session.technique.toUpperCase()}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className="text-[11px] font-medium leading-snug truncate db-heading"
+                      title={session.title}
+                    >
+                      {session.title}
+                    </div>
+                    <div className="text-[10px] mt-0.5 tabular-nums db-muted">
+                      {session.owner} · {session.updatedLabel}
+                    </div>
+                  </div>
+                  <span
+                    className={cn(
+                      'flex items-center gap-1 text-[9.5px] font-semibold shrink-0 mt-0.5',
+                      isValidated ? 'db-emerald-text' : 'db-amber-text',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-block w-1.5 h-1.5 rounded-full',
+                        isValidated ? 'db-emerald-icon-bg' : 'bg-[#f79009]',
+                      )}
+                    />
+                    {isValidated ? 'Validated' : 'Pending'}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
-      <div className="mt-auto p-4 pt-3 border-t border-border">
-        <div className="grid grid-cols-3 gap-1.5">
-          <Link
-            to={`/notebook?project=${notebook.id}&mode=demo`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-primary bg-primary/10 px-2 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-            aria-label={`Open Notebook for project ${notebook.title}`}
-            title={`Open Notebook for project ${notebook.title}`}
-          >
-            Open
-          </Link>
-          <button
-            type="button"
-            disabled
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2 text-[10px] font-medium text-text-muted opacity-50 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-            aria-label="Analyze action unavailable"
-          >
-            Analyze
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (window.confirm(`Delete "${notebook.title}"?`)) {
-                onDelete(notebook.id);
-              }
-            }}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-red-300 px-2 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-            aria-label={`Delete project ${notebook.title}`}
-            title={`Delete project ${notebook.title}`}
-          >
-            Delete
-          </button>
-        </div>
+
+      {/* Footer */}
+      <div className="px-3 py-2.5 db-hairline-t">
+        <Link
+          to="/history?mode=demo"
+          className="flex items-center justify-center h-8 w-full rounded-[8px] border text-[12px] font-medium transition-colors hover:bg-slate-50 db-card-border db-body"
+        >
+          Open evidence explorer
+        </Link>
       </div>
-    </Card>
+    </div>
   );
 }
 
-/* ─── main dashboard ─── */
-
+/* ══════════════════════════════════════════════════════════════
+   Dashboard — main component
+   ══════════════════════════════════════════════════════════════ */
 export default function Dashboard() {
   const location = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
   const isOAuthUser = isAuthenticated && user?.provider === 'google';
+
   const [feedback, setFeedback] = useState('');
-  const [localExperiments, setLocalExperiments] = useState<DemoExperiment[]>([]);
-  const [localNotebooks, setLocalNotebooks] = useState<ProjectNotebook[]>([]);
   const [experimentModalOpen, setExperimentModalOpen] = useState(false);
   const [experimentProjectId, setExperimentProjectId] = useState(DEFAULT_PROJECT_ID);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [projectNotebookWizardOpen, setProjectNotebookWizardOpen] = useState(false);
   const [quickExperimentSetupOpen, setQuickExperimentSetupOpen] = useState(false);
-  const [uploadedSessionCount, setUploadedSessionCount] = useState(0);
   const [experimentContext, setExperimentContext] = useState<{
     type: 'research' | 'rd' | 'analytical';
     attachment: 'standalone' | 'attach';
   } | null>(null);
-  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>('demo');
-  const showUserWorkspace = workspaceMode === 'user' && isOAuthUser;
-  const showDemoProjects = !showUserWorkspace;
 
-  const [activeTab, setActiveTab] = useState<'projects' | 'evidence'>('projects');
+  /* Dashboard presentation mode (independent chrome density axis) */
+  const [dashMode, setDashMode] = useState<DashMode>(
+    () =>
+      (localStorage.getItem('difaryx.dashboard.mode') as DashMode) || 'guidance',
+  );
+  const handleDashModeChange = (m: DashMode) => {
+    localStorage.setItem('difaryx.dashboard.mode', m);
+    setDashMode(m);
+  };
+
+  /* Main content tab */
+  const [activeTab, setActiveTab] = useState<MainTab>('projects');
+
+  /* Workspace / data mode (demo vs user) — kept fully independent */
+  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>('demo');
+  const showDemoProjects = workspaceMode !== 'user';
+
   const [analysisSessions, setAnalysisSessions] = useState<AnalysisSession[]>([]);
 
   useEffect(() => {
-    setLocalExperiments(getLocalExperiments());
-    setLocalNotebooks(getLocalProjectNotebooks());
     setAnalysisSessions(getAnalysisSessions());
-
     const handleModeChange = (e: CustomEvent) => {
       setWorkspaceModeState(e.detail.mode);
     };
-
     window.addEventListener('workspace-mode-changed', handleModeChange as EventListener);
-
     return () => {
       window.removeEventListener('workspace-mode-changed', handleModeChange as EventListener);
     };
@@ -820,56 +738,13 @@ export default function Dashboard() {
       storedMode,
     });
     const resolvedMode = toWorkspaceMode(effectiveMode);
-
     setWorkspaceModeState((current) => (current === resolvedMode ? current : resolvedMode));
-
-    if (isOAuthUser && storedMode === null && resolvedMode === 'user') {
+    if (storedMode === null && resolvedMode === 'user') {
       setWorkspaceMode('user');
     }
-  }, [isOAuthUser, location.search, user]);
+  }, [location.search, user]);
 
-  useEffect(() => {
-    if (!showUserWorkspace) {
-      setUploadedSessionCount(0);
-      return;
-    }
-
-    return runWhenIdle(() => {
-      setUploadedSessionCount(getAnalysisSessions().filter((session) => session.source === 'user_uploaded').length);
-    });
-  }, [showUserWorkspace]);
-
-  const handleSwitchMode = (mode: WorkspaceMode) => {
-    if (mode === 'user' && !isOAuthUser) {
-      navigate('/signin', { state: { from: location } });
-      return;
-    }
-
-    setWorkspaceMode(mode);
-    setWorkspaceModeState(mode);
-    setFeedback(mode === 'demo' ? 'Switched to Demo Mode' : 'Switched to User Workspace');
-    setTimeout(() => setFeedback(''), 2000);
-
-    if (mode === 'demo') {
-      navigate('/dashboard?mode=demo', { replace: true });
-    } else {
-      navigate('/dashboard', { replace: true });
-    }
-  };
-
-  const handleGoogleSignIn = () => {
-    navigate('/signin', { state: { from: location } });
-  };
-
-  const handleDeleteUploadedSession = (session: AnalysisSession) => {
-    const confirmed = window.confirm(`Delete ${session.fileName} from local uploaded evidence history?`);
-    if (!confirmed) return;
-
-    deleteAnalysisSession(session.analysisId);
-    if (session.uploadedRunId) deleteUploadedSignalRun(session.uploadedRunId);
-    setAnalysisSessions(getAnalysisSessions());
-    setUploadedSessionCount(getAnalysisSessions().filter((s) => s.source === 'user_uploaded').length);
-  };
+  const handleGoogleSignIn = () => navigate('/signin', { state: { from: location } });
 
   const handleExportSession = () => {
     downloadSessionBundle();
@@ -879,24 +754,18 @@ export default function Dashboard() {
 
   const handleImportSessionClick = () => {
     const input = document.getElementById('session-file-input') as HTMLInputElement;
-    if (input) {
-      input.value = '';
-      input.click();
-    }
+    if (input) { input.value = ''; input.click(); }
   };
 
   const handleSessionFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     try {
       const text = await file.text();
       const res = importSessionBundle(text);
       if (res.success) {
         setFeedback('Session package imported. Reloading...');
-        setTimeout(() => {
-          window.location.reload();
-        }, 1200);
+        setTimeout(() => window.location.reload(), 1200);
       } else {
         alert(`Session import failed: ${res.error}`);
       }
@@ -905,353 +774,275 @@ export default function Dashboard() {
     }
   };
 
-  /* aggregate stats */
-  const totalGaps = demoProjectRegistry.reduce((sum, p) => sum + p.validationGapCount, 0);
-  const criticalGaps = demoProjectRegistry.reduce((sum, p) => sum + p._raw.validationGaps.filter((g) => g.severity === 'critical').length, 0);
-  const avgReadiness = Math.round(demoProjectRegistry.reduce((sum, p) => sum + p.reportReadiness, 0) / demoProjectRegistry.length);
-
   return (
     <>
-    <DashboardLayout>
-      <div className="p-4 h-full overflow-y-auto">
-        {/* header */}
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold tracking-tight">Workflow Intelligence Dashboard</h1>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getWorkspaceModeBadgeClass(workspaceMode)}`}>
-                {getWorkspaceModeLabel(workspaceMode)}
-              </span>
-              {showUserWorkspace && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-semibold border bg-amber-50 border-amber-300 text-amber-700">
-                  External writes disabled
+      <DashboardLayout>
+        <div className="flex flex-col h-full overflow-hidden p-4 md:p-5 gap-3 db-page-bg">
+          {/* ── Header row ── */}
+          <div className="flex items-start justify-between gap-3 shrink-0">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-[18px] font-bold tracking-tight leading-tight db-heading">
+                  Workflow Intelligence Dashboard
+                </h1>
+                <span
+                  className={cn(
+                    'px-2 py-0.5 rounded text-[10px] font-semibold border',
+                    getWorkspaceModeBadgeClass(workspaceMode),
+                  )}
+                >
+                  {getWorkspaceModeLabel(workspaceMode)}
                 </span>
+              </div>
+              {!showDemoProjects && (
+                <p className="text-[12px] mt-0.5 leading-snug db-body">
+                  User workspace mode — demo data hidden.
+                </p>
               )}
             </div>
-            <p className="text-text-muted mt-0.5 text-xs">
-              {showDemoProjects ? 'Scientific research managed through modular skill layers, evidence validation, and analytical reasoning.' : 'No user project exists yet. Uploaded evidence sessions are stored separately in Analysis History.'}
-            </p>
-          </div>
-          <div className="flex gap-3">
-            {feedback && (
-              <span className="hidden md:inline-flex items-center rounded-md border border-primary/20 bg-primary/10 px-3 text-xs font-semibold text-primary">
-                {feedback}
-              </span>
-            )}
-            <input
-              type="file"
-              id="session-file-input"
-              accept=".difaryx"
-              onChange={handleSessionFileChange}
-              style={{ display: 'none' }}
-              aria-label="Import Session Bundle file selector"
-            />
-            <Button
-              variant="outline"
-              className="gap-2 text-xs"
-              onClick={handleExportSession}
-              aria-label="Export all active session data as a .difaryx bundle file"
-              title="Export all active session data as a .difaryx bundle file"
-            >
-              <Download size={14} /> Export Session
-            </Button>
-            <Button
-              variant="outline"
-              className="gap-2 text-xs"
-              onClick={handleImportSessionClick}
-              aria-label="Import a previously exported .difaryx session bundle file"
-              title="Import a previously exported .difaryx session bundle file"
-            >
-              <Upload size={14} /> Import Session
-            </Button>
-            {!isOAuthUser && showDemoProjects && (
-              <Button variant="outline" className="gap-2 text-xs" onClick={handleGoogleSignIn}>
-                Sign in with Google
-              </Button>
-            )}
-            <Button variant="primary" className="gap-2 text-xs font-bold" onClick={() => setCreateMenuOpen(true)}>
-              <Plus size={14} /> New
-            </Button>
-          </div>
-        </div>
 
-        {showDemoProjects && (
-          <>
-            <div className="mb-4 rounded-md border border-border bg-surface px-3 py-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                  Scientific Skill Layer Workflow
+            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+              {feedback && (
+                <span className="hidden md:inline-flex items-center rounded-md border border-primary/20 bg-primary/10 px-3 text-xs font-semibold text-primary">
+                  {feedback}
                 </span>
-                {WORKFLOW_STEPS.map((step, index) => (
-                  <React.Fragment key={step}>
-                    <span className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-semibold text-text-main">
-                      {step}
-                    </span>
-                    {index < WORKFLOW_STEPS.length - 1 && (
-                      <ArrowRight size={10} className="text-primary/50" />
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            </div>
+              )}
 
-            <div className="mb-4 grid grid-cols-4 gap-3">
-              <div className="rounded-md border border-border bg-surface px-3 py-2">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Projects</div>
-                <div className="text-lg font-bold text-text-main">{demoProjectRegistry.length}</div>
-                <div className="text-[10px] text-text-dim">Active research</div>
-              </div>
-              <div className="rounded-md border border-border bg-surface px-3 py-2">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Validation Gaps</div>
-                <div className={`text-lg font-bold ${criticalGaps > 0 ? 'text-red-600' : 'text-amber-600'}`}>{totalGaps}</div>
-                <div className="text-[10px] text-text-dim">{criticalGaps} critical</div>
-              </div>
-              <div className="rounded-md border border-border bg-surface px-3 py-2">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Decisions Pending</div>
-                <div className="text-lg font-bold text-cyan">
-                  {demoProjectRegistry.reduce((sum, p) => sum + p.decisionPendingCount, 0)}
-                </div>
-                <div className="text-[10px] text-text-dim">Next experiments</div>
-              </div>
-              <div className="rounded-md border border-border bg-surface px-3 py-2">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Report Readiness</div>
-                <div className={`text-lg font-bold ${readinessLabelColor(avgReadiness)}`}>{avgReadiness}%</div>
-                <div className="text-[10px] text-text-dim">Average across projects</div>
-              </div>
+              <ModeToggle mode={dashMode} onChange={handleDashModeChange} />
+
+              <input
+                type="file"
+                id="session-file-input"
+                accept=".difaryx"
+                onChange={handleSessionFileChange}
+                className="hidden"
+                aria-label="Import session bundle"
+              />
+              <Button
+                variant="outline"
+                className="h-8 w-8 p-0 flex items-center justify-center"
+                onClick={handleExportSession}
+                aria-label="Export session bundle"
+                title="Export Session"
+              >
+                <Download size={14} />
+              </Button>
+              <Button
+                variant="outline"
+                className="h-8 w-8 p-0 flex items-center justify-center"
+                onClick={handleImportSessionClick}
+                aria-label="Import session bundle"
+                title="Import Session"
+              >
+                <Upload size={14} />
+              </Button>
+              {!isOAuthUser && showDemoProjects && (
+                <Button
+                  variant="outline"
+                  className="h-8 w-8 p-0 flex items-center justify-center"
+                  onClick={handleGoogleSignIn}
+                  title="Sign in"
+                  aria-label="Sign in"
+                >
+                  <LogIn size={14} />
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                className="gap-1.5 text-[12px] h-8 px-3 font-bold"
+                onClick={() => setCreateMenuOpen(true)}
+              >
+                <Plus size={13} /> New
+              </Button>
             </div>
-          </>
-        )}
-        {/* main switcher area */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start mb-6">
-          <div className="lg:col-span-3 min-w-0">
-          <div className="flex border-b border-border mb-6">
-            <button
-              className={`flex items-center gap-2 pb-3 px-6 text-sm font-bold border-b-2 transition-all relative focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none rounded-t-md ${
-                activeTab === 'projects'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-text-muted hover:text-text-main'
-              }`}
-              onClick={() => setActiveTab('projects')}
-              aria-label="View Projects list"
-              title="View Projects list"
-            >
-              <Layers size={16} />
-              Projects
-              <span className={`ml-1.5 px-2 py-0.5 text-[10px] rounded-full font-bold ${
-                activeTab === 'projects' ? 'bg-primary/10 text-primary' : 'bg-surface border border-border text-text-muted'
-              }`}>
-                {showDemoProjects ? demoProjectRegistry.length + localNotebooks.length : localNotebooks.length}
-              </span>
-            </button>
-            <button
-              className={`flex items-center gap-2 pb-3 px-6 text-sm font-bold border-b-2 transition-all relative focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none rounded-t-md ${
-                activeTab === 'evidence'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-text-muted hover:text-text-main'
-              }`}
-              onClick={() => setActiveTab('evidence')}
-              aria-label="View Scientific Evidence list"
-              title="View Scientific Evidence list"
-            >
-              <FlaskConical size={16} />
-              Scientific Evidence
-              <span className={`ml-1.5 px-2 py-0.5 text-[10px] rounded-full font-bold ${
-                activeTab === 'evidence' ? 'bg-primary/10 text-primary' : 'bg-surface border border-border text-text-muted'
-              }`}>
-                {(showDemoProjects ? analysisSessions.filter(s => s.source !== 'user_uploaded').length : analysisSessions.filter(s => s.source === 'user_uploaded').length) + localExperiments.length}
-              </span>
-            </button>
           </div>
 
+          {/* ── Guidance: skill-workflow strip ── */}
+          {dashMode === 'guidance' && showDemoProjects && <SkillWorkflowStrip />}
+
+          {/* ── Section tab bar ── */}
+          <div className="flex items-center justify-between shrink-0">
+            <div
+              className="flex items-center gap-0.5 rounded-lg p-0.5 db-toggle-wrap"
+              role="tablist"
+              aria-label="Content section"
+            >
+              {/* Research Projects tab */}
+              {activeTab === 'projects' ? (
+                <button
+                  type="button" role="tab" aria-selected="true"
+                  onClick={() => setActiveTab('projects')}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-all select-none bg-white shadow-sm db-heading"
+                >
+                  <Layers size={12} className="db-indigo" />
+                  Research Projects
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full tabular-nums db-badge-indigo">
+                    {showDemoProjects ? demoProjectRegistry.length : 0}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button" role="tab" aria-selected="false"
+                  onClick={() => setActiveTab('projects')}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-all select-none hover:bg-white/60 db-inactive"
+                >
+                  <Layers size={12} className="db-inactive" />
+                  Research Projects
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full tabular-nums db-toggle-wrap db-muted">
+                    {showDemoProjects ? demoProjectRegistry.length : 0}
+                  </span>
+                </button>
+              )}
+
+              {/* Sample Analysis tab */}
+              {activeTab === 'analysis' ? (
+                <button
+                  type="button" role="tab" aria-selected="true"
+                  onClick={() => setActiveTab('analysis')}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-all select-none bg-white shadow-sm db-heading"
+                >
+                  <FlaskConical size={12} className="db-indigo" />
+                  Sample Analysis
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full tabular-nums db-badge-indigo">
+                    {analysisSessions.length}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button" role="tab" aria-selected="false"
+                  onClick={() => setActiveTab('analysis')}
+                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-all select-none hover:bg-white/60 db-inactive"
+                >
+                  <FlaskConical size={12} className="db-inactive" />
+                  Sample Analysis
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full tabular-nums db-toggle-wrap db-muted">
+                    {analysisSessions.length}
+                  </span>
+                </button>
+              )}
+            </div>
+
+
+            {dashMode === 'guidance' && (
+              <p className="text-[11px] italic hidden lg:block db-muted">
+                {activeTab === 'projects'
+                  ? 'Active research projects with multi-technique evidence.'
+                  : 'Individual sample analyses not yet assigned to a project.'}
+              </p>
+            )}
+          </div>
+
+          {/* ── Body ── */}
           {activeTab === 'projects' ? (
-            /* PROJECTS TAB */
-            <div>
-              {/* Header inside Projects Tab */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Layers size={14} className="text-primary" />
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">
-                    {showDemoProjects ? 'Active Research Projects' : 'User Projects'}
-                  </h2>
-                </div>
-                {isOAuthUser && (
-                  <Button variant="outline" size="sm" onClick={() => handleSwitchMode(showDemoProjects ? 'user' : 'demo')}>
-                    {showDemoProjects ? 'Switch to User Workspace' : 'Use Demo Project'}
-                  </Button>
+            /* Project grid + evidence sidebar */
+            <div className="flex gap-3.5 flex-1 min-h-0">
+              <div className="flex-1 min-h-0 flex flex-col">
+                {showDemoProjects ? (
+                  <div className="grid grid-cols-2 gap-3.5 content-start min-h-0 overflow-y-auto pb-2 flex-1">
+                    {demoProjectRegistry.map((project) => (
+                      <ProjectCardV5 key={project.id} project={project} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center flex-col gap-4 bg-white border border-slate-200 rounded-[12px] p-6 shadow-sm">
+                    <p className="text-sm text-text-muted text-center max-w-sm">
+                      No user project exists yet. Upload evidence or create a project notebook.
+                    </p>
+                    <div className="flex gap-3">
+                      <Button
+                        variant="primary"
+                        className="gap-2 text-[12px] h-8 px-3 font-semibold"
+                        onClick={() => setProjectNotebookWizardOpen(true)}
+                      >
+                        <Plus size={14} /> Create Project
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="gap-2 text-[12px] h-8 px-3 font-semibold"
+                        onClick={() => navigate('/dashboard?mode=demo', { replace: true })}
+                      >
+                        Use Demo Project
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
-
-              {/* Grid or Empty State */}
-              {(showDemoProjects ? demoProjectRegistry.length + localNotebooks.length : localNotebooks.length) > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Demo Projects */}
-                  {showDemoProjects && demoProjectRegistry.map((project) => (
-                    <ProjectCard key={project.id} project={project} />
-                  ))}
-                  {/* User Local Projects (Notebooks) */}
-                  {[...localNotebooks]
-                    .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
-                    .map((notebook) => (
-                      <NotebookCard
-                        key={notebook.id}
-                        notebook={notebook}
-                        onDelete={(id) => {
-                          deleteProjectNotebook(id);
-                          setLocalNotebooks(getLocalProjectNotebooks());
-                        }}
-                      />
-                    ))}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <EmptyStateCard
-                    type="generic"
-                    title="No User Projects Yet"
-                    description="Create a project notebook to manage multiple related experiments, files, or analytical runs under a single scientific objective."
-                  />
-                  <div className="flex flex-wrap justify-center gap-3">
-                    <Button variant="primary" className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => setProjectNotebookWizardOpen(true)}>
-                      <Plus size={16} /> Create Project
-                    </Button>
-                    <Button variant="outline" className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => handleSwitchMode('demo')}>
-                      Use Demo Project
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <EvidencePanel sessions={analysisSessions} mode={dashMode} showDemoProjects={showDemoProjects} />
             </div>
           ) : (
-            /* EVIDENCE TAB */
-            <div>
-              {/* Header inside Evidence Tab */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <FlaskConical size={14} className="text-primary" />
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">
-                    {showDemoProjects ? 'Scientific Evidence Examples' : 'Uploaded Evidence'}
-                  </h2>
-                </div>
-                {isOAuthUser && (
-                  <Button variant="outline" size="sm" onClick={() => handleSwitchMode(showDemoProjects ? 'user' : 'demo')}>
-                    {showDemoProjects ? 'Switch to User Workspace' : 'Use Demo Project'}
-                  </Button>
-                )}
-              </div>
-
-              {/* Grid or Empty State */}
-              {((showDemoProjects ? analysisSessions.filter(s => s.source !== 'user_uploaded').length : analysisSessions.filter(s => s.source === 'user_uploaded').length) + localExperiments.length) > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Evidence Sessions (Demo or User) */}
-                  {[...(showDemoProjects
-                    ? analysisSessions.filter((s) => s.source !== 'user_uploaded')
-                    : analysisSessions.filter((s) => s.source === 'user_uploaded')
-                  )]
-                    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-                    .map((session) => (
-                      <EvidenceCard
-                        key={session.analysisId}
-                        session={session}
-                        onDelete={session.source === 'user_uploaded' ? handleDeleteUploadedSession : undefined}
-                      />
-                    ))}
-                  {/* Quick Experiments */}
-                  {[...localExperiments]
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                    .map((experiment) => (
-                      <ExperimentCard key={experiment.id} experiment={experiment} />
-                    ))}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <EmptyStateCard
-                    type="missing_evidence"
-                    title="No Scientific Evidence Yet"
-                    description="Upload XRD, XPS, FTIR, or Raman spectrum files to begin single-technique processing and reasoning."
-                  />
-                  <div className="flex flex-wrap justify-center gap-3">
-                    <Button variant="primary" className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => navigate('/workspace?action=upload&source=user_uploaded')}>
-                      <Plus size={16} /> Upload Evidence
-                    </Button>
-                    <Button variant="outline" className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => setCreateMenuOpen(true)}>
-                      <Plus size={16} /> Create Quick Experiment
-                    </Button>
-                    <Button variant="outline" className="gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" onClick={() => handleSwitchMode('demo')}>
-                      Use Demo Evidence
-                    </Button>
-                  </div>
-                </div>
-              )}
+            /* Sample Analysis — full-width evidence panel */
+            <div className="flex-1 min-h-0">
+              <EvidencePanel sessions={analysisSessions} mode={dashMode} showDemoProjects={showDemoProjects} fullWidth />
             </div>
           )}
-          </div>
+        </div>
+      </DashboardLayout>
 
-          <div className="lg:col-span-1 shrink-0">
-            <ActivityTimelineWidget />
+      {/* ── Portals ── */}
+      <CreateMenu
+        open={createMenuOpen}
+        onClose={() => setCreateMenuOpen(false)}
+        onSelectOption={(option) => {
+          if (option === 'experiment') {
+            setQuickExperimentSetupOpen(true);
+          } else if (option === 'project') {
+            setProjectNotebookWizardOpen(true);
+          } else if (option === 'import') {
+            navigate('/workspace?action=upload&source=user_uploaded');
+          }
+        }}
+      />
+
+      <ProjectNotebookWizard
+        open={projectNotebookWizardOpen}
+        onClose={() => setProjectNotebookWizardOpen(false)}
+        onCreated={() => {
+          setFeedback('Project Notebook created');
+          window.setTimeout(() => setFeedback(''), 2000);
+          setProjectNotebookWizardOpen(false);
+        }}
+      />
+
+      <QuickExperimentSetup
+        open={quickExperimentSetupOpen}
+        onClose={() => setQuickExperimentSetupOpen(false)}
+        onContinue={(data) => {
+          setQuickExperimentSetupOpen(false);
+          setExperimentContext(data);
+          setExperimentProjectId(DEFAULT_PROJECT_ID);
+          setExperimentModalOpen(true);
+        }}
+      />
+
+      <ExperimentModal
+        open={experimentModalOpen}
+        defaultProjectId={experimentProjectId}
+        onClose={() => {
+          setExperimentModalOpen(false);
+          setExperimentContext(null);
+        }}
+        onCreated={() => {
+          setFeedback('Experiment, dataset, and condition record added');
+          window.setTimeout(() => setFeedback(''), 1800);
+          setExperimentContext(null);
+        }}
+      />
+
+      {experimentModalOpen && experimentContext && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] max-w-md">
+          <div className="rounded-md border border-primary bg-primary/10 px-4 py-2 shadow-lg">
+            <p className="text-sm font-semibold text-primary text-center">
+              Quick Experiment ·{' '}
+              {experimentContext.type === 'research'
+                ? 'Research Experiment'
+                : experimentContext.type === 'rd'
+                  ? 'R&D Trial'
+                  : 'Analytical Run'}{' '}
+              · {experimentContext.attachment === 'standalone' ? 'Standalone entry' : 'Attach to project'}
+            </p>
           </div>
         </div>
-      </div>
-    </DashboardLayout>
-
-    <CreateMenu
-      open={createMenuOpen}
-      onClose={() => setCreateMenuOpen(false)}
-      onSelectOption={(option) => {
-        if (option === 'experiment') {
-          setQuickExperimentSetupOpen(true);
-        } else if (option === 'project') {
-          setProjectNotebookWizardOpen(true);
-        } else if (option === 'import') {
-          navigate('/workspace?action=upload&source=user_uploaded');
-        }
-      }}
-    />
-
-    <ProjectNotebookWizard
-      open={projectNotebookWizardOpen}
-      onClose={() => setProjectNotebookWizardOpen(false)}
-      onCreated={() => {
-        setLocalNotebooks(getLocalProjectNotebooks());
-        setFeedback('Project Notebook created');
-        window.setTimeout(() => setFeedback(''), 2000);
-        setProjectNotebookWizardOpen(false);
-      }}
-    />
-
-    <QuickExperimentSetup
-      open={quickExperimentSetupOpen}
-      onClose={() => setQuickExperimentSetupOpen(false)}
-      onContinue={(data) => {
-        setQuickExperimentSetupOpen(false);
-        setExperimentContext(data);
-        setExperimentProjectId(DEFAULT_PROJECT_ID);
-        setExperimentModalOpen(true);
-      }}
-    />
-
-    <ExperimentModal
-      open={experimentModalOpen}
-      defaultProjectId={experimentProjectId}
-      onClose={() => {
-        setExperimentModalOpen(false);
-        setExperimentContext(null);
-      }}
-      onCreated={() => {
-        setLocalExperiments(getLocalExperiments());
-        setFeedback('Experiment, dataset, and condition record added');
-        window.setTimeout(() => setFeedback(''), 1800);
-        setExperimentContext(null);
-      }}
-    />
-
-    {experimentModalOpen && experimentContext && (
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] max-w-md">
-        <div className="rounded-md border border-primary bg-primary/10 px-4 py-2 shadow-lg">
-          <p className="text-sm font-semibold text-primary text-center">
-            Quick Experiment · {experimentContext.type === 'research' ? 'Research Experiment' : experimentContext.type === 'rd' ? 'R&D Trial' : 'Analytical Run'} · {experimentContext.attachment === 'standalone' ? 'Standalone entry' : 'Attach to project'}
-          </p>
-        </div>
-      </div>
-    )}
+      )}
     </>
   );
 }

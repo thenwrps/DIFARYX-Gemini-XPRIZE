@@ -29,7 +29,7 @@ import { callLLMReasoning, mockLLMReasoning } from './llmProvider';
  * @returns LLM reasoning result
  */
 export async function executeLLMReasoning(
-  modelMode: 'gemini' | 'gemma',
+  modelMode: 'gemini' | 'vertex-gemini' | 'gemma',
   context: Technique,
   dataset: DemoDataset,
   project: DemoProject,
@@ -73,21 +73,21 @@ export async function executeLLMReasoning(
  * Check if LLM reasoning should be executed.
  */
 export function shouldExecuteLLMReasoning(modelMode: ModelMode): boolean {
-  return modelMode === 'gemini' || modelMode === 'gemma';
+  return (modelMode === 'gemini' || modelMode === 'vertex-gemini') || modelMode === 'gemma';
 }
 
 /**
  * Get LLM provider display name.
  */
-export function getLLMProviderLabel(modelMode: 'gemini' | 'gemma'): string {
-  return modelMode === 'gemini' ? 'Gemini' : 'Gemma';
+export function getLLMProviderLabel(modelMode: 'gemini' | 'vertex-gemini' | 'gemma'): string {
+  return (modelMode === 'gemini' || modelMode === 'vertex-gemini') ? 'Gemini' : 'Gemma';
 }
 
 /**
  * Get LLM model name for display.
  */
-export function getLLMModelName(modelMode: 'gemini' | 'gemma'): string {
-  return modelMode === 'gemini' ? 'gemini-2.0-flash-exp' : 'gemma-2-9b-it';
+export function getLLMModelName(modelMode: 'gemini' | 'vertex-gemini' | 'gemma'): string {
+  return (modelMode === 'gemini' || modelMode === 'vertex-gemini') ? 'gemini-2.5-flash' : 'gemma-2-9b-it';
 }
 
 /**

@@ -112,3 +112,5 @@ scripts/bin/unzip.cmd
 scripts/bin/unzip.py
 .vercel
 .env*
+
+.env

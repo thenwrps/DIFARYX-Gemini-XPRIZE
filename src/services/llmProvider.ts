@@ -24,7 +24,7 @@ export const LLM_API_ENDPOINT = '/api/llm/reason';
  */
 export async function callLLMReasoning(
   packet: AgentEvidencePacket,
-  modelMode: 'gemini' | 'gemma',
+  modelMode: 'gemini' | 'vertex-gemini' | 'gemma',
 ): Promise<{
   success: boolean;
   output?: LLMReasoningOutput;
@@ -91,7 +91,7 @@ export async function callLLMReasoning(
  */
 export async function mockLLMReasoning(
   packet: AgentEvidencePacket,
-  modelMode: 'gemini' | 'gemma',
+  modelMode: 'gemini' | 'vertex-gemini' | 'gemma',
 ): Promise<{
   success: boolean;
   output?: LLMReasoningOutput;
@@ -101,7 +101,7 @@ export async function mockLLMReasoning(
   const startTime = Date.now();
 
   // Simulate network delay
-  await new Promise((resolve) => setTimeout(resolve, modelMode === 'gemini' ? 1200 : 800));
+  await new Promise((resolve) => setTimeout(resolve, (modelMode === 'gemini' || modelMode === 'vertex-gemini') ? 1200 : 800));
 
   const topCandidate = packet.candidates[0];
   const secondCandidate = packet.candidates[1];
@@ -293,7 +293,7 @@ export async function runLLM(
   packet: AgentEvidencePacket,
   modelMode: ModelMode,
 ): Promise<LLMReasoningOutput | null> {
-  if (modelMode === 'gemini') {
+  if ((modelMode === 'gemini' || modelMode === 'vertex-gemini')) {
     return runGeminiReasoning(packet);
   }
   if (modelMode === 'gemma') {

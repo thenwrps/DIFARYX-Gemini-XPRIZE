@@ -29,6 +29,8 @@ interface DemoProjectGraphProps {
   focusedTechnique?: TechniqueId;
   height?: string | number;
   showLegend?: boolean;
+  hideAxes?: boolean;
+  hideGrid?: boolean;
 }
 
 function isGraph(source: DemoGraphSource): source is DemoGraphData {
@@ -61,6 +63,8 @@ export function DemoProjectGraph({
   compact = false,
   height,
   showLegend = false,
+  hideAxes = false,
+  hideGrid = false,
 }: DemoProjectGraphProps) {
   if (isGraph(source)) {
     const graphType = source.type === 'multi' ? 'xrd' : source.type;
@@ -76,8 +80,7 @@ export function DemoProjectGraph({
       <React.Suspense
         fallback={
           <div
-            style={{ height: fallbackHeight }}
-            className="flex w-full min-h-[120px] items-center justify-center bg-slate-950/90 border border-slate-800 rounded-lg relative overflow-hidden"
+            className="flex w-full min-h-[120px] h-full items-center justify-center bg-slate-950/90 border border-slate-800 rounded-lg relative overflow-hidden"
           >
             {/* Subtle grid lines to mimic a real chart backdrop */}
             <div className="absolute inset-0 grid grid-cols-6 grid-rows-4 opacity-[0.03]">
@@ -106,6 +109,8 @@ export function DemoProjectGraph({
           showCalculated={!compact}
           showResidual={false}
           showLegend={showLegend}
+          hideAxes={hideAxes}
+          hideGrid={hideGrid}
         />
       </React.Suspense>
     );

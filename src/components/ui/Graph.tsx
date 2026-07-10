@@ -105,6 +105,8 @@ interface GraphProps {
   xAxisLabel?: string;
   yAxisLabel?: string;
   onChartClick?: (x: number, y: number) => void;
+  hideAxes?: boolean;
+  hideGrid?: boolean;
 }
 
 // ── Internal data types ──────────────────────────────────────────────
@@ -452,11 +454,22 @@ export function Graph({
   xAxisLabel,
   yAxisLabel,
   onChartClick,
+  hideAxes = false,
+  hideGrid = false,
 }: GraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const noDataRef = useRef<HTMLDivElement>(null);
   const containerSize = useContainerSize(containerRef);
   const isContainerReady = containerSize.width > 0 && containerSize.height > 0;
   const useExternal = !!externalData && externalData.length > 0;
+
+  // Set --graph-h CSS custom property imperatively so no style prop is needed in JSX
+  useEffect(() => {
+    const resolvedH = height !== undefined ? height : 400;
+    const hVal = typeof resolvedH === 'number' ? `${resolvedH}px` : resolvedH;
+    if (containerRef.current) containerRef.current.style.setProperty('--graph-h', hVal);
+    if (noDataRef.current) noDataRef.current.style.setProperty('--graph-h', hVal);
+  }, [height]);
 
   // Internal data path (backward compat)
   const internalData = useMemo(() => generateData(type), [type]);
@@ -501,48 +514,59 @@ export function Graph({
 
     const markers = peakMarkers ?? [];
     const labeledMarkerPositions = getLabeledMarkerPositions(type, markers);
-    const resolvedHeight = height !== undefined ? height : 400;
 
     // Guard: if external data is empty or domain is invalid, render nothing
     if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || xMin === xMax) {
       return (
-        <div className={`w-full ${HEIGHT_CLASSES[String(resolvedHeight)] || 'h-[400px] min-h-[400px]'}`}>
-          <div className="flex h-full items-center justify-center text-xs text-text-muted">No data</div>
+        <div
+          ref={noDataRef}
+          className="graph-container w-full flex items-center justify-center text-xs text-text-muted"
+        >
+          No data
         </div>
       );
     }
 
     return (
-      <div ref={containerRef} className={`w-full ${HEIGHT_CLASSES[String(resolvedHeight)] || 'h-[400px] min-h-[400px]'}`}>
+      <div
+        ref={containerRef}
+        className="graph-container w-full relative"
+      >
         {isContainerReady && (
-        <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
+        <ResponsiveContainer width="100%" height="100%" minHeight={40} minWidth={40}>
           <LineChart
             data={externalChartData}
-            margin={{ top: 18, right: 24, bottom: 24, left: 24 }}
+            margin={hideAxes ? { top: 4, right: 4, bottom: 4, left: 4 } : { top: 18, right: 24, bottom: 24, left: 24 }}
             onClick={(nextState: Record<string, unknown> | undefined) => handleChartClick(nextState, onChartClick)}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} />
-            <XAxis
-              dataKey="x"
-              stroke="#94a3b8"
-              tick={{ fill: '#94a3b8', fontSize: 12 }}
-              tickLine={{ stroke: '#64748b' }}
-              axisLine={{ stroke: '#334155' }}
-              label={{ value: displayXLabel, position: 'bottom', fill: '#94a3b8', fontSize: 12 }}
-              type="number"
-              domain={xDomain}
-              reversed={settings.reversed}
-            />
-            <YAxis
-              stroke="#94a3b8"
-              tick={{ fill: '#94a3b8', fontSize: 12 }}
-              tickLine={{ stroke: '#64748b' }}
-              axisLine={{ stroke: '#334155' }}
-              label={{ value: displayYLabel, angle: -90, position: 'left', fill: '#94a3b8', fontSize: 12 }}
-              domain={yDomain}
-              allowDataOverflow
-              tickFormatter={(v) => (Math.abs(v) < 0.5 ? '0' : String(Math.round(v)))}
-            />
+            {!hideGrid && !hideAxes && (
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} />
+            )}
+            {!hideAxes && (
+              <XAxis
+                dataKey="x"
+                stroke="#94a3b8"
+                tick={{ fill: '#94a3b8', fontSize: 12 }}
+                tickLine={{ stroke: '#64748b' }}
+                axisLine={{ stroke: '#334155' }}
+                label={{ value: displayXLabel, position: 'bottom', fill: '#94a3b8', fontSize: 12 }}
+                type="number"
+                domain={xDomain}
+                reversed={settings.reversed}
+              />
+            )}
+            {!hideAxes && (
+              <YAxis
+                stroke="#94a3b8"
+                tick={{ fill: '#94a3b8', fontSize: 12 }}
+                tickLine={{ stroke: '#64748b' }}
+                axisLine={{ stroke: '#334155' }}
+                label={{ value: displayYLabel, angle: -90, position: 'left', fill: '#94a3b8', fontSize: 12 }}
+                domain={yDomain}
+                allowDataOverflow
+                tickFormatter={(v) => (Math.abs(v) < 0.5 ? '0' : String(Math.round(v)))}
+              />
+            )}
             <Tooltip
               formatter={(value, name) => [
                 typeof value === 'number' ? value.toFixed(2) : value,
@@ -666,45 +690,53 @@ export function Graph({
     );
   }
 
-  // ── Internal data rendering (original, unchanged) ──────────────────
+  // ── Internal data rendering ──────────────────
   const residualOnly = showResidual && !showCalculated && !showBackground;
   const yDomain: [number, number] = residualOnly
     ? [settings.residualOffset - 8, settings.residualOffset + 8]
     : settings.yDomain;
 
-  const resolvedHeight = height !== undefined ? height : 400;
 
   return (
-    <div ref={containerRef} className={`w-full ${HEIGHT_CLASSES[String(resolvedHeight)] || 'h-[400px] min-h-[400px]'}`}>
+    <div
+      ref={containerRef}
+      className="graph-container w-full relative"
+    >
       {isContainerReady && (
-      <ResponsiveContainer width="100%" height="100%" minHeight={100} minWidth={100}>
+      <ResponsiveContainer width="100%" height="100%" minHeight={40} minWidth={40}>
         <LineChart
           data={internalData}
-          margin={{ top: 18, right: 24, bottom: 24, left: 24 }}
+          margin={hideAxes ? { top: 4, right: 4, bottom: 4, left: 4 } : { top: 16, right: 20, bottom: 16, left: 16 }}
           onClick={(nextState: Record<string, unknown> | undefined) => handleChartClick(nextState, onChartClick)}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} />
-          <XAxis
-            dataKey="x"
-            stroke="#94a3b8"
-            tick={{ fill: '#94a3b8', fontSize: 12 }}
-            tickLine={{ stroke: '#64748b' }}
-            axisLine={{ stroke: '#334155' }}
-            label={{ value: displayXLabel, position: 'bottom', fill: '#94a3b8', fontSize: 12 }}
-            type="number"
-            domain={settings.range}
-            reversed={settings.reversed}
-          />
-          <YAxis
-            stroke="#94a3b8"
-            tick={{ fill: '#94a3b8', fontSize: 12 }}
-            tickLine={{ stroke: '#64748b' }}
-            axisLine={{ stroke: '#334155' }}
-            label={{ value: displayYLabel, angle: -90, position: 'left', fill: '#94a3b8', fontSize: 12 }}
-            domain={yDomain}
-            allowDataOverflow
-            tickFormatter={(v) => (Math.abs(v) < 0.5 ? '0' : String(Math.round(v)))}
-          />
+          {!hideGrid && !hideAxes && (
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} />
+          )}
+          {!hideAxes && (
+            <XAxis
+              dataKey="x"
+              stroke="#94a3b8"
+              tick={{ fill: '#94a3b8', fontSize: 12 }}
+              tickLine={{ stroke: '#64748b' }}
+              axisLine={{ stroke: '#334155' }}
+              label={{ value: displayXLabel, position: 'bottom', fill: '#94a3b8', fontSize: 12 }}
+              type="number"
+              domain={settings.range}
+              reversed={settings.reversed}
+            />
+          )}
+          {!hideAxes && (
+            <YAxis
+              stroke="#94a3b8"
+              tick={{ fill: '#94a3b8', fontSize: 12 }}
+              tickLine={{ stroke: '#64748b' }}
+              axisLine={{ stroke: '#334155' }}
+              label={{ value: displayYLabel, angle: -90, position: 'left', fill: '#94a3b8', fontSize: 12 }}
+              domain={yDomain}
+              allowDataOverflow
+              tickFormatter={(v) => (Math.abs(v) < 0.5 ? '0' : String(Math.round(v)))}
+            />
+          )}
           <Tooltip
             formatter={(value, name) => [
               typeof value === 'number' ? value.toFixed(2) : value,

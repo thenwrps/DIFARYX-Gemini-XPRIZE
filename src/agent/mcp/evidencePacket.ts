@@ -46,6 +46,20 @@ export function buildXRDEvidencePacket(
   },
   toolTrace: ToolResult[],
 ): AgentEvidencePacket {
+  const _xa: any = (xrdAnalysis || {});
+  _xa.detectedPeaks = Array.isArray(_xa.detectedPeaks) ? _xa.detectedPeaks : [];
+  _xa.candidates = (Array.isArray(_xa.candidates) ? _xa.candidates : []).map((c) => {
+    const cc = c || {};
+    const phase = cc.phase || { name: 'Unknown', peaks: [] };
+    return {
+      ...cc,
+      phase: { ...phase, peaks: Array.isArray(phase.peaks) ? phase.peaks : [] },
+      matches: Array.isArray(cc.matches) ? cc.matches : [],
+      missing: Array.isArray(cc.missing) ? cc.missing : [],
+      unexplained: Array.isArray(cc.unexplained) ? cc.unexplained : [],
+    };
+  });
+  xrdAnalysis = _xa;
   const topCandidate = xrdAnalysis.candidates[0];
   const uncertaintyFlags: string[] = [];
 
@@ -94,8 +108,8 @@ export function buildXRDEvidencePacket(
       score: candidate.score,
       matchedFeatures: candidate.matches.length,
       totalFeatures: candidate.phase.peaks.length,
-      missingFeatures: candidate.missing.map((m: any) => `${m.position.toFixed(2)}°`),
-      unexplainedFeatures: candidate.unexplained.map((u: any) => `${u.position.toFixed(2)}°`),
+      missingFeatures: candidate.missing.map((m: any) => `${m.position.toFixed(2)}Â°`),
+      unexplainedFeatures: candidate.unexplained.map((u: any) => `${u.position.toFixed(2)}Â°`),
     })),
     fusedScore: topCandidate ? topCandidate.score : 0,
     uncertaintyFlags,

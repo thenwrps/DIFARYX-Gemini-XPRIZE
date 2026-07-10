@@ -107,9 +107,11 @@ export function getEffectiveWorkspaceMode({
   const urlMode = params.get('mode');
 
   if (urlMode === 'demo') return 'demo_explicit';
+  if (urlMode === 'user') return 'user';
+
+  if (storedMode === 'user') return 'user';
 
   if (hasRealGoogleOAuthUser(authUser)) {
-    if (urlMode === 'user') return 'user';
     if (storedMode === 'demo' && isStoredWorkspaceModeExplicit()) return 'demo_explicit';
     return 'user';
   }

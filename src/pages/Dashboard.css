@@ -1,0 +1,59 @@
+/* ─────────────────────────────────────────────────────────────
+   Dashboard.css  —  design token classes for Dashboard.tsx
+   All colours are derived from the T constant object so the
+   visual output is identical to the previous inline-style approach.
+   ───────────────────────────────────────────────────────────── */
+
+/* ── Page shell ─────────────────────────────────── */
+.db-page-bg        { background-color: #f7f8fa; }
+.db-workflow-step  { background-color: #f7f8fa; border: 1px solid #eceef1; color: #475467; }
+
+/* ── Cards ──────────────────────────────────────── */
+.db-card           { background-color: #ffffff; border: 1px solid #e6e8ec; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+.db-card-border    { border-color: #e6e8ec; }
+.db-inner-panel    { background-color: #fcfcfd; border: 1px solid #f0f1f3; }
+.db-inner-border-b { border-bottom: 1px solid #f0f1f3; }
+.db-hairline-t     { border-top:    1px solid #f0f1f3; }
+.db-hairline-b     { border-bottom: 1px solid #f0f1f3; }
+
+/* ── Typography ─────────────────────────────────── */
+.db-heading        { color: #101828; }
+.db-body           { color: #475467; }
+.db-muted          { color: #98a2b3; }
+.db-inactive       { color: #667085; }
+
+/* ── Brand / accent ─────────────────────────────── */
+.db-indigo         { color:            #4f46e5; }
+.db-indigo-bg      { background-color: #4f46e5; }
+.db-indigo-dk-bg   { background-color: #4338ca; border-color: rgba(255,255,255,0.2); }
+.db-badge-indigo   { background-color: #f0f5ff; color: #4f46e5; }
+
+/* ── Toggle strip ───────────────────────────────── */
+.db-toggle-wrap    { background-color: #f2f4f7; border: 1px solid #e6e8ec; }
+
+/* ── Emerald (validated / report-ready) ─────────── */
+.db-emerald-text   { color:            #067647; }
+.db-emerald-icon   { color:            #12b76a; }
+.db-emerald-chip   { background-color: #f2fbf7; color: #067647; border-color: #c9ece0; }
+.db-emerald-icon-bg { background-color: #f2fbf7; color: #067647; }
+
+/* ── Amber (pending / warning) ──────────────────── */
+.db-amber-text     { color:            #b54708; }
+.db-amber-chip     { background-color: #fffaf0; color: #b54708; border-color: #fbe6c8; }
+.db-amber-icon-bg  { background-color: #fffaf0; color: #b54708; }
+
+/* ── Red ────────────────────────────────────────── */
+.db-red            { color: #d32f2f; }
+
+/* ── Research / R&D job-type tags ───────────────── */
+.db-tag-research   { background-color: #f5f8ff; color: #3538cd; border-color: #dbe4ff; }
+.db-tag-rd         { background-color: #fdf4ff; color: #9333ea; border-color: #f0d5ff; }
+
+/* ── More-menu popover ──────────────────────────── */
+.db-more-menu      { border-color: #e6e8ec; }
+
+/* ── Guidance caption strip ─────────────────────── */
+.db-guidance-cap   { color: #98a2b3; border-bottom: 1px solid #f0f1f3; background-color: #f7f8fa; }
+
+/* ── Dynamic height helper (used by Graph wrappers) ── */
+.dyn-height        { height: var(--dyn-h, 120px); }

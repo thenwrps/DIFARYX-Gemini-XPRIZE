@@ -10,6 +10,9 @@ export default defineConfig({
     holdUntilCrawlEnd: false,
   },
   server: {
+    proxy: {
+      '/api': 'http://localhost:3001',
+    },
     watch: {
       ignored: [
         '**/.venv/**',

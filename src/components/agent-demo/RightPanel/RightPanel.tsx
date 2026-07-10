@@ -588,7 +588,7 @@ function ParametersTabContent({
   );
 }
 
-// ── Inner render helpers for structured research data ──
+// â”€â”€ Inner render helpers for structured research data â”€â”€
 // Borderless fragments so they can be merged INTO the existing Research
 // References / Validation Gap / Claim Boundary boxes (no duplicate boxes).
 
@@ -609,7 +609,7 @@ function RetrievedReferencesList({
         {provenance && (
           <span className="rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-700">
             {literatureSourceLabel(provenance.literatureSource)}
-            {provenance.fallbackUsed ? ' · fallback' : ''} · {provenance.literatureCount}
+            {provenance.fallbackUsed ? ' Â· fallback' : ''} Â· {provenance.literatureCount}
           </span>
         )}
       </div>
@@ -625,8 +625,8 @@ function RetrievedReferencesList({
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 {item.authors.join(', ')}
-                {item.year ? ` · ${item.year}` : ''}
-                {item.journal ? ` · ${item.journal}` : ''}
+                {item.year ? ` Â· ${item.year}` : ''}
+                {item.journal ? ` Â· ${item.journal}` : ''}
               </p>
             </li>
           ))}
@@ -645,7 +645,7 @@ function ResearchGapsList({ claimBoundary }: { claimBoundary: ClaimBoundaryArtif
   return (
     <div className="pt-2 border-t border-amber-200">
       <span className="font-semibold text-amber-900">
-        Research validation gaps (deterministic ∪ {reasoningProviderLabel(claimBoundary.provider)}):
+        Research validation gaps (deterministic âˆª {reasoningProviderLabel(claimBoundary.provider)}):
       </span>
       {missingValidation.length > 0 && (
         <ul className="mt-1 space-y-0.5 text-amber-700">
@@ -670,7 +670,7 @@ function RenderedClaimBoundaryList({ claimBoundary }: { claimBoundary: ClaimBoun
   return (
     <div className="pt-2 border-t border-blue-200">
       <span className="font-semibold text-blue-900">
-        Research claim boundary (via {reasoningProviderLabel(claimBoundary.provider)} signals · deterministic):
+        Research claim boundary (via {reasoningProviderLabel(claimBoundary.provider)} signals Â· deterministic):
       </span>
       <ul className="mt-1 space-y-0.5 text-blue-700">
         {claimBoundary.renderedClaimBoundary.map((line, i) => (
@@ -989,7 +989,7 @@ function EvidenceByTechniqueCard({
         )}
       </div>
 
-      {/* Research References (structured) — only when no workspace box exists */}
+      {/* Research References (structured) â€” only when no workspace box exists */}
       {hasResearchRefs && (
         <div className="rounded-lg border border-slate-200 bg-white p-3">
           <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-1">
@@ -1324,7 +1324,7 @@ function EvidenceUsedCard({
 }) {
   const engineMap = {
     deterministic: 'Deterministic',
-    'vertex-gemini': 'Gemini 1.5 Flash',
+    'vertex-gemini': 'Gemini 2.5 Flash',
     gemma: 'Gemma',
   };
 
