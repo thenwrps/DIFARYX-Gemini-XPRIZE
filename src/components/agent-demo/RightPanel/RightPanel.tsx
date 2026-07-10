@@ -182,6 +182,7 @@ export function RightPanel({
           validationGaps={registryProject?._raw.validationGaps || []}
           availableTechniques={registryProject?.techniques.filter(t => t.available).map(t => t.label) || []}
           pendingTechniques={registryProject?.techniques.filter(t => !t.available).map(t => t.label) || []}
+          projectId={registryProject?.id}
         />
         {llmState?.fallbackUsed && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">

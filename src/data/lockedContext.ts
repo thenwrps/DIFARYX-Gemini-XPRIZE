@@ -41,6 +41,30 @@ const LOCKED_CONTEXT_DATA: LockedContextMap = {
     referenceScope: 'supported copper ferrite on mesoporous silica context',
     claimBoundary: 'Do not describe as pure bulk CuFe₂O₄; phase purity remains validation-limited.',
   },
+  nife2o4: {
+    sampleIdentity: 'NiFe₂O₄ nickel ferrite',
+    technique: 'XRD',
+    sourceDataset: 'xrd-nife2o4-control',
+    sourceProcessingPath: 'XRD Workspace / processing-nife2o4-control',
+    referenceScope: 'nickel ferrite screening',
+    claimBoundary: 'XRD supports phase assignment; phase purity remains validation-limited.',
+  },
+  cofe2o4: {
+    sampleIdentity: 'CoFe₂O₄ cobalt ferrite',
+    technique: 'XRD',
+    sourceDataset: 'xrd-cofe2o4-control',
+    sourceProcessingPath: 'XRD Workspace / processing-cofe2o4-control',
+    referenceScope: 'cobalt ferrite screening',
+    claimBoundary: 'XRD supports phase assignment; phase purity remains validation-limited.',
+  },
+  'fe3o4-nanoparticles': {
+    sampleIdentity: 'Fe₃O₄ iron oxide nanoparticles',
+    technique: 'FTIR and Raman',
+    sourceDataset: 'ftir-fe3o4-nanoparticles-demo',
+    sourceProcessingPath: 'Multi-technique evidence context',
+    referenceScope: 'iron oxide screening',
+    claimBoundary: 'FTIR and Raman support nanoparticle signatures; phase assignment is validation-limited.',
+  },
 };
 
 /**

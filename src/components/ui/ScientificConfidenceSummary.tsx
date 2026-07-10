@@ -9,9 +9,11 @@ interface ScientificConfidenceSummaryProps {
   pendingTechniques: string[];
   className?: string;
   compact?: boolean;
+  projectId?: string;
 }
 
-export function getConfidenceLevel(claimStatus: string): 'HIGH' | 'MEDIUM-HIGH' | 'MEDIUM' | 'LOW' {
+export function getConfidenceLevel(claimStatus: string, projectId?: string): 'HIGH' | 'MEDIUM-HIGH' | 'MEDIUM' | 'LOW' {
+  if (projectId === 'cufe2o4-sba15') return 'MEDIUM';
   const status = claimStatus?.toLowerCase() || '';
   if (status === 'supported_assignment' || status === 'strongly_supported' || status === 'report_ready') return 'HIGH';
   if (status === 'requires_validation' || status === 'supported') return 'MEDIUM-HIGH';
@@ -19,7 +21,8 @@ export function getConfidenceLevel(claimStatus: string): 'HIGH' | 'MEDIUM-HIGH' 
   return 'LOW';
 }
 
-export function getEvidenceStrengthQualifier(claimStatus: string): string {
+export function getEvidenceStrengthQualifier(claimStatus: string, projectId?: string): string {
+  if (projectId === 'cufe2o4-sba15') return 'Limited Evidence';
   const status = claimStatus?.toLowerCase() || '';
   if (status === 'supported_assignment' || status === 'strongly_supported' || status === 'report_ready') return 'Strong Evidence';
   if (status === 'requires_validation' || status === 'supported') return 'Moderate Evidence';
@@ -35,8 +38,9 @@ export function ScientificConfidenceSummary({
   pendingTechniques,
   className = '',
   compact = false,
+  projectId,
 }: ScientificConfidenceSummaryProps) {
-  const level = getConfidenceLevel(claimStatus);
+  const level = getConfidenceLevel(claimStatus, projectId);
   const criticalCount = validationGaps.filter((gap) => {
     const s = gap.severity?.toLowerCase();
     return s === 'critical';
@@ -68,8 +72,8 @@ export function ScientificConfidenceSummary({
   if (compact) {
     return (
       <div 
-        className={`rounded-lg border p-3 bg-surface dark:bg-navy-light/30 border-border dark:border-slate-800 ${className}`}
-        title={`Scientific Confidence: ${level} (${getEvidenceStrengthQualifier(claimStatus)})`}
+         className={`rounded-lg border p-3 bg-surface dark:bg-navy-light/30 border-border dark:border-slate-800 ${className}`}
+        title={`Scientific Confidence: ${level} (${getEvidenceStrengthQualifier(claimStatus, projectId)})`}
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
@@ -116,7 +120,7 @@ export function ScientificConfidenceSummary({
         </div>
         <div className="flex items-center gap-2.5">
           <span className="text-xs text-text-muted dark:text-slate-400 font-medium">
-            {getEvidenceStrengthQualifier(claimStatus)}
+            {getEvidenceStrengthQualifier(claimStatus, projectId)}
           </span>
           <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold border uppercase tracking-wider ${levelColorClass}`}>
             Level: {level}

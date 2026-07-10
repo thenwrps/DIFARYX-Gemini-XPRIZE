@@ -752,7 +752,7 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
       techniqueCount,
       hasMultiTechIntent: techniqueCount >= 2 || searchParams.get('bundle') === 'mixed',
       isDemoProject: evidenceSnapshot.sourceMode === 'demo_preloaded',
-      hasDemoPreloadedBundle: currentProject.id === 'cu-fe2o4-spinel' && techniqueCount >= 2,
+      hasDemoPreloadedBundle: ['cu-fe2o4-spinel', 'cufe2o4-sba15', 'cofe2o4', 'fe3o4-nanoparticles'].includes(currentProject.id) && techniqueCount >= 2,
       userAction: 'send_to_report',
     };
 
@@ -1288,6 +1288,7 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
               availableTechniques={evidenceSnapshot.availableTechniques}
               pendingTechniques={evidenceSnapshot.pendingTechniques}
               className="mb-3"
+              projectId={registryProject?.id}
             />
             <div className="space-y-2">
               {[

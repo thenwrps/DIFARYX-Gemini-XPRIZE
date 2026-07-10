@@ -1886,7 +1886,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       techniqueCount,
       hasMultiTechIntent: techniqueCount >= 2 || searchParams.get('bundle') === 'mixed',
       isDemoProject: evidenceSnapshot.sourceMode === 'demo_preloaded',
-      hasDemoPreloadedBundle: currentProject.id === 'cu-fe2o4-spinel' && techniqueCount >= 2,
+      hasDemoPreloadedBundle: ['cu-fe2o4-spinel', 'cufe2o4-sba15', 'cofe2o4', 'fe3o4-nanoparticles'].includes(currentProject.id) && techniqueCount >= 2,
     };
 
     // Only create bundle if gating logic approves

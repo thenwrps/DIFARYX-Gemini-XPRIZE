@@ -36,6 +36,7 @@ import {
   jobTypeLabel,
   type RegistryProject,
   type TechniqueId,
+  type DemoGraphData,
 } from '../data/demoProjectRegistry';
 import { DemoProjectGraph } from '../components/graphs/DemoProjectGraph';
 import { getProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
@@ -222,8 +223,8 @@ function ReadinessRow({
   project: RegistryProject;
   evidenceSnapshot: ReturnType<typeof getProjectEvidenceSnapshot>;
 }) {
-  const level = getConfidenceLevel(project.claimStatus);
-  const qualifier = getEvidenceStrengthQualifier(project.claimStatus);
+  const level = getConfidenceLevel(project.claimStatus, project.id);
+  const qualifier = getEvidenceStrengthQualifier(project.claimStatus, project.id);
   const percent = project.reportReadiness;
   const gaps = evidenceSnapshot.validationGaps;
   const available = evidenceSnapshot.availableTechniques.length;
@@ -423,11 +424,16 @@ function ProjectCardV5({ project }: { project: RegistryProject }) {
         ? 'db-tag-rd'
         : 'bg-[#f0fdf4] text-[#166534] border-[#bbf7d0]';
 
-  // Status chip
+  // Status chip — use whitespace-nowrap + a shortened readable label to prevent mid-word clip
   const isReportReady =
     project.claimStatus === 'supported_assignment' || project.claimStatus === 'report_ready';
   const statusDotClass  = isReportReady ? 'db-emerald-icon-bg' : 'bg-[#f79009]';
-  const statusText      = isReportReady ? 'Report ready' : claimStatusLabel(project.claimStatus).slice(0, 22);
+  const rawLabel = claimStatusLabel(project.claimStatus);
+  const statusText      = isReportReady
+    ? 'Report ready'
+    : rawLabel.replace('Validation-limited scientific claim', 'Validation-limited')
+               .replace('Validation-limited scientific', 'Validation-limited')
+               .replace(' (Report-ready)', '');
   const statusChipClass = isReportReady ? 'db-emerald-chip' : 'db-amber-chip';
 
   return (
@@ -444,11 +450,11 @@ function ProjectCardV5({ project }: { project: RegistryProject }) {
         </span>
         <span
           className={cn(
-            'flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border',
+            'flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border whitespace-nowrap',
             statusChipClass,
           )}
         >
-          <span className={cn('inline-block w-1.5 h-1.5 rounded-full', statusDotClass)} />
+          <span className={cn('inline-block w-1.5 h-1.5 rounded-full shrink-0', statusDotClass)} />
           {statusText}
         </span>
       </div>
@@ -545,7 +551,7 @@ function ProjectCardV5({ project }: { project: RegistryProject }) {
 }
 
 /* ──────────────────────────────────────────────────────────────
-   Technique badge helper for EvidencePanel
+   Technique badge helper (used by AnalysisSessionCard)
    ────────────────────────────────────────────────────────────── */
 function getTechBadgeClass(technique: string): string {
   switch (technique.toLowerCase()) {
@@ -556,124 +562,145 @@ function getTechBadgeClass(technique: string): string {
     case 'ftir':
       return 'bg-[#ecfeff] text-[#0e7490] border-[#a5f3fc]';
     case 'raman':
-      return 'bg-[#f0fdf4] text-[#166534] border-[#bbf7d0]';
+      return 'bg-[#f5f3ff] text-[#7c3aed] border-[#ddd6fe]';
     default:
       return 'bg-[#f8fafc] db-body border-[#e2e8f0]';
   }
 }
 
+/* Generate high-fidelity synthetic spectrum points for preview graphs */
+function makeSessionGraphPoints(technique: string) {
+  const settings: Record<string, { min: number; max: number; peaks: Array<[number, number, number]> }> = {
+    xrd: { min: 10, max: 80, peaks: [[20.9, 26, 1.2], [35.5, 92, 0.35], [43.2, 52, 0.4], [57.1, 38, 0.5]] },
+    xps: { min: 0, max: 1200, peaks: [[284.8, 40, 16], [531.4, 72, 20], [710.8, 84, 18], [933.4, 78, 22]] },
+    ftir: { min: 400, max: 4000, peaks: [[620, 58, 45], [1084, 80, 85], [1625, 38, 75], [3420, 42, 170]] },
+    raman: { min: 100, max: 3200, peaks: [[382, 22, 28], [585, 64, 28], [690, 94, 34], [1348, 42, 62]] },
+  };
+  const config = settings[technique] || settings.xrd;
+  const count = 100;
+  return Array.from({ length: count }, (_, index) => {
+    const x = config.min + ((config.max - config.min) * index) / (count - 1);
+    const base = technique === 'ftir' ? 92 : 8 + 3 * Math.sin(index / 12);
+    const y = config.peaks.reduce((sum, [center, height, width]) => {
+      const scaled = (x - center) / width;
+      const peak = height * Math.exp(-0.5 * scaled * scaled);
+      return technique === 'ftir' ? sum - peak * 0.45 : sum + peak;
+    }, base);
+    return { x: Number(x.toFixed(2)), y: Number(y.toFixed(3)) };
+  });
+}
+
+/* Workspace URL for an analysis session */
+function sessionWorkspaceUrl(session: AnalysisSession): string {
+  return `/workspace/${session.technique}?mode=demo&session=${session.analysisId}`;
+}
+
+/* Agent URL for an analysis session */
+function sessionAgentUrl(session: AnalysisSession): string {
+  return `/demo/agent?technique=${session.technique}&session=${session.analysisId}&mode=demo`;
+}
+
 /* ──────────────────────────────────────────────────────────────
-   EvidencePanel
+   AnalysisSessionCard
+   Full-card version of an analysis session for the Sample Analysis
+   tab grid. Mirrors the visual system of ProjectCardV5 (simplified).
+   IMPORTANT: No inline analysis — buttons route OUT to Workspace / Agent.
    ────────────────────────────────────────────────────────────── */
-function EvidencePanel({
-  sessions,
-  mode,
-  showDemoProjects,
-  fullWidth = false,
-}: {
-  sessions: AnalysisSession[];
-  mode: DashMode;
-  showDemoProjects: boolean;
-  fullWidth?: boolean;
-}) {
-  const activeSessions = useMemo(() => {
-    return showDemoProjects
-      ? sessions.filter((s) => s.source !== 'user_uploaded')
-      : sessions.filter((s) => s.source === 'user_uploaded');
-  }, [sessions, showDemoProjects]);
+function AnalysisSessionCard({ session }: { session: AnalysisSession }) {
+  const isValidated = session.status === 'completed' || session.status === 'saved';
+  const techBadgeClass = getTechBadgeClass(session.technique);
+
+  /* Build the same graph source that the dashboard/workspace uses */
+  const graphSource = useMemo<DemoGraphData>(() => ({
+    kind: 'graph',
+    type: session.technique,
+    xLabel: session.graphData.axisLabel,
+    yLabel: session.graphData.yLabel,
+    data: makeSessionGraphPoints(session.technique),
+    peaks: session.graphData.markers,
+  }), [session]);
+
+  const statusLabel = useMemo(() => {
+    switch (session.status) {
+      case 'saved': return 'Saved (Validated)';
+      case 'completed': return 'Completed (Validated)';
+      case 'draft': return 'Draft (Pending)';
+      case 'needs-review': return 'Needs Review (Pending)';
+      default: return session.status.charAt(0).toUpperCase() + session.status.slice(1);
+    }
+  }, [session.status]);
 
   return (
-    <div
-      className={cn(
-        'flex flex-col rounded-[12px] overflow-hidden h-full db-card',
-        fullWidth ? 'w-full' : 'w-[268px] shrink-0',
-      )}
-    >
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 db-hairline-b">
-        <FlaskConical size={15} className="db-indigo" />
-        <span className="text-[13px] font-semibold flex-1 db-heading">
-          Scientific Evidence
-        </span>
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full tabular-nums db-badge-indigo">
-          {activeSessions.length}
-        </span>
-      </div>
-
-      {/* Guidance caption */}
-      {mode === 'guidance' && (
-        <div className="px-4 py-2 text-[11px] italic leading-snug db-guidance-cap">
-          Datasets validated across techniques. Pending items need review before reporting.
-        </div>
-      )}
-
-      {/* List */}
-      <div className="flex-1 overflow-y-auto min-h-0">
-        {activeSessions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-[12px] db-muted">
-            <FlaskConical size={24} />
-            No evidence datasets
-          </div>
-        ) : (
-          <ul>
-            {activeSessions.map((session, i) => {
-              const isValidated = session.status === 'completed' || session.status === 'saved';
-              const badgeClass = getTechBadgeClass(session.technique);
-              return (
-                <li
-                  key={session.analysisId}
-                  className={cn(
-                    'flex items-start gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors cursor-pointer',
-                    i < activeSessions.length - 1 ? 'db-hairline-b' : '',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'text-[9px] font-bold uppercase tracking-[0.06em] px-1.5 py-0.5 rounded-[4px] border shrink-0 mt-0.5',
-                      badgeClass,
-                    )}
-                  >
-                    {session.technique.toUpperCase()}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div
-                      className="text-[11px] font-medium leading-snug truncate db-heading"
-                      title={session.title}
-                    >
-                      {session.title}
-                    </div>
-                    <div className="text-[10px] mt-0.5 tabular-nums db-muted">
-                      {session.owner} · {session.updatedLabel}
-                    </div>
-                  </div>
-                  <span
-                    className={cn(
-                      'flex items-center gap-1 text-[9.5px] font-semibold shrink-0 mt-0.5',
-                      isValidated ? 'db-emerald-text' : 'db-amber-text',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'inline-block w-1.5 h-1.5 rounded-full',
-                        isValidated ? 'db-emerald-icon-bg' : 'bg-[#f79009]',
-                      )}
-                    />
-                    {isValidated ? 'Validated' : 'Pending'}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="px-3 py-2.5 db-hairline-t">
-        <Link
-          to="/history?mode=demo"
-          className="flex items-center justify-center h-8 w-full rounded-[8px] border text-[12px] font-medium transition-colors hover:bg-slate-50 db-card-border db-body"
+    <div className="flex flex-col rounded-[12px] overflow-visible transition-shadow hover:shadow-md db-card">
+      {/* Header: technique badge + status pill */}
+      <div className="flex items-center justify-between px-4 pt-3.5 pb-2.5">
+        <span
+          className={cn(
+            'text-[9.5px] font-bold uppercase tracking-[0.06em] px-2 py-0.5 rounded-[5px] border',
+            techBadgeClass,
+          )}
         >
-          Open evidence explorer
+          {session.technique.toUpperCase()}
+        </span>
+        <span
+          className={cn(
+            'flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border whitespace-nowrap',
+            isValidated ? 'db-emerald-chip' : 'db-amber-chip',
+          )}
+        >
+          <span
+            className={cn(
+              'inline-block w-1.5 h-1.5 rounded-full shrink-0',
+              isValidated ? 'db-emerald-icon-bg' : 'bg-[#f79009]',
+            )}
+          />
+          {statusLabel}
+        </span>
+      </div>
+
+      {/* Title + subtitle */}
+      <div className="px-4 pb-2">
+        <h3 className="text-[14px] font-bold leading-snug db-heading">
+          {formatChemicalFormula(session.title)}
+        </h3>
+        <p className="text-[11px] mt-0.5 tabular-nums db-muted">
+          {session.owner} · {session.updatedLabel}
+          {session.projectName && <span> · {session.projectName}</span>}
+        </p>
+      </div>
+
+      {/* Mini spectrum — reuses DemoProjectGraph */}
+      <div className="mx-3 mb-2.5 rounded-[8px] overflow-hidden db-inner-panel">
+        <div className="flex items-center px-3 py-1.5 db-inner-border-b">
+          <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] db-muted">
+            Spectrum Preview
+          </span>
+        </div>
+        <div className="h-[100px]">
+          <DemoProjectGraph
+            source={graphSource}
+            compact
+            height={90}
+            hideAxes={true}
+            hideGrid={true}
+          />
+        </div>
+      </div>
+
+      {/* Footer: Workspace + Agent buttons only — no Analyze */}
+      <div className="flex items-center gap-2 px-3 py-2.5 db-hairline-t mt-auto">
+        <Link
+          to={sessionWorkspaceUrl(session)}
+          className="flex-1 inline-flex items-center justify-center h-8 px-3 text-[12px] font-semibold text-white rounded-[8px] transition-colors hover:opacity-90 db-indigo-bg"
+        >
+          Open in Workspace
+        </Link>
+        <Link
+          to={sessionAgentUrl(session)}
+          className="inline-flex h-8 items-center gap-1 px-3 rounded-[8px] border text-[12px] font-medium transition-colors hover:bg-slate-50 whitespace-nowrap db-card-border db-body"
+        >
+          <BrainCircuit size={12} />
+          Agent
         </Link>
       </div>
     </div>
@@ -867,7 +894,7 @@ export default function Dashboard() {
               role="tablist"
               aria-label="Content section"
             >
-              {/* Research Projects tab */}
+              {/* Projects tab */}
               {activeTab === 'projects' ? (
                 <button
                   type="button" role="tab" aria-selected="true"
@@ -875,7 +902,7 @@ export default function Dashboard() {
                   className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-all select-none bg-white shadow-sm db-heading"
                 >
                   <Layers size={12} className="db-indigo" />
-                  Research Projects
+                  Projects
                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full tabular-nums db-badge-indigo">
                     {showDemoProjects ? demoProjectRegistry.length : 0}
                   </span>
@@ -887,7 +914,7 @@ export default function Dashboard() {
                   className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-all select-none hover:bg-white/60 db-inactive"
                 >
                   <Layers size={12} className="db-inactive" />
-                  Research Projects
+                  Projects
                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full tabular-nums db-toggle-wrap db-muted">
                     {showDemoProjects ? demoProjectRegistry.length : 0}
                   </span>
@@ -926,53 +953,66 @@ export default function Dashboard() {
             {dashMode === 'guidance' && (
               <p className="text-[11px] italic hidden lg:block db-muted">
                 {activeTab === 'projects'
-                  ? 'Active research projects with multi-technique evidence.'
-                  : 'Individual sample analyses not yet assigned to a project.'}
+                  ? 'Active projects with multi-technique evidence.'
+                  : 'Individual sample analyses — open in Workspace or Agent.'}
               </p>
             )}
           </div>
 
           {/* ── Body ── */}
           {activeTab === 'projects' ? (
-            /* Project grid + evidence sidebar */
-            <div className="flex gap-3.5 flex-1 min-h-0">
-              <div className="flex-1 min-h-0 flex flex-col">
-                {showDemoProjects ? (
-                  <div className="grid grid-cols-2 gap-3.5 content-start min-h-0 overflow-y-auto pb-2 flex-1">
-                    {demoProjectRegistry.map((project) => (
-                      <ProjectCardV5 key={project.id} project={project} />
-                    ))}
+            /* Project grid — full width now that side panel is removed */
+            <div className="flex-1 min-h-0">
+              {showDemoProjects ? (
+                <div className="grid grid-cols-2 gap-3.5 content-start min-h-0 overflow-y-auto pb-2 h-full">
+                  {demoProjectRegistry.map((project) => (
+                    <ProjectCardV5 key={project.id} project={project} />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center flex-col gap-4 bg-white border border-slate-200 rounded-[12px] p-6 shadow-sm h-full">
+                  <p className="text-sm text-text-muted text-center max-w-sm">
+                    No user project exists yet. Upload evidence or create a project notebook.
+                  </p>
+                  <div className="flex gap-3">
+                    <Button
+                      variant="primary"
+                      className="gap-2 text-[12px] h-8 px-3 font-semibold"
+                      onClick={() => setProjectNotebookWizardOpen(true)}
+                    >
+                      <Plus size={14} /> Create Project
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2 text-[12px] h-8 px-3 font-semibold"
+                      onClick={() => navigate('/dashboard?mode=demo', { replace: true })}
+                    >
+                      Use Demo Project
+                    </Button>
                   </div>
-                ) : (
-                  <div className="flex-1 flex items-center justify-center flex-col gap-4 bg-white border border-slate-200 rounded-[12px] p-6 shadow-sm">
-                    <p className="text-sm text-text-muted text-center max-w-sm">
-                      No user project exists yet. Upload evidence or create a project notebook.
-                    </p>
-                    <div className="flex gap-3">
-                      <Button
-                        variant="primary"
-                        className="gap-2 text-[12px] h-8 px-3 font-semibold"
-                        onClick={() => setProjectNotebookWizardOpen(true)}
-                      >
-                        <Plus size={14} /> Create Project
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="gap-2 text-[12px] h-8 px-3 font-semibold"
-                        onClick={() => navigate('/dashboard?mode=demo', { replace: true })}
-                      >
-                        Use Demo Project
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <EvidencePanel sessions={analysisSessions} mode={dashMode} showDemoProjects={showDemoProjects} />
+                </div>
+              )}
             </div>
           ) : (
-            /* Sample Analysis — full-width evidence panel */
+            /* Sample Analysis — card grid, no row list, no inline analysis */
             <div className="flex-1 min-h-0">
-              <EvidencePanel sessions={analysisSessions} mode={dashMode} showDemoProjects={showDemoProjects} fullWidth />
+              {(() => {
+                const activeSessions = showDemoProjects
+                  ? analysisSessions.filter((s) => s.source !== 'user_uploaded')
+                  : analysisSessions.filter((s) => s.source === 'user_uploaded');
+                return activeSessions.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 text-[12px] db-muted">
+                    <FlaskConical size={28} />
+                    No analysis sessions
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 xl:grid-cols-3 gap-3.5 content-start min-h-0 overflow-y-auto pb-2 h-full">
+                    {activeSessions.map((session) => (
+                      <AnalysisSessionCard key={session.analysisId} session={session} />
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
