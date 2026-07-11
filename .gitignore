@@ -114,3 +114,10 @@ scripts/bin/unzip.py
 .env*
 
 .env
+.env.test.local
+
+# Local PostgreSQL installation and database
+/pgdata/
+/pgsql16/
+.vite-validate.pid
+/src/validation/lastRun.json
