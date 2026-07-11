@@ -313,6 +313,9 @@ export default function WorkspaceLauncher() {
   const availableTechniques = projectTechniqueIds(project);
   const missingTechniques = TECHNIQUE_ORDER.filter((technique) => !availableTechniques.includes(technique));
   const nextAction = project.crossTechniqueComparison.recommendedNextAction || project.notebook.decision;
+  const recentSessions = getAnalysisSessions()
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 3);
 
   const updateProject = (nextProjectId: string) => {
     const next = new URLSearchParams(searchParams);
@@ -322,20 +325,21 @@ export default function WorkspaceLauncher() {
 
   return (
     <DashboardLayout>
-      <div className="flex-1 overflow-y-auto bg-slate-50">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 p-4">
+      <div className="min-h-0 flex-1 overflow-hidden bg-soft">
+        <div className="mx-auto flex h-full w-full max-w-7xl min-h-0 flex-col gap-3 p-3">
           {invalidProjectRequested && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
               <span className="font-semibold">Project not found.</span> Showing {formatChemicalFormula(project.title)} demo workspace.
             </div>
           )}
 
-          <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-text-main">Workspace</h1>
-              <p className="mt-1 text-sm text-text-muted">
-                Continue project-linked analysis, review technique evidence, or open multi-tech reasoning.
-              </p>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold tracking-[-0.025em] text-text-main">Workspace</h1>
+                <span className="rounded-full bg-blue-soft px-2 py-0.5 text-[10px] font-semibold text-primary">Scientific Intelligence Workspace</span>
+              </div>
+              <p className="mt-1 text-[12px] text-text-muted">Launch a technique bench, resume evidence work, or open a project workspace.</p>
             </div>
             <label className="min-w-[260px] text-xs">
               <span className="mb-1 block font-bold uppercase tracking-wider text-text-muted">Active project</span>
@@ -351,7 +355,20 @@ export default function WorkspaceLauncher() {
             </label>
           </div>
 
-          <Card className="rounded-lg bg-white px-3 py-2">
+          <div className="flex shrink-0 items-center justify-between gap-3 rounded-[8px] border border-orange/30 bg-orange-soft px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold text-orange">Recommended next action</p>
+              <p className="mt-0.5 truncate text-[12px] font-semibold text-text-main">{nextAction}</p>
+            </div>
+            <Link
+              to={`/workspace/multi?project=${project.id}&mode=demo`}
+              className="shrink-0 rounded-[5px] border border-orange/30 bg-white px-2 py-1 text-[11px] font-semibold text-orange transition-colors hover:bg-orange hover:text-white"
+            >
+              Continue
+            </Link>
+          </div>
+
+          <Card className="shrink-0 rounded-[8px] bg-white px-3 py-2 shadow-none">
             <div className="flex flex-wrap items-center gap-1.5">
               {workflowSteps.map((step, index) => {
                 const path = step.to
@@ -374,8 +391,14 @@ export default function WorkspaceLauncher() {
             </div>
           </Card>
 
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_330px]">
-            <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid min-h-0 flex-1 gap-3 overflow-hidden xl:grid-cols-[minmax(0,1fr)_330px]">
+            <div className="min-h-0 overflow-y-auto pr-1">
+              <div className="mb-2 flex items-center gap-2">
+                <h2 className="text-[13px] font-bold text-text-main">Start a new analysis</h2>
+                <span className="h-px flex-1 bg-border" />
+                <span className="text-[10px] text-text-muted">pick a technique to open the bench</span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               <HubCard
                 icon={Upload}
                 title="Quick Analysis"
@@ -396,8 +419,8 @@ export default function WorkspaceLauncher() {
 
               <HubCard
                 icon={FlaskConical}
-                title="Technique Workspaces (Science Skills)"
-                purpose="Configure and execute modular science skills to extract evidence from your datasets."
+                title="Technique benches"
+                purpose="Open a focused evidence workspace for each available measurement technique."
               >
                 <div className="grid grid-cols-2 gap-2">
                   {TECHNIQUE_ORDER.map((technique) => {
@@ -407,7 +430,7 @@ export default function WorkspaceLauncher() {
                       <Link
                         key={technique}
                         to={techniqueRoute(technique, project.id)}
-                        className={`rounded-md border px-2 py-2 text-xs transition-colors ${
+                        className={`rounded-[8px] border px-2.5 py-2 text-xs transition-colors ${
                           available
                             ? 'border-primary/25 bg-primary/5 text-primary hover:bg-primary/10'
                             : 'border-border bg-slate-50 text-slate-500 hover:bg-slate-100'
@@ -425,14 +448,14 @@ export default function WorkspaceLauncher() {
 
               <HubCard
                 icon={Layers3}
-                title="Multi-Tech Workspace"
-                purpose="Cross-technique comparison and inference across available techniques."
+                title="Cross-Tech"
+                purpose="Fuse visible technique evidence while retaining validation limits and source attribution."
                 cta={
                   <Link
                     to={`/workspace/multi?project=${project.id}&mode=demo`}
                     className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border border-primary bg-primary/10 px-3 text-xs font-bold text-primary hover:bg-primary/20"
                   >
-                    Open Multi-Tech Comparison <ArrowRight size={13} />
+                    Open Cross-Technique Intelligence <ArrowRight size={13} />
                   </Link>
                 }
               >
@@ -444,9 +467,51 @@ export default function WorkspaceLauncher() {
                   <p className="leading-relaxed text-text-muted">{project.crossTechniqueComparison.agreementSummary}</p>
                 </div>
               </HubCard>
+              </div>
             </div>
 
-            <Card className="rounded-lg bg-white p-4">
+            <Card className="min-h-0 overflow-y-auto rounded-[8px] bg-white p-4 shadow-none">
+              <section className="border-b border-border pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-[13px] font-bold text-text-main">Jump back in</h2>
+                  <span className="text-[10px] text-text-muted">recent sessions</span>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {recentSessions.length > 0 ? recentSessions.map((session) => (
+                    <Link
+                      key={session.analysisId}
+                      to={`/analysis/session/${session.analysisId}`}
+                      className="flex items-center justify-between gap-2 rounded-[5px] bg-soft px-2 py-1.5 text-[11px] transition-colors hover:bg-blue-soft"
+                    >
+                      <span className="min-w-0 truncate font-semibold text-text-main">{session.fileName || session.analysisId}</span>
+                      <span className="shrink-0 text-[10px] font-medium text-text-muted">{session.technique}</span>
+                    </Link>
+                  )) : (
+                    <p className="rounded-[5px] bg-soft px-2 py-2 text-[11px] leading-relaxed text-text-muted">No saved local sessions yet. Start an analysis to create one.</p>
+                  )}
+                </div>
+              </section>
+
+              <section className="border-b border-border py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-[13px] font-bold text-text-main">Open a project workspace</h2>
+                  <span className="text-[10px] text-text-muted">go straight to the bench</span>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {demoProjectRegistry.slice(0, 4).map((item) => (
+                    <Link
+                      key={item.id}
+                      to={`/workspace?project=${item.id}&mode=demo`}
+                      className={`flex items-center justify-between gap-2 rounded-[5px] px-2 py-1.5 text-[11px] transition-colors ${item.id === project.id ? 'bg-blue-soft text-primary' : 'bg-soft text-text-main hover:bg-surface-hover'}`}
+                    >
+                      <span className="min-w-0 truncate font-semibold">{formatChemicalFormula(item.title)}</span>
+                      <ArrowRight size={12} className="shrink-0" />
+                    </Link>
+                  ))}
+                </div>
+              </section>
+
+              <section className="pt-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <span className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${jobTypeBadgeClass(project.jobType)}`}>
@@ -522,6 +587,7 @@ export default function WorkspaceLauncher() {
                   Project <ArrowRight size={12} />
                 </Link>
               </div>
+              </section>
             </Card>
           </div>
 

@@ -128,7 +128,7 @@ export function ScientificConfidenceSummary({
         </div>
       </div>
 
-      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
+      <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(130px,1fr))]">
         <div 
           className="rounded-lg border border-border bg-surface p-3 flex flex-col justify-between min-h-[82px] dark:border-slate-800 dark:bg-navy-light/20"
           title="Overall readiness score calculated from active evidence layers"

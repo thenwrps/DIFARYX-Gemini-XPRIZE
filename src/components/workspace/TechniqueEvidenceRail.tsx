@@ -32,9 +32,13 @@ interface TechniqueEvidenceRailProps {
   notebookPath: string;
   reportPath: string;
   exportPath: string;
+  multiTechPath?: string;
   onStepClick?: (stepId: string) => void;
   selectedStepId?: string | null;
   datasetEditor?: React.ReactNode;
+  collapsed?: boolean;
+  onExpand?: () => void;
+  onCollapse?: () => void;
 }
 
 function statusBadgeClass(status: string) {
@@ -156,6 +160,7 @@ function ProcessingPipelineTab({
   notebookPath,
   reportPath,
   exportPath,
+  multiTechPath,
   onStepClick,
   selectedStepId,
 }: Pick<
@@ -170,6 +175,7 @@ function ProcessingPipelineTab({
   | 'notebookPath'
   | 'reportPath'
   | 'exportPath'
+  | 'multiTechPath'
   | 'onStepClick'
   | 'selectedStepId'
 >) {
@@ -219,47 +225,55 @@ function ProcessingPipelineTab({
         })}
       </div>
 
-      <details className="group pt-1">
+      <details className="group pt-1" open>
         <summary className="flex h-8 cursor-pointer list-none items-center justify-between rounded border border-border bg-background px-2.5 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover [&::-webkit-details-marker]:hidden">
           <span className="inline-flex items-center gap-1.5">
             <Sparkles size={13} className="text-primary" />
-            Actions
+            Send this evidence to
           </span>
           <ChevronDown size={13} className="text-text-muted transition-transform group-open:rotate-180" />
         </summary>
 
-        <div className="mt-1.5 space-y-1 rounded border border-border bg-background p-1.5 shadow-sm">
+        <div className="mt-1.5 space-y-1 rounded border border-border bg-background p-1.5">
           <button
             type="button"
             onClick={onSaveSession}
             className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
           >
-            Save Quick Session <Save size={12} />
+            <span>Save session</span><span className="text-[9px] text-emerald-700">Saved locally</span>
           </button>
           <Link
             to={attachProjectPath}
             className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-amber-800 transition-colors hover:bg-amber-50"
           >
-            Attach to Project <Layers size={12} />
+            <span>Attach to project</span><span className="text-[9px] text-amber-700">Context-aware</span>
           </Link>
           <Link
             to={agentPath}
             className="flex h-7 w-full items-center justify-between rounded bg-primary px-2 text-[10px] font-semibold text-white transition-colors hover:bg-primary/90"
           >
-            Send to Agent <Sparkles size={12} />
+            <span>Send to Agent</span><Sparkles size={12} />
           </Link>
           <Link
             to={notebookPath}
             className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
           >
-            Send to Notebook <FileText size={12} />
+            <span>Notebook</span><span className="text-[9px] text-emerald-700">Added</span>
           </Link>
           <Link
             to={reportPath}
             className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
           >
-            Create Report <FileText size={12} />
+            <span>Report</span><span className="text-[9px] text-emerald-700">85% ready</span>
           </Link>
+          {multiTechPath && (
+            <Link
+              to={multiTechPath}
+              className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
+            >
+              <span>Add to Cross-Technique Intelligence</span><Layers size={12} />
+            </Link>
+          )}
           <Link
             to={exportPath}
             className="flex h-7 w-full items-center justify-between rounded px-2 text-[10px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
@@ -274,10 +288,38 @@ function ProcessingPipelineTab({
 
 export function TechniqueEvidenceRail(props: TechniqueEvidenceRailProps) {
   const [activeTab, setActiveTab] = useState<'dataset' | 'pipeline'>('dataset');
+  const [compactDrawerOpen, setCompactDrawerOpen] = useState(false);
+
+  if (props.collapsed) {
+    return (
+      <aside className="flex w-11 shrink-0 flex-col items-center border-r border-border bg-surface py-3">
+        <button
+          type="button"
+          onClick={props.onExpand}
+          className="tip flex h-8 w-8 items-center justify-center rounded-[5px] border border-border bg-white text-[11px] font-bold text-text-muted transition-colors hover:border-primary/40 hover:bg-blue-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          aria-label="Expand dataset and pipeline panel"
+          data-tip="Expand dataset and pipeline"
+        >
+          <Layers size={14} />
+        </button>
+      </aside>
+    );
+  }
 
   return (
-    <aside className="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-border bg-surface">
-      <div className="grid shrink-0 grid-cols-2 gap-1 border-b border-border p-2">
+    <aside className={compactDrawerOpen
+      ? 'workspace-left-rail fixed inset-y-0 left-0 z-50 flex w-[300px] flex-col overflow-hidden border-r border-border bg-surface shadow-lg'
+      : 'workspace-left-rail flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-border bg-surface max-[1099px]:w-11'}>
+      <button
+        type="button"
+        onClick={() => setCompactDrawerOpen(true)}
+        className="tip hidden h-8 w-8 self-center rounded-[5px] border border-border bg-white text-text-muted transition-colors hover:bg-blue-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary max-[1099px]:inline-flex max-[1099px]:items-center max-[1099px]:justify-center max-[1099px]:mt-3"
+        aria-label="Open dataset and pipeline drawer"
+        data-tip="Open dataset and pipeline"
+      >
+        <Layers size={14} />
+      </button>
+      <div className={`grid shrink-0 grid-cols-[1fr_1fr_28px] gap-1 border-b border-border p-2 ${compactDrawerOpen ? '' : 'max-[1099px]:hidden'}`}>
         <button
           type="button"
           onClick={() => setActiveTab('dataset')}
@@ -296,9 +338,21 @@ export function TechniqueEvidenceRail(props: TechniqueEvidenceRailProps) {
         >
           Processing Pipeline
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCompactDrawerOpen(false);
+            props.onCollapse?.();
+          }}
+          className="tip inline-flex h-8 items-center justify-center rounded-[5px] text-text-muted transition-colors hover:bg-blue-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          aria-label="Collapse dataset and pipeline panel"
+          data-tip="Collapse panel"
+        >
+          <Layers size={13} />
+        </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <div className={`panelScroll min-h-0 flex-1 overflow-y-auto px-3 py-3 ${compactDrawerOpen ? '' : 'max-[1099px]:hidden'}`}>
         {activeTab === 'dataset' ? <DatasetTab {...props} /> : <ProcessingPipelineTab {...props} />}
       </div>
     </aside>

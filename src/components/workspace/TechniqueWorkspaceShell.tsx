@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowRight,
@@ -168,7 +168,7 @@ import { getTechniqueProcessingSupport } from '../../utils/techniqueProcessingSu
 import { runWhenIdle } from '../../utils/idle';
 import { identifyMaterialFeatures, applyBaseline, applySmoothing } from '../../hooks/useX7UniversalHook';
 
-const RIGHT_TABS = ['Evidence', 'Parameters', 'Graph', 'Boundary', 'Trace'] as const;
+const RIGHT_TABS = ['Parameters', 'Evidence', 'Boundary'] as const;
 type RightTab = (typeof RIGHT_TABS)[number];
 type PipelineStepState = 'done' | 'active' | 'pending' | 'optional';
 
@@ -886,6 +886,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   const isQuickMode = mode === 'quick';
   const config = useMemo(() => getTechniqueWorkspaceConfig(technique), [technique]);
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   // Phase X6B: Access runtime context for reactive event dispatching
   const {
@@ -1232,6 +1233,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   };
 
   const [activeGraphTool, setActiveGraphTool] = useState<GraphToolId>('pan');
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [isGraphActionsOpen, setIsGraphActionsOpen] = useState(false);
 
   // Manual peak selection configuration (specifically for FTIR)
@@ -2969,6 +2971,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
       return;
     }
 
+    setLeftPanelCollapsed(true);
     updatePaneLayout({
       rightPanelCollapsed: true,
       graphFocusMode: true,
@@ -2976,6 +2979,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   };
 
   const restorePaneLayout = () => {
+    setLeftPanelCollapsed(false);
     updatePaneLayout({
       rightPanelCollapsed: false,
       graphFocusMode: false,
@@ -3045,75 +3049,83 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+      <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-white px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden whitespace-nowrap">
           <Link
             to={isQuickMode ? analysisReturnPath : workspacePath}
-            className="shrink-0 text-sm font-bold tracking-tight text-text-main hover:text-primary"
+            className="shrink-0 text-[12px] font-semibold text-text-muted transition-colors hover:text-primary"
+            title="Return to Workspace"
+          >
+            &lsaquo; Workspace
+          </Link>
+          <span className="shrink-0 text-xs text-border">/</span>
+          <span
+            className="min-w-0 truncate text-[12px] font-bold text-text-main"
             title={config.title}
           >
             {config.title}
-          </Link>
-          <span className="shrink-0 text-xs text-text-muted">&middot;</span>
-          {isUploadedContext ? (
-            <span className="min-w-0 truncate text-xs font-semibold text-blue-700">
-              User Workspace
-            </span>
-          ) : isQuickMode ? (
-            <span className="min-w-0 truncate text-xs font-semibold text-amber-700">
-              Quick Analysis
-            </span>
-          ) : (
-            <span
-              className="min-w-0 truncate text-xs font-semibold text-text-main"
-              title={project?.title ?? 'No project linked'}
-            >
-              {project ? formatChemicalFormula(project.title) : 'No project linked'}
-            </span>
-          )}
-          <span className="shrink-0 text-xs text-text-muted">&middot;</span>
-          <span
-            className="min-w-0 max-w-[360px] truncate text-xs text-text-muted"
-            title={datasetLabel}
-          >
-            {formatChemicalFormula(datasetLabel)}
           </span>
+          <select
+            aria-label="Switch technique workspace"
+            value={technique}
+            onChange={(event) => {
+              const nextTechnique = event.target.value as TechniqueWorkspaceId;
+              if (nextTechnique === technique) return;
+              navigate(`/workspace/${nextTechnique}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`);
+            }}
+            className="h-7 max-w-[150px] rounded-[5px] border border-border bg-surface px-2 text-[11px] font-semibold text-text-main outline-none transition-colors hover:border-primary/40 focus:border-primary"
+          >
+            <option value="xrd">XRD Workspace</option>
+            <option value="xps">XPS Workspace</option>
+            <option value="ftir">FTIR Workspace</option>
+            <option value="raman">Raman Workspace</option>
+          </select>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-
+        <div className="flex shrink-0 items-center gap-1">
+          {paneLayout.graphFocusMode && (
+            <button
+              type="button"
+              onClick={restorePaneLayout}
+              className="inline-flex h-7 items-center rounded-[5px] border border-primary/30 bg-blue-soft px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              Exit focus
+            </button>
+          )}
           <Link
-            to={(() => {
-              const search = isUploadedContext ? buildEvidenceRouteSearch(routeContext) : '';
-              return search ? `/workspace?${search}` : '/workspace';
-            })()}
-            className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-white px-3 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
+            to={`/workspace/multi${project ? `?project=${project.id}&mode=demo` : ''}`}
+            className="tip inline-flex h-7 w-7 items-center justify-center rounded-[5px] border border-border bg-white text-text-muted transition-colors hover:border-primary/40 hover:bg-blue-soft hover:text-primary"
+            data-tip="Compare across techniques"
+            aria-label="Compare across techniques"
           >
-            <Layers size={13} />
-            {isQuickMode ? 'Attach Project' : project ? 'Switch Project' : 'Attach Project'}
-          </Link>
-          <Link
-            to={workspacePath}
-            className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-white px-3 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover"
-          >
-            <RotateCcw size={13} />
-            Change Technique
+            <Layers size={14} />
           </Link>
           <button
             type="button"
+            onClick={reprocess}
+            className="tip inline-flex h-7 w-7 items-center justify-center rounded-[5px] border border-border bg-white text-text-muted transition-colors hover:border-primary/40 hover:bg-blue-soft hover:text-primary"
+            data-tip={config.reprocessLabel}
+            aria-label={config.reprocessLabel}
+          >
+            <Play size={13} />
+          </button>
+          <button
+            type="button"
             onClick={() => setIsUploadModalOpen(true)}
-            className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-white px-3 text-[11px] font-semibold text-text-main transition-colors hover:bg-surface-hover hover:text-primary hover:border-primary/50"
+            className="tip inline-flex h-7 w-7 items-center justify-center rounded-[5px] border border-border bg-white text-text-muted transition-colors hover:border-primary/40 hover:bg-blue-soft hover:text-primary"
+            data-tip="Upload file"
+            aria-label="Upload file"
           >
             <Upload size={13} />
-            Upload File
           </button>
           <button
             type="button"
             onClick={saveSession}
-            className="inline-flex h-8 items-center gap-1.5 rounded bg-primary px-3 text-[11px] font-semibold text-white transition-colors hover:bg-primary/90"
+            className="tip inline-flex h-7 w-7 items-center justify-center rounded-[5px] bg-primary text-white transition-colors hover:bg-primary/90"
+            data-tip="Save session"
+            aria-label="Save session"
           >
             <Save size={13} />
-            Save
           </button>
         </div>
       </header>
@@ -3160,6 +3172,13 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
           notebookPath={notebookPath}
           reportPath={reportPath}
           exportPath={analysisReturnPath}
+          multiTechPath={`/workspace/multi${project ? `?project=${project.id}&mode=demo` : ''}`}
+          collapsed={paneLayout.graphFocusMode || leftPanelCollapsed}
+          onExpand={() => {
+            setLeftPanelCollapsed(false);
+            if (paneLayout.graphFocusMode) restorePaneLayout();
+          }}
+          onCollapse={() => setLeftPanelCollapsed(true)}
           onStepClick={handleStepClick}
           selectedStepId={selectedStepId}
           extraMetadata={config.id === 'xrd' ? [
@@ -3454,6 +3473,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                     showCalculated={false}
                     showResidual={false}
                     onChartClick={handleChartClick}
+                    isLoading={sessionState.pendingRecalculation}
                   />
                 </div>
               </div>
@@ -3618,7 +3638,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-5 gap-1">
+              <div className="grid grid-cols-3 gap-1">
                 {RIGHT_TABS.map((tab) => (
                   <button
                     key={tab}
@@ -3636,24 +3656,53 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              <details className="group mb-3 rounded border border-border bg-background" open>
+                <summary className="flex h-8 cursor-pointer list-none items-center justify-between px-2.5 text-[10px] font-bold text-text-main [&::-webkit-details-marker]:hidden">
+                  <span className="inline-flex items-center gap-1.5"><FileText size={12} className="text-primary" /> Output</span>
+                  <ChevronDown size={13} className="text-text-muted transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="grid grid-cols-2 gap-px border-t border-border bg-border text-[10px]">
+                  <div className="bg-background px-2.5 py-2"><span className="block text-text-muted">State</span><span className="font-semibold text-text-main">{processingStateLabel}</span></div>
+                  <div className="bg-background px-2.5 py-2"><span className="block text-text-muted">Features</span><span className="font-semibold text-text-main">{mappedFeatureRows.length} detected</span></div>
+                </div>
+              </details>
+
               {activeRightTab === 'Evidence' && (
-                <EvidencePanel
-                  config={config}
-                  focusedEvidence={focusedEvidence}
-                  featureRows={mappedFeatureRows}
-                  graphData={graphData}
-                  datasetStatus={datasetStatus}
-                  project={project}
-                  isUploadedContext={isUploadedContext}
-                  quickSession={quickAnalysisSession}
-                  xrdBackendEnabled={isXrdBackendEnabled}
-                  xrdBackendHealth={xrdBackendHealth}
-                  xrdBackendResult={xrdBackendResult}
-                  xrdBackendLoading={xrdBackendLoading}
-                  xrdBackendError={xrdBackendError}
-                  xrdBackendSaved={xrdBackendSaved}
-                  datasetContext={xrdDatasetContext}
-                />
+                <>
+                  <EvidencePanel
+                    config={config}
+                    focusedEvidence={focusedEvidence}
+                    featureRows={mappedFeatureRows}
+                    graphData={graphData}
+                    datasetStatus={datasetStatus}
+                    project={project}
+                    isUploadedContext={isUploadedContext}
+                    quickSession={quickAnalysisSession}
+                    xrdBackendEnabled={isXrdBackendEnabled}
+                    xrdBackendHealth={xrdBackendHealth}
+                    xrdBackendResult={xrdBackendResult}
+                    xrdBackendLoading={xrdBackendLoading}
+                    xrdBackendError={xrdBackendError}
+                    xrdBackendSaved={xrdBackendSaved}
+                    datasetContext={xrdDatasetContext}
+                  />
+                  <details className="group mt-3 rounded border border-border bg-background">
+                    <summary className="flex h-8 cursor-pointer list-none items-center justify-between px-2.5 text-[10px] font-bold text-text-main [&::-webkit-details-marker]:hidden">
+                      Processing trace <ChevronDown size={13} className="text-text-muted transition-transform group-open:rotate-180" />
+                    </summary>
+                    <div className="border-t border-border p-2">
+                      <TracePanel
+                        config={config}
+                        project={project}
+                        datasetLabel={datasetLabel}
+                        evidenceSourceId={evidenceSource?.datasetId}
+                        traceId={getTraceId(project, technique)}
+                        datasetStatus={datasetStatus}
+                        sessionState={sessionState}
+                      />
+                    </div>
+                  </details>
+                </>
               )}
 
               {activeRightTab === 'Parameters' && (
@@ -3686,16 +3735,20 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                     industryFilter={industryFilter}
                     onIndustryFilterChange={handleIndustryFilterChange}
                   />
+                  <details className="group mt-3 rounded border border-border bg-background">
+                    <summary className="flex h-8 cursor-pointer list-none items-center justify-between px-2.5 text-[10px] font-bold text-text-main [&::-webkit-details-marker]:hidden">
+                      Graph layout <ChevronDown size={13} className="text-text-muted transition-transform group-open:rotate-180" />
+                    </summary>
+                    <div className="border-t border-border p-2">
+                      <GraphLayoutPanel
+                        paneLayout={paneLayout}
+                        onPreset={setPanePreset}
+                        onRestore={restorePaneLayout}
+                        onWidthChange={(width) => updatePaneLayout({ rightPanelWidth: width, rightPanelCollapsed: false, graphFocusMode: false })}
+                      />
+                    </div>
+                  </details>
                 </>
-              )}
-
-              {activeRightTab === 'Graph' && (
-                <GraphLayoutPanel
-                  paneLayout={paneLayout}
-                  onPreset={setPanePreset}
-                  onRestore={restorePaneLayout}
-                  onWidthChange={(width) => updatePaneLayout({ rightPanelWidth: width, rightPanelCollapsed: false, graphFocusMode: false })}
-                />
               )}
 
               {activeRightTab === 'Boundary' && (
@@ -3707,17 +3760,6 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                 />
               )}
 
-              {activeRightTab === 'Trace' && (
-                <TracePanel
-                  config={config}
-                  project={project}
-                  datasetLabel={datasetLabel}
-                  evidenceSourceId={evidenceSource?.datasetId}
-                  traceId={getTraceId(project, technique)}
-                  datasetStatus={datasetStatus}
-                  sessionState={sessionState}
-                />
-              )}
             </div>
           </aside>
         )}

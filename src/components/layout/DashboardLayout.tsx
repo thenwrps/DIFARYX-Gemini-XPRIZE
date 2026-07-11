@@ -41,33 +41,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { isAuthenticated, user, signOut } = useAuth();
   const [storedMode, setStoredModeState] = React.useState<WorkspaceMode | null>(() => getStoredWorkspaceMode());
-  const [isTopbarCompact, setIsTopbarCompact] = React.useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
-  const lastScrollY = React.useRef(0);
-
-  React.useEffect(() => {
-    const getScrollTop = (target: EventTarget | null) => {
-      if (target === document || target === window || target === document.documentElement || target === document.body) {
-        return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
-      }
-      if (target instanceof HTMLElement) return target.scrollTop;
-      return window.scrollY || 0;
-    };
-
-    const handleScroll = (event: Event) => {
-      const nextScrollY = getScrollTop(event.target);
-      if (nextScrollY > lastScrollY.current + 4) {
-        setIsTopbarCompact(true);
-      } else if (nextScrollY < lastScrollY.current - 4) {
-        setIsTopbarCompact(false);
-      }
-      lastScrollY.current = Math.max(0, nextScrollY);
-    };
-
-    document.addEventListener('scroll', handleScroll, { capture: true, passive: true });
-    return () => document.removeEventListener('scroll', handleScroll, { capture: true });
-  }, []);
 
   React.useEffect(() => {
     const handleWorkspaceModeChange = () => {
@@ -147,11 +122,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             to={item.path}
             title={isSidebarCollapsed ? item.label : undefined}
             className={cn(
-              "flex items-center rounded-md text-sm font-semibold transition-colors",
-              isSidebarCollapsed ? "h-11 justify-center px-0" : "justify-start gap-3 px-3 py-2.5",
+              "flex h-[38px] items-center rounded-[5px] text-[13px] font-semibold transition-colors",
+              isSidebarCollapsed ? "justify-center px-0" : "justify-start gap-2.5 px-2.5",
               active
-                ? "bg-blue-600 text-white shadow-sm shadow-blue-950/20"
-                : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                ? "bg-[#2f66e9] text-white"
+                : "text-[#475467] hover:bg-[#f1f5f9] hover:text-[#101828]"
             )}
           >
             <item.icon size={isSidebarCollapsed ? 20 : 18} />
@@ -174,55 +149,54 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside
         className={cn(
-          "border-r border-slate-200 bg-white text-slate-950 flex flex-col transition-[width] duration-200 shrink-0",
-          isSidebarCollapsed ? "w-16 md:w-[72px]" : "w-64"
+          "workspace-app-sidebar flex shrink-0 flex-col border-r border-[#dbe3ef] bg-white text-[#101828] transition-[width] duration-200",
+          isSidebarCollapsed ? "w-14" : "w-[210px] max-[1100px]:w-14"
         )}
       >
         <div
           className={cn(
-            "h-14 flex items-center border-b border-slate-200 shrink-0 px-2",
+            "flex h-12 shrink-0 items-center border-b border-[#dbe3ef] px-2",
             isSidebarCollapsed ? "justify-center" : "justify-between"
           )}
         >
           <Link
             to="/"
             className={cn(
-              "rounded-md flex items-center transition-colors hover:bg-slate-100",
-              isSidebarCollapsed ? "h-11 w-11 justify-center" : "px-3 py-1.5"
+              "flex items-center rounded-md transition-colors hover:bg-slate-50",
+              isSidebarCollapsed ? "h-9 w-9 justify-center" : "min-w-0 gap-2 px-1.5 py-1"
             )}
             title={isSidebarCollapsed ? "DIFARYX" : undefined}
           >
-            <img 
-              src={isSidebarCollapsed ? "/favicon.ico" : "/logo/difaryx.png"}
-              alt="DIFARYX" 
-              className={cn(
-                "object-contain hover:opacity-90 cursor-pointer transition-none",
-                isSidebarCollapsed ? "h-9 w-9" : "h-8"
-              )}
+            <img
+              src="/favicon.ico"
+              alt=""
+              className="h-[25px] w-[25px] shrink-0 rounded-[5px] object-cover"
             />
+            {!isSidebarCollapsed && <span className="truncate text-[15px] font-extrabold tracking-[-0.035em] text-[#101828] max-[1100px]:hidden">DIFARYX</span>}
           </Link>
           {!isSidebarCollapsed && (
             <button
               type="button"
               onClick={() => setIsSidebarCollapsed(true)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+              className="tip inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950 max-[1100px]:hidden"
               aria-label="Collapse sidebar"
+              data-tip="Collapse sidebar"
             >
               <PanelLeftClose size={17} />
             </button>
           )}
         </div>
-        <nav className={cn("flex-1 overflow-y-auto py-3", isSidebarCollapsed ? "px-2" : "px-3")}>
+        <nav className={cn("flex-1 overflow-y-auto py-2.5", isSidebarCollapsed ? "px-2" : "px-2.5")}>
           {renderNavItems(mainNavItems)}
         </nav>
         {isSidebarCollapsed && (
-          <div className="border-t border-slate-200 p-2">
+          <div className="border-t border-[#dbe3ef] p-2">
             <button
               type="button"
               onClick={() => setIsSidebarCollapsed(false)}
-              className="flex h-10 w-full items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+              className="tip flex h-9 w-full items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-950"
               aria-label="Expand sidebar"
-              title="Expand sidebar"
+              data-tip="Expand sidebar"
             >
               <PanelLeftOpen size={18} />
             </button>
@@ -233,14 +207,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar */}
-        <header className={`sticky top-0 z-40 border-b border-border bg-surface/50 backdrop-blur flex items-center justify-between px-3 md:px-5 shrink-0 transition-[height] duration-200 ${isTopbarCompact ? 'h-12' : 'h-14'}`}>
-          <div className="hidden sm:block flex-1 max-w-lg">
+        <header className="z-40 flex h-12 shrink-0 items-center justify-between border-b border-[#dbe3ef] bg-white px-3 md:px-4">
+          <div className="hidden min-w-0 flex-[0_1_420px] sm:block">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={16} />
-              <input 
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#667085]" size={15} />
+              <input
                 type="text" 
                 placeholder="Search projects, patterns, or tags..." 
-                className="h-9 w-full bg-surface-hover border border-border rounded-md pl-9 pr-3 text-sm focus:outline-none focus:border-primary transition-colors text-text-main placeholder:text-text-muted/50"
+                className="h-8 w-full rounded-[5px] border border-[#d6e0ed] bg-[#f2f6fb] pl-8 pr-3 text-[12px] font-medium text-[#101828] outline-none transition-colors placeholder:text-[#98a2b3] focus:border-primary focus:ring-2 focus:ring-primary/10"
               />
             </div>
           </div>
@@ -258,9 +232,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={() => setIsProfileOpen((open) => !open)}
-                  className="flex h-8 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-1.5 pr-2 text-primary transition-colors hover:bg-primary/15"
+                  className="tip flex h-8 items-center gap-1.5 rounded-[18px] border border-[#8fb3ff] bg-[#eef5ff] px-1.5 pr-2 text-[#2f66e9] transition-colors hover:bg-[#e3efff]"
                   aria-label="Open profile menu"
                   aria-expanded={isProfileOpen}
+                  data-tip="Account menu"
                 >
                   {user?.picture ? (
                     <img src={user.picture} alt={user.name ?? user.email ?? 'Account'} className="h-6 w-6 rounded-full object-cover" />

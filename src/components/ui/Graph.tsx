@@ -107,6 +107,10 @@ interface GraphProps {
   onChartClick?: (x: number, y: number) => void;
   hideAxes?: boolean;
   hideGrid?: boolean;
+  /** Shows bounded reference markers. Can also be toggled with the R key while focused. */
+  showReferencePeaks?: boolean;
+  /** Keeps the previous signal visible while a parent recalculates it. */
+  isLoading?: boolean;
 }
 
 // ── Internal data types ──────────────────────────────────────────────
@@ -456,12 +460,16 @@ export function Graph({
   onChartClick,
   hideAxes = false,
   hideGrid = false,
+  showReferencePeaks = true,
+  isLoading = false,
 }: GraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const noDataRef = useRef<HTMLDivElement>(null);
   const containerSize = useContainerSize(containerRef);
   const isContainerReady = containerSize.width > 0 && containerSize.height > 0;
   const useExternal = !!externalData && externalData.length > 0;
+  const [viewDomain, setViewDomain] = useState<[number, number] | null>(null);
+  const [referencePeaksVisible, setReferencePeaksVisible] = useState(showReferencePeaks);
 
   // Set --graph-h CSS custom property imperatively so no style prop is needed in JSX
   useEffect(() => {
@@ -483,6 +491,10 @@ export function Graph({
   const settings = SETTINGS[type];
   const displayXLabel = xAxisLabel ?? settings.xLabel;
   const displayYLabel = yAxisLabel ?? settings.yLabel;
+
+  useEffect(() => {
+    setReferencePeaksVisible(showReferencePeaks);
+  }, [showReferencePeaks]);
 
   if (useExternal) {
     // External data rendering mode — use reduce to avoid stack overflow on large datasets
@@ -512,8 +524,68 @@ export function Graph({
       Number.isFinite(xMax) ? xMax + xPadding : settings.range[1],
     ];
 
-    const markers = peakMarkers ?? [];
+    const markers = referencePeaksVisible ? (peakMarkers ?? []) : [];
     const labeledMarkerPositions = getLabeledMarkerPositions(type, markers);
+    const appliedXDomain = viewDomain ?? xDomain;
+
+    const clampViewport = (requestedStart: number, requestedEnd: number): [number, number] => {
+      const fullStart = Math.min(xDomain[0], xDomain[1]);
+      const fullEnd = Math.max(xDomain[0], xDomain[1]);
+      const fullSpan = fullEnd - fullStart;
+      const requestedSpan = Math.max((xDomain[1] - xDomain[0]) / 80, requestedEnd - requestedStart);
+      const span = Math.min(fullSpan, requestedSpan);
+      let start = Math.max(fullStart, requestedStart);
+      let end = start + span;
+
+      if (end > fullEnd) {
+        end = fullEnd;
+        start = end - span;
+      }
+
+      return [start, end];
+    };
+
+    const updateViewport = (next: 'zoomIn' | 'zoomOut' | 'panLeft' | 'panRight' | 'reset') => {
+      if (next === 'reset') {
+        setViewDomain(null);
+        return;
+      }
+      const [start, end] = viewDomain ?? xDomain;
+      const span = end - start;
+      if (next === 'zoomIn' || next === 'zoomOut') {
+        const factor = next === 'zoomIn' ? 0.8 : 1.25;
+        const middle = (start + end) / 2;
+        const nextSpan = Math.min(xDomain[1] - xDomain[0], Math.max((xDomain[1] - xDomain[0]) / 80, span * factor));
+        setViewDomain(clampViewport(middle - nextSpan / 2, middle + nextSpan / 2));
+        return;
+      }
+      const shift = span * 0.15 * (next === 'panLeft' ? -1 : 1);
+      setViewDomain(clampViewport(start + shift, end + shift));
+    };
+
+    const handleViewportKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      if (target.matches('input, textarea, select, button, [contenteditable="true"]') || target.isContentEditable) return;
+      if (event.key === '+' || event.key === '=') {
+        event.preventDefault();
+        updateViewport('zoomIn');
+      } else if (event.key === '-') {
+        event.preventDefault();
+        updateViewport('zoomOut');
+      } else if (event.key === '0') {
+        event.preventDefault();
+        updateViewport('reset');
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        updateViewport('panLeft');
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        updateViewport('panRight');
+      } else if (event.key.toLowerCase() === 'r') {
+        event.preventDefault();
+        setReferencePeaksVisible((visible) => !visible);
+      }
+    };
 
     // Guard: if external data is empty or domain is invalid, render nothing
     if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || xMin === xMax) {
@@ -530,7 +602,15 @@ export function Graph({
     return (
       <div
         ref={containerRef}
-        className="graph-container w-full relative"
+        className="graph-container relative w-full rounded-[5px] outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        tabIndex={0}
+        aria-label={`${type.toUpperCase()} signal graph. Use mouse wheel or plus and minus to zoom, arrow keys to pan, zero to reset, and R to toggle reference peaks.`}
+        onKeyDown={handleViewportKeyDown}
+        onDoubleClick={() => updateViewport('reset')}
+        onWheel={(event) => {
+          event.preventDefault();
+          updateViewport(event.deltaY < 0 ? 'zoomIn' : 'zoomOut');
+        }}
       >
         {isContainerReady && (
         <ResponsiveContainer width="100%" height="100%" minHeight={40} minWidth={40}>
@@ -551,7 +631,7 @@ export function Graph({
                 axisLine={{ stroke: '#334155' }}
                 label={{ value: displayXLabel, position: 'bottom', fill: '#94a3b8', fontSize: 12 }}
                 type="number"
-                domain={xDomain}
+                domain={appliedXDomain}
                 reversed={settings.reversed}
               />
             )}
@@ -572,10 +652,14 @@ export function Graph({
                 typeof value === 'number' ? value.toFixed(2) : value,
                 tooltipNames[String(name)] ?? name,
               ]}
-              labelFormatter={(value) => `${displayXLabel}: ${Number(value).toFixed(2)}`}
+              labelFormatter={(value) => {
+                const marker = markers.find((item) => Math.abs(item.position - Number(value)) < (type === 'xrd' ? 0.15 : type === 'raman' ? 2 : 0.5));
+                return `${displayXLabel}: ${Number(value).toFixed(2)}${marker?.label ? ` · ${marker.label}${marker.role === 'selected' ? ' · Supported' : ''}` : ''}`;
+              }}
               contentStyle={TOOLTIP_CONTENT_STYLE}
               itemStyle={TOOLTIP_ITEM_STYLE}
               labelStyle={TOOLTIP_LABEL_STYLE}
+              cursor={{ stroke: '#64748b', strokeDasharray: '3 3', strokeWidth: 1 }}
             />
             {showLegend && (
               <Legend
@@ -685,6 +769,11 @@ export function Graph({
             />
           </LineChart>
         </ResponsiveContainer>
+        )}
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/65 text-[11px] font-semibold text-text-main" aria-live="polite">
+            Recalculating signal…
+          </div>
         )}
       </div>
     );

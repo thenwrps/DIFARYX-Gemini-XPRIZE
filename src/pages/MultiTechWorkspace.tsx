@@ -117,6 +117,9 @@ interface GraphHighlight {
   role: 'selected' | 'linked';
 }
 
+const INTELLIGENCE_TABS = ['inference', 'comparison', 'references', 'limits'] as const;
+type IntelligenceTab = (typeof INTELLIGENCE_TABS)[number];
+
 // Local interaction anchors for graph highlighting. Project claims and summaries come from the registry.
 const demoEvidenceItems: CrossTechEvidence[] = [
   {
@@ -971,7 +974,7 @@ function MultiTechWorkspaceContent() {
   const [hoveredEvidenceId, setHoveredEvidenceId] = useState<string | null>(null);
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'conclusion' | 'justification' | 'evidence' | 'interpretation'>('conclusion');
-  const [activeRightTab, setActiveRightTab] = useState<'inference' | 'comparison' | 'references' | 'limits'>('inference');
+  const [activeRightTab, setActiveRightTab] = useState<IntelligenceTab>('inference');
   const [reviewOutput, setReviewOutput] = useState<FusionResult | null>(null);
   const [isTechniqueDropdownOpen, setIsTechniqueDropdownOpen] = useState(false);
   const [workflowFeedback, setWorkflowFeedback] = useState('');
@@ -1392,6 +1395,24 @@ function MultiTechWorkspaceContent() {
     navigate(`/demo/agent?project=${project.id}&mode=demo&scope=fusion&processing=${processingResult.id}&template=research`);
   };
 
+  const handleIntelligenceTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    currentTab: IntelligenceTab,
+  ) => {
+    const currentIndex = INTELLIGENCE_TABS.indexOf(currentTab);
+    const nextIndex = event.key === 'ArrowRight'
+      ? (currentIndex + 1) % INTELLIGENCE_TABS.length
+      : event.key === 'ArrowLeft'
+        ? (currentIndex - 1 + INTELLIGENCE_TABS.length) % INTELLIGENCE_TABS.length
+        : -1;
+
+    if (nextIndex === -1) return;
+    event.preventDefault();
+    const nextTab = INTELLIGENCE_TABS[nextIndex];
+    setActiveRightTab(nextTab);
+    requestAnimationFrame(() => document.getElementById(`intelligence-tab-${nextTab}`)?.focus());
+  };
+
   // Build notebook draft from FusionResult
   const buildNotebookDraftFromFusionResult = (result: FusionResult, projectName: string): string => {
     return `# Cross-Tech Review: ${projectName}
@@ -1420,17 +1441,16 @@ ${result.decision}
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col h-full overflow-hidden bg-background p-1.5">
+      <div className="flex h-full flex-col overflow-hidden bg-background p-2">
         {/* Header */}
-        <div className="mb-1 rounded-lg border border-border bg-surface px-2.5 py-1.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="min-w-[220px]">
-              <h1 className="text-sm font-bold text-text-main">Cross-Techniques Comparison</h1>
-              <p className="text-[10px] text-text-muted">
-                Compare processed evidence across available techniques.
-              </p>
+        <div className="mb-2 shrink-0 border border-border bg-white">
+          <div className="flex h-10 min-w-0 flex-nowrap items-center gap-2 px-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden whitespace-nowrap">
+              <Link to={`/workspace?project=${project.id}&mode=demo`} className="shrink-0 text-[12px] font-semibold text-text-muted hover:text-primary">&lsaquo; Workspace</Link>
+              <span className="shrink-0 text-xs text-border">/</span>
+              <h1 className="min-w-0 truncate text-[13px] font-bold text-text-main">Cross-Technique Intelligence</h1>
             </div>
-            <div className="flex max-w-full flex-wrap items-center justify-start gap-1.5 sm:justify-end">
+            <div className="flex shrink-0 flex-nowrap items-center gap-1.5">
               {evidenceBundle ? (
                 <div
                   className="inline-flex h-8 max-w-[320px] items-center gap-1.5 rounded border border-cyan-200 bg-cyan-50 px-2.5 text-[10px] font-semibold text-cyan-700"
@@ -1458,7 +1478,7 @@ ${result.decision}
                   const newProjectId = event.target.value;
                   navigate(`/workspace/multi?project=${newProjectId}`);
                 }}
-                className="h-8 max-w-full rounded border border-border bg-background px-3 text-sm font-semibold text-text-main outline-none hover:border-primary/40 focus:border-primary sm:max-w-[240px]"
+                className="h-7 max-w-[180px] rounded-[5px] border border-border bg-background px-2 text-[11px] font-semibold text-text-main outline-none hover:border-primary/40 focus:border-primary"
               >
                 {demoProjectRegistry.map((proj) => (
                   <option key={proj.id} value={proj.id}>
@@ -1468,8 +1488,8 @@ ${result.decision}
               </select>
               <div className="relative">
                 <details className="group">
-                  <summary className="cursor-pointer list-none rounded border border-border bg-background px-3 py-1.5 text-sm font-semibold text-text-main hover:border-primary/40 inline-flex min-w-fit">
-                    <span className="whitespace-nowrap">{Array.from(activeTechniques).join(', ')}</span>
+                  <summary className="cursor-pointer list-none rounded-[5px] border border-border bg-background px-2 py-1.5 text-[11px] font-semibold text-text-main hover:border-primary/40 inline-flex min-w-fit">
+                    <span className="whitespace-nowrap">{Array.from(activeTechniques).join(', ') || 'No techniques'}</span>
                   </summary>
                   <div className="absolute right-0 z-10 mt-1 rounded border border-border bg-white shadow-lg">
                     <div className="p-2 flex gap-3 whitespace-nowrap">
@@ -1491,44 +1511,49 @@ ${result.decision}
               <button
                 type="button"
                 onClick={() => setUploadPanelExpanded(true)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-surface-hover hover:text-text-main"
+                className="tip inline-flex h-7 w-7 items-center justify-center rounded-[5px] border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-blue-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 title="Add Dataset"
                 aria-label="Add Dataset"
+                data-tip="Import comparison package"
               >
                 <Upload size={14} />
               </button>
               <button
                 onClick={handleRunReview}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white transition-colors hover:bg-primary/90"
+                className="tip inline-flex h-7 w-7 items-center justify-center rounded-[5px] bg-indigo text-white transition-colors hover:bg-indigo/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo"
                 title="Run Review"
                 aria-label="Run Review"
+                data-tip="Run cross-tech review"
               >
                 <Play size={14} />
               </button>
               <button
                 type="button"
                 onClick={handleSaveProcessingResult}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-surface-hover hover:text-text-main"
+                className="tip inline-flex h-7 w-7 items-center justify-center rounded-[5px] border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-blue-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 title="Save Result"
                 aria-label="Save Result"
+                data-tip="Export comparison result"
               >
                 <CheckCircle2 size={14} />
               </button>
               <button
                 type="button"
                 onClick={handleRefineInterpretation}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-surface-hover hover:text-text-main"
+                className="tip inline-flex h-7 w-7 items-center justify-center rounded-[5px] border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-blue-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 title="Refine"
                 aria-label="Refine"
+                data-tip="Refine inference"
               >
                 <FileText size={14} />
               </button>
               <Link to={`/workspace/fusion?project=${project.id}`}>
                 <button
                   type="button"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-surface-hover hover:text-text-main"
+                  className="tip inline-flex h-7 w-7 items-center justify-center rounded-[5px] border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-blue-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   title="Report"
                   aria-label="Report"
+                  data-tip="Add comparison to report"
                 >
                   <BookOpen size={14} />
                 </button>
@@ -1536,18 +1561,19 @@ ${result.decision}
               <Link to={`/notebook?project=${project.id}&mode=demo&source=fusion&template=research`}>
                 <button
                   type="button"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-surface-hover hover:text-text-main"
+                  className="tip inline-flex h-7 w-7 items-center justify-center rounded-[5px] border border-border bg-background text-text-muted transition-colors hover:border-primary/40 hover:bg-blue-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   title="Notebook"
                   aria-label="Notebook"
+                  data-tip="Open references in notebook"
                 >
                   <Save size={14} />
                 </button>
               </Link>
             </div>
           </div>
-          <div className="mt-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-muted">
-              <span className="font-bold text-emerald-700">
+          <div className="comparisonToolbar flex h-9 min-w-0 items-center gap-2 border-t border-border px-3">
+            <div className="comparisonStatus flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] text-text-muted">
+              <span className="shrink-0 rounded-full bg-green-soft px-2 py-1 font-bold text-green">
                 {evidenceBundle?.lifecycleState === 'preview'
                   ? 'Comparison Preview Ready'
                   : evidenceBundle
@@ -1557,27 +1583,11 @@ ${result.decision}
                       : 'No comparison package yet'
                 }
               </span>
-              <span>
-                {Array.from(activeTechniques).length === 1
-                  ? `Technique: ${Array.from(activeTechniques)[0]}`
-                  : `Techniques: ${Array.from(activeTechniques).length}`
-                }
-              </span>
-              {evidenceBundle?.lifecycleState === 'preview' && (
-                <span>Coverage: {evidenceBundle.evidenceCompletenessScore}%</span>
-              )}
-              {evidenceBundle?.lifecycleState === 'preview' && (
-                <span>Validation-limited comparison</span>
-              )}
-              <span>Working assignment: {formatChemicalFormula(project.material)}</span>
-              <span className="font-semibold text-text-main">
-                {evidenceBundle
-                  ? 'Next: Run cross-tech review'
-                  : Array.from(activeTechniques).length === 1
-                    ? 'Next: Review evidence'
-                    : 'Next: Select evidence sources'
-                }
-              </span>
+              <span className="shrink-0 rounded-full bg-soft px-2 py-1">Techniques {Array.from(activeTechniques).length}</span>
+              <span className="shrink-0 rounded-full bg-soft px-2 py-1">Coverage {evidenceBundle?.evidenceCompletenessScore ?? 0}%</span>
+              <span className="max-w-[260px] shrink truncate rounded-full bg-soft px-2 py-1">Assignment {formatChemicalFormula(project.material)}</span>
+              <span className="shrink-0 rounded-full bg-soft px-2 py-1">{agreementLabel(crossTech.agreementLevel)}</span>
+              <span className="shrink-0 rounded-full bg-orange-soft px-2 py-1 text-orange">Validation-limited</span>
               {workflowFeedback && <span className="font-semibold text-primary">{workflowFeedback}</span>}
             </div>
           </div>
@@ -2102,9 +2112,23 @@ ${result.decision}
         )}
 
         {/* Main 2-column layout: Left (technique grid) | Right (vertical sections) */}
-        <div className="grid min-h-0 max-w-full flex-1 grid-cols-1 gap-1.5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid min-h-0 max-w-full flex-1 grid-cols-1 gap-2 overflow-hidden lg:grid-cols-[minmax(0,1.62fr)_minmax(340px,1fr)]">
           {/* Left Panel: Adaptive technique grid */}
           <div className="min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden">
+            <div className="mb-1.5 flex items-center justify-between gap-2 rounded-[5px] border border-border bg-white px-2.5 py-1.5">
+              <div className="min-w-0">
+                <h2 className="text-[13px] font-bold text-text-main">Signal agreement</h2>
+                <p className="truncate text-[10px] text-text-muted">Aligned technique signals retain source-specific axes and bounded evidence markers.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setHoveredEvidenceId(null); setSelectedEvidenceId(null); }}
+                className="tip shrink-0 rounded-[5px] border border-border bg-surface px-2 py-1 text-[10px] font-semibold text-text-muted transition-colors hover:bg-blue-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                data-tip="Clear active graph highlights"
+              >
+                Clear
+              </button>
+            </div>
             {availableTechniques.length === 0 ? (
               <EmptyStateCard
                 type="missing_evidence"
@@ -2388,29 +2412,45 @@ ${result.decision}
           </div>
 
           {/* Right Panel: Tabbed Scientific Interface */}
-          <div className="min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden">
-            <Card className="h-full min-w-0 max-w-full overflow-hidden">
+          <div className="min-h-0 min-w-0 max-w-full overflow-hidden">
+            <Card className="flex h-full min-w-0 max-w-full flex-col overflow-hidden bg-white shadow-none">
               {/* Tab Navigation */}
-              <div className="border-b border-border px-2 py-1.5">
-                <div className="flex gap-1">
-                  {(['inference', 'comparison', 'references', 'limits'] as const).map((tab) => (
+              <div className="sticky top-0 z-10 shrink-0 border-b border-border bg-white px-2 py-1.5">
+                <div className="flex gap-1" role="tablist" aria-label="Cross-technique intelligence">
+                  {INTELLIGENCE_TABS.map((tab) => (
                     <button
                       key={tab}
+                      id={`intelligence-tab-${tab}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={activeRightTab === tab}
+                      aria-controls={`intelligence-panel-${tab}`}
+                      tabIndex={activeRightTab === tab ? 0 : -1}
                       onClick={() => setActiveRightTab(tab)}
-                      className={`rounded px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                      onKeyDown={(event) => handleIntelligenceTabKeyDown(event, tab)}
+                      className={`rounded-[5px] px-2 py-1.5 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                         activeRightTab === tab
                           ? 'bg-primary/10 text-primary'
                           : 'text-text-muted hover:bg-surface-hover hover:text-text-main'
                       }`}
                     >
-                      {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                      {tab === 'references'
+                        ? `References ${crossTech.references.filter((reference) => reference.status === 'available').length}/${crossTech.references.length}`
+                        : tab === 'limits'
+                          ? `Limits ${registryProject.validationGapCount}`
+                          : tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                   ))}
                 </div>
               </div>
 
               {/* Tab Content */}
-              <div className="p-3">
+              <div
+                id={`intelligence-panel-${activeRightTab}`}
+                role="tabpanel"
+                aria-labelledby={`intelligence-tab-${activeRightTab}`}
+                className="panelScroll min-h-0 flex-1 overflow-y-auto p-3"
+              >
                 {activeRightTab === 'inference' && (
                   <div className="space-y-3">
                     <div>

@@ -2677,7 +2677,7 @@ ${approvalLedgerMarkdown}
                       const details = NOTEBOOK_TEMPLATE_DETAILS[mode];
                       const isSelected = templateMode === mode;
                       return (
-                        <button key={mode} type="button" aria-pressed={isSelected} onClick={() => setTemplateMode(mode)}
+                        <button key={mode} type="button" onClick={() => setTemplateMode(mode)}
                           className={`rounded-md border px-2.5 py-2 text-left transition-colors ${isSelected ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-background text-text-muted hover:border-primary/30 hover:text-text-main'}`}>
                           <div className="flex items-center justify-between gap-2">
                             <div className="text-xs font-bold text-text-main">{template.label}</div>
@@ -2714,6 +2714,8 @@ ${approvalLedgerMarkdown}
                         value={selectedTechniqueForExport}
                         onChange={(event) => setSelectedEvidenceTechnique(event.target.value as Technique)}
                         className="h-7 rounded-md border border-border bg-background px-2 text-xs font-semibold text-text-main outline-none focus:border-primary"
+                        title="Select technique for export"
+                        aria-label="Select technique for export"
                       >
                         {selectableExportTechniques.map((technique) => (
                           <option key={technique} value={technique}>{technique}</option>
@@ -3403,7 +3405,6 @@ ${approvalLedgerMarkdown}
                       <button
                         key={mode}
                         type="button"
-                        aria-pressed={isSelected}
                         onClick={() => setTemplateMode(mode)}
                         className={`rounded-lg border p-3 text-left transition-colors ${
                           isSelected
