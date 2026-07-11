@@ -75,6 +75,14 @@ def bootstrap():
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'difaryx_rls_test') THEN
                 CREATE ROLE difaryx_rls_test WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
             END IF;
+
+            -- Phase 1A Dedicated roles
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'difaryx_identity_resolver') THEN
+                CREATE ROLE difaryx_identity_resolver NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT BYPASSRLS;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'difaryx_audit_writer') THEN
+                CREATE ROLE difaryx_audit_writer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+            END IF;
         END
         $$;
     """)
@@ -112,6 +120,16 @@ def bootstrap():
     for schema in schemas:
         cur_db.execute(f"GRANT USAGE ON SCHEMA {schema} TO difaryx_app")
         cur_db.execute(f"GRANT USAGE ON SCHEMA {schema} TO difaryx_purge")
+
+    # Dedicated resolver and audit writer schema grants
+    cur_db.execute("GRANT USAGE ON SCHEMA identity TO difaryx_identity_resolver")
+    cur_db.execute("GRANT USAGE ON SCHEMA identity TO difaryx_audit_writer")
+    cur_db.execute("GRANT USAGE ON SCHEMA governance TO difaryx_audit_writer")
+
+    # Print role preparation summary
+    print(f"Role: difaryx_identity_resolver, NOLOGIN, BYPASSRLS=True")
+    print(f"Role: difaryx_audit_writer, NOLOGIN, BYPASSRLS=False")
+    print(f"Target test database: {TEST_DB_NAME}")
 
     # Setup least-privilege default privileges:
     # Any table created by difaryx_owner gets:
