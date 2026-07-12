@@ -153,7 +153,22 @@ def bootstrap_database(db_name):
 
 def run_migrations():
     print("Running Alembic migrations on target database...")
-    python_path = sys.executable or "C:\\Python314\\python.exe"
+    python_path = None
+    candidates = [
+        "C:\\Python314\\python.exe",
+        sys.executable,
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/python/venv/Scripts/python.exe")),
+    ]
+    for cand in candidates:
+        if cand and os.path.exists(cand):
+            import subprocess
+            res = subprocess.run([cand, "-c", "import alembic"], capture_output=True)
+            if res.returncode == 0:
+                python_path = cand
+                break
+    
+    if not python_path:
+        python_path = sys.executable or "C:\\Python314\\python.exe"
     
     # We must pass the DATABASE_URL to Alembic
     env = os.environ.copy()
@@ -174,7 +189,11 @@ def main():
         
         # Apply grants
         print("Applying table-level least-privilege matrix...")
-        python_path = sys.executable or "C:\\Python314\\python.exe"
+        venv_python = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/python/venv/Scripts/python.exe"))
+        if os.path.exists(venv_python):
+            python_path = venv_python
+        else:
+            python_path = sys.executable or "C:\\Python314\\python.exe"
         env = os.environ.copy()
         env["DATABASE_URL"] = BOOTSTRAP_URL
         res = subprocess.run([python_path, "tests/apply_grants.py"], cwd="C:\\DIFARYX-demo\\backend", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
