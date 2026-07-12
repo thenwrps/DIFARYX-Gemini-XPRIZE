@@ -74,6 +74,9 @@ from api.evidence_router import router as evidence_router
 from api.analysis_router import router as analysis_router
 from api.routes.health import router as health_router
 from api.db import verify_database_readiness, engine
+from api.routes.me import router as me_router
+from api.routes.organizations import router as org_router
+from api.routes.projects import router as project_router
 
 # ============================================================================
 # Production-Ready Configuration (Step 5)
@@ -310,6 +313,11 @@ app.include_router(analysis_router)
 
 # Register the Health check router
 app.include_router(health_router)
+
+# Register Phase 1A bootstrap and project endpoints
+app.include_router(me_router, prefix="/api/v1")
+app.include_router(org_router, prefix="/api/v1")
+app.include_router(project_router, prefix="/api/v1")
 
 
 
