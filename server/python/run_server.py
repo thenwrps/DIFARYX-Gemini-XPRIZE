@@ -31,6 +31,10 @@ import uvicorn  # noqa: E402
 
 def main() -> None:
     """Parse CLI arguments and launch the uvicorn server."""
+    import sys
+    import asyncio
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     parser = argparse.ArgumentParser(
         description="DIFARYX XRD Processing Engine — FastAPI Gateway",

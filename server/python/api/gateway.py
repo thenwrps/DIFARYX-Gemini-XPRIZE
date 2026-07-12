@@ -72,6 +72,8 @@ from xrd_engine.services.general_sample_assessment import (
 )
 from api.evidence_router import router as evidence_router
 from api.analysis_router import router as analysis_router
+from api.routes.health import router as health_router
+from api.db import verify_database_readiness, engine
 
 # ============================================================================
 # Production-Ready Configuration (Step 5)
@@ -163,6 +165,20 @@ async def lifespan(app: FastAPI):
     
     logger.info("DIFARYX XRD Gateway starting up", version=BACKEND_SCHEMA_VERSION)
     
+    # Check database readiness at startup
+    try:
+        await verify_database_readiness(engine)
+    except Exception as e:
+        logger.error(f"CRITICAL: Database readiness check failed: {e}")
+        
+    # Initialize verifier on startup to detect configuration errors immediately
+    try:
+        from api.auth.dependencies import get_token_verifier
+        get_token_verifier()
+    except Exception as e:
+        logger.error(f"CRITICAL: Token verifier initialization failed: {e}")
+        raise e
+
     # Check engine initialization
     try:
         # Test engine instantiation
@@ -291,6 +307,10 @@ app.include_router(evidence_router)
 
 # Register the Multi-Technique Analysis Upload router
 app.include_router(analysis_router)
+
+# Register the Health check router
+app.include_router(health_router)
+
 
 
 # ============================================================================
