@@ -83,10 +83,20 @@ function PageLoadingIndicator({ message }: { message: string }) {
   );
 }
 
+import { resolveRuntimeConfig } from "./config/runtimeConfig";
+import { ConfigurationErrorScreen } from "./components/ui/ConfigurationErrorScreen";
+import { OrganizationProvider } from "./contexts/OrganizationContext";
+
 function App() {
+  const { error } = resolveRuntimeConfig();
+  if (error) {
+    return <ConfigurationErrorScreen error={error} />;
+  }
+
   return (
     <AuthProvider>
-      <Router>
+      <OrganizationProvider>
+        <Router>
         <XrdWorkflowRuntimeProvider>
           <Suspense fallback={null}>
             <Routes>
@@ -211,6 +221,7 @@ function App() {
           </Suspense>
         </XrdWorkflowRuntimeProvider>
       </Router>
+      </OrganizationProvider>
     </AuthProvider>
   );
 }
