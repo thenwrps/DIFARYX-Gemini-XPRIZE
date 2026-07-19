@@ -121,3 +121,26 @@ scripts/bin/unzip.py
 /pgsql16/
 .vite-validate.pid
 /src/validation/lastRun.json
+
+# ------------------------------------------------------------
+# WSL / Alpine / container disk images and rootfs archives
+# ------------------------------------------------------------
+wsl-alpine/
+alpine-rootfs.tar.gz
+
+# ------------------------------------------------------------
+# Local scratch / diagnostic scripts and temp output
+# ------------------------------------------------------------
+scratch/
+err.txt
+out.txt
+full_test_output.txt
+new_tests_output.txt
+git_status_full.txt
+test_output_*.txt
+backend/*.out.txt
+backend/test_output.txt
+backend/test_stderr.txt
+backend/test_stdout.txt
+.trae/
+.roo/
