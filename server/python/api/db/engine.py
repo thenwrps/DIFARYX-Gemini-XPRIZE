@@ -59,13 +59,18 @@ async def verify_database_readiness(async_engine: AsyncEngine) -> None:
                 raise RuntimeError(f"Database Readiness Failure: alembic_version table is missing, empty, or unreadable: {e}")
 
             logger.info(f"Current Alembic revision verified: '{active_revision}'")
-            if active_revision != "0009":
-                raise RuntimeError(f"Database Migration Mismatch: expected revision '0009', got '{active_revision}'")
+            if active_revision != "0015":
+                raise RuntimeError(f"Database Migration Mismatch: expected revision '0015', got '{active_revision}'")
 
             # 4. Check function existence
             funcs_to_check = [
                 ("identity", "resolve_external_identity"),
-                ("governance", "append_audit_event")
+                ("governance", "append_audit_event"),
+                ("governance", "reserve_storage_quota"),
+                ("governance", "release_storage_reservation"),
+                ("governance", "settle_storage_reservation"),
+                ("science", "app_transition_dataset_upload_status"),
+                ("science", "validation_worker_settle_terminal"),
             ]
             for schema, func in funcs_to_check:
                 func_check = await conn.execute(sa.text("""
