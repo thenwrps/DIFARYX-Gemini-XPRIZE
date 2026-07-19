@@ -1,8 +1,6 @@
-# AGENTS.md
-
 # DIFARYX Agent Operating Guide
 
-Version: 2026.05
+**Version: 2026.05**
 
 ---
 
@@ -10,27 +8,27 @@ Version: 2026.05
 
 ## Organization
 
-dFRYX lab
+**dFRYX lab**
 
 ## Core Product
 
-DIFARYX
+**DIFARYX**
 
 DIFARYX is an autonomous scientific workflow intelligence system for experimental R&D.
 
 The system helps researchers transform experimental evidence into defensible scientific decisions through structured reasoning, validation awareness, and reproducible scientific memory.
 
-DIFARYX is NOT:
+DIFARYX is **not**:
 
-* an XRD application
-* a spectra viewer
-* a graph dashboard
-* a notebook replacement
-* a report generator
+- An XRD application
+- A spectra viewer
+- A graph dashboard
+- A notebook replacement
+- A report generator
 
 XRD, XPS, FTIR, and Raman are demonstration evidence sources used to showcase the broader DIFARYX workflow.
 
-The product identity is scientific workflow intelligence.
+The product identity is **scientific workflow intelligence**.
 
 ---
 
@@ -38,39 +36,27 @@ The product identity is scientific workflow intelligence.
 
 All features must support the canonical DIFARYX workflow:
 
+```text
 Research Objective
-
 ↓
-
 Experimental Setup / Context
-
 ↓
-
 Evidence Workspace
-
 ↓
-
 Agent Reasoning
-
 ↓
-
 Validation Gap
-
 ↓
-
 Next Experiment / Decision
-
 ↓
-
 Notebook Memory
-
 ↓
-
 Scientific Report
+```
 
 Compact narrative:
 
-Goal → Plan → Execute → Evidence → Reason → Decision → Report
+> Goal → Plan → Execute → Evidence → Reason → Decision → Report
 
 Agents must preserve this workflow.
 
@@ -82,20 +68,20 @@ Do not collapse the workflow into a single result state.
 
 Supported techniques:
 
-* XRD
-* XPS
-* FTIR
-* Raman
+- XRD
+- XPS
+- FTIR
+- Raman
 
 Fallback mode:
 
-* Unknown Signal
+- Unknown Signal
 
 Unknown Signal may only provide:
 
-* signal inspection
-* pattern observations
-* anomaly discussion
+- Signal inspection
+- Pattern observations
+- Anomaly discussion
 
 Unknown Signal must never generate material-specific conclusions.
 
@@ -113,29 +99,29 @@ Validation requirements must remain visible.
 
 Agents must explicitly separate:
 
-* Evidence
-* Interpretation
-* Hypothesis
-* Conclusion
-* Validation Gap
+- Evidence
+- Interpretation
+- Hypothesis
+- Conclusion
+- Validation Gap
 
 Do not present interpretations as facts.
 
 Preferred wording:
 
-* evidence suggests
-* evidence supports
-* consistent with
-* may indicate
-* appears compatible with
+- Evidence suggests
+- Evidence supports
+- Consistent with
+- May indicate
+- Appears compatible with
 
 Avoid:
 
-* proves
-* confirms
-* definitely is
-* guarantees
-* unquestionably demonstrates
+- Proves
+- Confirms
+- Definitely is
+- Guarantees
+- Unquestionably demonstrates
 
 unless validation requirements have been satisfied.
 
@@ -147,64 +133,58 @@ unless validation requirements have been satisfied.
 
 Can support:
 
-* crystallographic evidence
-* phase-related evidence
-* peak matching evidence
-* structural consistency evidence
+- Crystallographic evidence
+- Phase-related evidence
+- Peak-matching evidence
+- Structural-consistency evidence
 
 Cannot independently confirm:
 
-* phase purity
-* synthesis success
-* composition
-* material performance
-
----
+- Phase purity
+- Synthesis success
+- Composition
+- Material performance
 
 ## XPS
 
 Can support:
 
-* surface composition evidence
-* oxidation state evidence
-* surface chemistry evidence
+- Surface-composition evidence
+- Oxidation-state evidence
+- Surface-chemistry evidence
 
 Cannot independently determine:
 
-* bulk composition
-* complete phase assignment
-* phase purity
-
----
+- Bulk composition
+- Complete phase assignment
+- Phase purity
 
 ## FTIR
 
 Can support:
 
-* bonding evidence
-* functional-group evidence
-* chemical environment evidence
+- Bonding evidence
+- Functional-group evidence
+- Chemical-environment evidence
 
 Cannot independently determine:
 
-* crystal structure
-* phase purity
-* crystallographic identity
-
----
+- Crystal structure
+- Phase purity
+- Crystallographic identity
 
 ## Raman
 
 Can support:
 
-* vibrational fingerprint evidence
-* local structural evidence
-* symmetry-related evidence
+- Vibrational-fingerprint evidence
+- Local structural evidence
+- Symmetry-related evidence
 
 Cannot independently replace:
 
-* crystallographic validation
-* phase purity validation
+- Crystallographic validation
+- Phase-purity validation
 
 ---
 
@@ -214,76 +194,79 @@ Experimental conditions are first-class evidence.
 
 Agents must preserve condition context throughout the workflow.
 
-Preserve:
-
 ## Sample Preparation
 
-* precursor information
-* composition
-* synthesis route
-* temperatures
-* durations
-* atmosphere
+Preserve:
+
+- Precursor information
+- Composition
+- Synthesis route
+- Temperatures
+- Durations
+- Atmosphere
 
 ## Measurement Conditions
 
-* instrument configuration
-* acquisition parameters
-* scan settings
-* measurement settings
+Preserve:
+
+- Instrument configuration
+- Acquisition parameters
+- Scan settings
+- Measurement settings
 
 ## Processing Conditions
 
-* smoothing
-* baseline correction
-* normalization
-* fitting choices
-* transformations
+Preserve:
+
+- Smoothing
+- Baseline correction
+- Normalization
+- Fitting choices
+- Transformations
 
 ## Validation Conditions
 
-* reference sets
-* thresholds
-* approval status
-* validation assumptions
+Preserve:
+
+- Reference sets
+- Thresholds
+- Approval status
+- Validation assumptions
 
 Condition information must remain available during:
 
-* workspace analysis
-* agent reasoning
-* notebook generation
-* report generation
-* evidence handoff
-* fusion workflows
+- Workspace analysis
+- Agent reasoning
+- Notebook generation
+- Report generation
+- Evidence handoff
+- Fusion workflows
 
 ---
 
 # Uploaded Signal Rules
 
-Uploaded Signal is currently Public Beta.
+Uploaded Signal is currently **Public Beta**.
 
 Supported formats:
 
-* csv
-* txt
-* xy
-* dat
+- `csv`
+- `txt`
+- `xy`
+- `dat`
 
 Agents must:
 
-1. validate signal quality
-2. inspect completeness
-3. determine technique compatibility
-4. establish confidence boundaries
-5. generate validation requirements
+1. Validate signal quality.
+2. Inspect completeness.
+3. Determine technique compatibility.
+4. Establish confidence boundaries.
+5. Generate validation requirements.
 
-Weak signals must generate:
+Weak signals must generate one of these states:
 
-* BLOCKED
-  or
-* LIMITED CONFIDENCE
-
-states.
+- `BLOCKED`
+- `LIMITED CONFIDENCE`
 
 Never hallucinate material identification.
 
@@ -297,31 +280,21 @@ All scientific claims must be traceable.
 
 Every claim should connect to:
 
+```text
 Claim
-
 ↓
-
 Evidence
-
 ↓
-
 Observations
-
 ↓
-
 Limitations
-
 ↓
-
 Confidence
-
 ↓
-
 Validation Gap
-
 ↓
-
 Next Recommended Action
+```
 
 Agents must not generate orphan conclusions.
 
@@ -335,10 +308,10 @@ Fusion workflows must preserve source attribution.
 
 Agents must maintain:
 
-* XRD evidence provenance
-* XPS evidence provenance
-* FTIR evidence provenance
-* Raman evidence provenance
+- XRD evidence provenance
+- XPS evidence provenance
+- FTIR evidence provenance
+- Raman evidence provenance
 
 Do not merge evidence in a way that obscures source techniques.
 
@@ -354,21 +327,21 @@ Approval-aware validation is mandatory.
 
 Local reference matching requires:
 
-* approved reference
-* technically eligible reference
-* no critical validation errors
-* sufficient peak count
-* supported import state
+- Approved reference
+- Technically eligible reference
+- No critical validation errors
+- Sufficient peak count
+- Supported import state
 
 Reject references when status includes:
 
-* not_reviewed
-* requires_peak_extraction
-* requires_converter
-* unsupported_format
-* corrupted_file
-* parse_error
-* not_supported_yet
+- `not_reviewed`
+- `requires_peak_extraction`
+- `requires_converter`
+- `unsupported_format`
+- `corrupted_file`
+- `parse_error`
+- `not_supported_yet`
 
 Do not bypass approval checks.
 
@@ -382,18 +355,18 @@ Do not rewrite the entire application.
 
 Do not reframe DIFARYX as:
 
-* only an XRD tool
-* only a spectroscopy tool
-* only a graph viewer
-* only a materials dashboard
+- Only an XRD tool
+- Only a spectroscopy tool
+- Only a graph viewer
+- Only a materials dashboard
 
 Do not remove:
 
-* graph components
-* evidence workspaces
-* reasoning stages
-* validation gap stages
-* notebook handoff stages
+- Graph components
+- Evidence workspaces
+- Reasoning stages
+- Validation-gap stages
+- Notebook-handoff stages
 
 Do not hide graphs during agent execution.
 
@@ -401,13 +374,13 @@ Do not replace reasoning chains with a simple completion state.
 
 Preserve:
 
-* objective
-* context
-* evidence
-* reasoning
-* validation gap
-* decision
-* notebook/report
+- Objective
+- Context
+- Evidence
+- Reasoning
+- Validation gap
+- Decision
+- Notebook/report
 
 Keep the demo deterministic.
 
@@ -417,7 +390,7 @@ Do not add dependencies without approval.
 
 Do not modify routing without approval.
 
-Do not remove existing localStorage workflows.
+Do not remove existing `localStorage` workflows.
 
 Do not weaken scientific guardrails.
 
@@ -425,46 +398,46 @@ Do not weaken scientific guardrails.
 
 # Important Routes
 
-| Route            | Purpose                         |
-| ---------------- | ------------------------------- |
-| /                | DIFARYX landing experience      |
-| /login           | Demo authentication entry       |
-| /dashboard       | Project dashboard               |
-| /demo/agent      | Scientific agent workflow demo  |
-| /workspace/xrd   | XRD evidence workspace          |
-| /workspace/xps   | XPS evidence workspace          |
-| /workspace/ftir  | FTIR evidence workspace         |
-| /workspace/raman | Raman evidence workspace        |
-| /workspace/multi | Multi-tech evidence fusion      |
-| /notebook        | Scientific memory and reporting |
-| /history         | Provenance history              |
-| /settings        | Demo settings                   |
+| Route | Purpose |
+| --- | --- |
+| `/` | DIFARYX landing experience |
+| `/login` | Demo authentication entry |
+| `/dashboard` | Project dashboard |
+| `/demo/agent` | Scientific agent workflow demo |
+| `/workspace/xrd` | XRD evidence workspace |
+| `/workspace/xps` | XPS evidence workspace |
+| `/workspace/ftir` | FTIR evidence workspace |
+| `/workspace/raman` | Raman evidence workspace |
+| `/workspace/multi` | Multi-tech evidence fusion |
+| `/notebook` | Scientific memory and reporting |
+| `/history` | Provenance history |
+| `/settings` | Demo settings |
 
 ---
 
 # Current Technology Stack
 
-Frontend
+## Frontend
 
-* React 19
-* TypeScript
-* Vite
-* React Router DOM
-* Tailwind CSS
-* Recharts
+- React 19
+- TypeScript
+- Vite
+- React Router DOM
+- Tailwind CSS
+- Recharts
 
-Backend
+## Backend
 
-* Python
-* FastAPI
+- Python
+- FastAPI
 
-Visualization
+## Visualization
 
-* Recharts
+- Recharts
 
-Video
+## Video
 
-* Remotion
+- Remotion
 
 ---
 
@@ -472,19 +445,19 @@ Video
 
 Prefer:
 
-* deterministic behavior
-* explainable outputs
-* traceable reasoning
-* schema-first design
-* validation-first architecture
-* scientific transparency
+- Deterministic behavior
+- Explainable outputs
+- Traceable reasoning
+- Schema-first design
+- Validation-first architecture
+- Scientific transparency
 
 Avoid:
 
-* hidden assumptions
-* unsupported conclusions
-* black-box reasoning
-* evidence-free outputs
+- Hidden assumptions
+- Unsupported conclusions
+- Black-box reasoning
+- Evidence-free outputs
 
 ---
 
@@ -492,7 +465,6 @@ Avoid:
 
 ```powershell
 npm run dev
-
 npm.cmd run build
 ```
 
@@ -504,6 +476,6 @@ Build DIFARYX into a trustworthy scientific workflow intelligence system that tr
 
 Every contribution should strengthen:
 
-Evidence → Reasoning → Decision → Memory
+> Evidence → Reasoning → Decision → Memory
 
 rather than only improving visual presentation.
