@@ -18,6 +18,7 @@ API_PASSWORD = os.getenv("DIFARYX_API_PASSWORD")
 PURGE_PASSWORD = os.getenv("DIFARYX_PURGE_PASSWORD")
 ADMIN_PASSWORD = os.getenv("DIFARYX_ADMIN_PASSWORD")
 RLS_TEST_PASSWORD = os.getenv("DIFARYX_RLS_TEST_PASSWORD")
+WORKER_PASSWORD = os.getenv("DIFARYX_WORKER_PASSWORD", "difaryx_worker_pw")
 
 if not all([API_PASSWORD, PURGE_PASSWORD, ADMIN_PASSWORD, RLS_TEST_PASSWORD]):
     raise RuntimeError("Missing role password environment variables: DIFARYX_API_PASSWORD, DIFARYX_PURGE_PASSWORD, DIFARYX_ADMIN_PASSWORD, DIFARYX_RLS_TEST_PASSWORD")
@@ -75,6 +76,9 @@ def bootstrap():
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'difaryx_rls_test') THEN
                 CREATE ROLE difaryx_rls_test WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'difaryx_worker_login') THEN
+                CREATE ROLE difaryx_worker_login WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            END IF;
 
             -- Phase 1A Dedicated roles
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'difaryx_identity_resolver') THEN
@@ -82,6 +86,16 @@ def bootstrap():
             END IF;
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'difaryx_audit_writer') THEN
                 CREATE ROLE difaryx_audit_writer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+            END IF;
+
+            -- Phase 1B-A Dedicated role
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'difaryx_quota_writer') THEN
+                CREATE ROLE difaryx_quota_writer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+            END IF;
+
+            -- Phase 1B-B Validation worker role
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'difaryx_validation_worker') THEN
+                CREATE ROLE difaryx_validation_worker NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
             END IF;
         END
         $$;
@@ -92,23 +106,31 @@ def bootstrap():
     cur.execute("ALTER ROLE difaryx_purge_test WITH PASSWORD %s", (PURGE_PASSWORD,))
     cur.execute("ALTER ROLE difaryx_admin_test WITH PASSWORD %s", (ADMIN_PASSWORD,))
     cur.execute("ALTER ROLE difaryx_rls_test WITH PASSWORD %s", (RLS_TEST_PASSWORD,))
+    cur.execute("ALTER ROLE difaryx_worker_login WITH PASSWORD %s", (WORKER_PASSWORD,))
 
     # Grant group memberships
     cur.execute("GRANT difaryx_app TO difaryx_api_test")
     cur.execute("GRANT difaryx_purge TO difaryx_purge_test")
     cur.execute("GRANT difaryx_app TO difaryx_rls_test")
     cur.execute("GRANT difaryx_app TO difaryx_admin_test")
+    cur.execute(
+        "REVOKE difaryx_validation_worker FROM difaryx_api_test, difaryx_purge_test, "
+        "difaryx_admin_test, difaryx_rls_test"
+    )
+    cur.execute("GRANT difaryx_app TO difaryx_worker_login")
+    cur.execute("GRANT difaryx_validation_worker TO difaryx_worker_login")
 
     # ── 4. Recreate database ───────────────────────────────────────────────
     print(f"Creating database '{TEST_DB_NAME}' owned by difaryx_owner...")
-    cur.execute(f"CREATE DATABASE {TEST_DB_NAME} OWNER difaryx_owner ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'")
+    cur.execute(f"CREATE DATABASE {TEST_DB_NAME} OWNER difaryx_owner ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0")
 
     cur.close()
     conn.close()
 
     # ── 5. Schema and Default Privileges Configuration ─────────────────────
     print(f"Configuring schemas in '{TEST_DB_NAME}'...")
-    conn_db = psycopg2.connect(f"host=127.0.0.1 port=5432 dbname={TEST_DB_NAME} user=postgres")
+    # Reuse the BOOTSTRAP_URL (already points at the target DB as superuser)
+    conn_db = psycopg2.connect(BOOTSTRAP_URL)
     conn_db.autocommit = True
     cur_db = conn_db.cursor()
 
@@ -120,6 +142,7 @@ def bootstrap():
     for schema in schemas:
         cur_db.execute(f"GRANT USAGE ON SCHEMA {schema} TO difaryx_app")
         cur_db.execute(f"GRANT USAGE ON SCHEMA {schema} TO difaryx_purge")
+        cur_db.execute(f"GRANT USAGE ON SCHEMA {schema} TO difaryx_worker_login")
 
     # Dedicated resolver and audit writer schema grants
     cur_db.execute("GRANT USAGE ON SCHEMA identity TO difaryx_identity_resolver")

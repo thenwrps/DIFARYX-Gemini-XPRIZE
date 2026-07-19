@@ -1,0 +1,4 @@
+# DIFARYX SYNTHETIC FIXTURE — generated; not a real instrument export.
+# No vendor format claimed. See generate_fixtures.py for provenance.
+# Test fixture: simulated oversized JSON envelope
+# See test_parser_protocol.py for the mock-based enforcement.

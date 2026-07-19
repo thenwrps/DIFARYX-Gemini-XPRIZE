@@ -47,6 +47,11 @@ class TestProjectAPIPhase1A(unittest.IsolatedAsyncioTestCase):
         bootstrap()
         prepare_env()
 
+        # Force TestTokenVerifier regardless of import order / cached singleton
+        from api.auth.dependencies import get_token_verifier
+        from api.auth.verifier import TestTokenVerifier
+        app.dependency_overrides[get_token_verifier] = lambda: TestTokenVerifier("test")
+
         # Create superuser engine for seeding
         url = BOOTSTRAP_URL
         if url.startswith("postgresql://"):
@@ -127,6 +132,7 @@ class TestProjectAPIPhase1A(unittest.IsolatedAsyncioTestCase):
             await conn.commit()
 
     async def asyncTearDown(self):
+        app.dependency_overrides.clear()
         await self.su_engine.dispose()
 
     # Helpers

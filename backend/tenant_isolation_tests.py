@@ -193,6 +193,69 @@ def run_isolation_tests() -> bool:
         print(f"  [FAIL] Test 9 encountered error: {e}")
         all_passed = False
 
+    # ── Test 7: Worker cannot read other org's datasets ──
+    # Multi-org worker with context set to Org A should not see Org B's datasets
+    try:
+        cur.execute("SET app.organization_id = %s;", (ORG_A,))
+        cur.execute("SET app.user_id = %s;", ('aaaaaaaa-0000-0000-0000-000000000002',))
+        cur.execute("SELECT COUNT(*) FROM science.datasets WHERE organization_id = %s;", (ORG_B,))
+        cnt = cur.fetchone()[0]
+        if cnt == 0:
+            print("  [PASS] Test 7: Worker with Org A context cannot read Org B datasets.")
+        else:
+            print(f"  [FAIL] Test 7: Worker read {cnt} datasets from Org B.")
+            all_passed = False
+    except Exception as e:
+        print(f"  [FAIL] Test 7 encountered error: {e}")
+        all_passed = False
+
+    # ── Test 8: Worker cannot update other org's validation attempts ──
+    # Multi-org worker with context set to Org A should not modify Org B's attempts
+    try:
+        cur.execute("SET app.organization_id = %s;", (ORG_A,))
+        cur.execute("SET app.user_id = %s;", ('aaaaaaaa-0000-0000-0000-000000000002',))
+        # Try to update an attempt belonging to Org B
+        cur.execute(
+            "UPDATE science.validation_attempts SET status = 'running' WHERE organization_id = %s;",
+            (ORG_B,)
+        )
+        rows_updated = cur.rowcount
+        conn.commit()
+        if rows_updated == 0:
+            print("  [PASS] Test 8: Worker with Org A context cannot update Org B validation attempts.")
+        else:
+            print(f"  [FAIL] Test 8: Worker updated {rows_updated} attempts from Org B.")
+            all_passed = False
+    except Exception as e:
+        conn.rollback()
+        if isinstance(e, psycopg2.errors.InsufficientPrivilege):
+            print("  [PASS] Test 8: direct validation-attempt update is denied to the API role.")
+        else:
+            print(f"  [FAIL] Test 8 encountered error: {e}")
+            all_passed = False
+
+    # ── Test 10: Audit event org mismatch is rejected ──
+    # append_audit_event should reject events where p_organization_id doesn't match session context
+    try:
+        cur.execute("SET app.organization_id = %s;", (ORG_A,))
+        cur.execute("SET app.user_id = %s;", ('aaaaaaaa-0000-0000-0000-000000000002',))
+        # Try to log an audit event with wrong org_id (Org B instead of Org A)
+        cur.execute(
+            "SELECT governance.append_audit_event(%s, %s, %s, %s, %s);",
+            (ORG_B, 'aaaaaaaa-0000-0000-0000-000000000002', 'validation.test', 'validation_attempt', 'test-id')
+        )
+        conn.commit()
+        print("  [FAIL] Test 10: Audit event with org mismatch was not rejected.")
+        all_passed = False
+    except psycopg2.Error as e:
+        conn.rollback()
+        error_msg = e.pgerror.strip() if e.pgerror else str(e)
+        if 'organization context mismatch' in error_msg.lower():
+            print(f"  [PASS] Test 10: Audit event org mismatch correctly rejected.")
+        else:
+            print(f"  [FAIL] Test 10: Unexpected error: {error_msg}")
+            all_passed = False
+
     cur.close()
     conn.close()
     return all_passed

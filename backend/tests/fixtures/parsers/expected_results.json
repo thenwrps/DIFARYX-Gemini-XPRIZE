@@ -1,0 +1,68 @@
+{
+  "xrd/ambiguous_mixed_markers.txt": {
+    "error_code": "XRD_AMBIGUOUS_MARKERS",
+    "status": "quarantined"
+  },
+  "xrd/excessive_columns.csv": {
+    "error_code": "XRD_TOO_MANY_COLUMNS",
+    "status": "invalid"
+  },
+  "xrd/extreme_token_length.csv": {
+    "error_code": "XRD_TOO_LONG_TOKEN",
+    "status": "invalid"
+  },
+  "xrd/huge_single_line.dat": {
+    "error_code": "XRD_TOO_LONG_LINE",
+    "status": "invalid"
+  },
+  "xrd/invalid_empty.dat": {
+    "error_code": "EMPTY_FILE",
+    "status": "invalid"
+  },
+  "xrd/invalid_insufficient_rows.xy": {
+    "error_code": "XRD_INSUFFICIENT_ROWS",
+    "status": "invalid"
+  },
+  "xrd/invalid_non_numeric.csv": {
+    "error_code": "XRD_INVALID_NON_NUMERIC_ROW",
+    "status": "invalid"
+  },
+  "xrd/mismatch_ftir_header.txt": {
+    "error_code": "XRD_TECHNIQUE_MISMATCH",
+    "status": "quarantined"
+  },
+  "xrd/mismatch_raman_header.dat": {
+    "error_code": "XRD_TECHNIQUE_MISMATCH",
+    "status": "quarantined"
+  },
+  "xrd/mismatch_xps_header.csv": {
+    "error_code": "XRD_TECHNIQUE_MISMATCH",
+    "status": "quarantined"
+  },
+  "xrd/nan_infinity_values.txt": {
+    "error_code": "XRD_NON_FINITE_NUMBER",
+    "status": "invalid"
+  },
+  "xrd/non_utf8_bytes.dat": {
+    "error_code": "XRD_NON_UTF8_LINE",
+    "status": "invalid"
+  },
+  "xrd/too_many_lines.xy": {
+    "error_code": "XRD_TOO_MANY_LINES",
+    "status": "invalid"
+  },
+  "xrd/unsupported_extension.pdf": {
+    "error_code": "INVALID_EXTENSION",
+    "status": "invalid"
+  },
+  "xrd/valid_headered.xy": {
+    "min_valid_data_rows": 100,
+    "status": "valid",
+    "technique_identity_confirmed": true
+  },
+  "xrd/valid_headerless_two_column.txt": {
+    "min_valid_data_rows": 100,
+    "status": "valid",
+    "technique_identity_confirmed": false
+  }
+}
