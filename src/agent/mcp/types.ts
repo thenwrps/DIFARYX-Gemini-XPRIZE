@@ -1,3 +1,10 @@
+import type {
+  AnalysisModeId,
+  CanonicalParameterContext,
+} from '../../data/parameterDefinitions';
+import type { CanonicalEvidenceOutput } from '../../evidence/canonicalEvidence';
+import type { AgentAnalysisResult } from '../contracts/agentAnalysisResult';
+
 /**
  * MCP-Style Tool Schema for DIFARYX Agent Demo
  * 
@@ -5,7 +12,7 @@
  * and reasoning in scientific agent workflows.
  */
 
-export type ModelProvider = 'deterministic' | 'vertex-gemini' | 'gemma';
+export type ModelProvider = 'scientific-baseline' | 'gpt-5.6' | 'gemini-2.5-flash' | 'deterministic' | 'vertex-gemini' | 'gemma';
 
 export type ToolName =
   | 'baseline_correction'
@@ -82,6 +89,18 @@ export interface AgentEvidencePacket {
 
   toolTrace: ToolResult[];
 
+  /** Canonical Workspace/Agent parameter context. Runtime normalizes legacy packets. */
+  parameterContext?: CanonicalParameterContext;
+  evidenceOutputs?: CanonicalEvidenceOutput[];
+  analysisMode?: AnalysisModeId;
+  crossTechniqueEvidence?: Array<{
+    technique: 'xrd' | 'xps' | 'ftir' | 'raman';
+    sourceFilename: string;
+    summary: string;
+    confidence: number;
+    contradictions?: string[];
+  }>;
+
   /**
    * Optional XPS element-focused evidence (Phase 1 — Agent Evidence Packet
    * Integration). Present only for XPS runs where the user inspected an element
@@ -125,11 +144,14 @@ export interface ReasoningOutput {
   decisionLogic: string;
   uncertainty: string[];
   recommendedNextStep: string;
+  /** Canonical JSON-first output. Legacy fields above remain for current renderers. */
+  analysisResult?: AgentAnalysisResult;
   metadata: {
     provider: ModelProvider;
     model: string;
     durationMs: number;
     timestamp: string;
+    parameterSchemaVersion?: string;
   };
 }
 

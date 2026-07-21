@@ -17,6 +17,13 @@ function getBackendBaseUrl(): string {
   return import.meta.env.VITE_XRD_API_URL || import.meta.env.VITE_XRD_BACKEND_URL || DEFAULT_BASE_URL;
 }
 
+export function normalizeUploadTechnique(technique: string): Technique {
+  const upperTech = technique.toUpperCase();
+  if (upperTech === 'RAMAN') return 'Raman';
+  if (upperTech === 'XRD' || upperTech === 'XPS' || upperTech === 'FTIR') return upperTech;
+  return 'Unknown';
+}
+
 /**
  * Helper to read a file as text in the browser.
  */
@@ -42,11 +49,7 @@ async function fallbackLocalUpload(file: File, technique: string): Promise<Uploa
   }
 
   // Map technique string to uppercase Technique
-  let cleanTechnique: Technique = 'Unknown';
-  const upperTech = technique.toUpperCase();
-  if (upperTech === 'XRD' || upperTech === 'XPS' || upperTech === 'FTIR' || upperTech === 'RAMAN') {
-    cleanTechnique = upperTech as Technique;
-  }
+  const cleanTechnique = normalizeUploadTechnique(technique);
 
   const axisDefaults = AXIS_DEFAULTS_BY_TECHNIQUE[cleanTechnique] || AXIS_DEFAULTS_BY_TECHNIQUE.Unknown;
   const mappedPoints = mapUploadedSignalColumns(
@@ -119,11 +122,7 @@ export async function uploadRawData(file: File, technique: string): Promise<Uplo
       points = data.x.map((xVal: number, idx: number) => ({ x: xVal, y: data.y[idx] }));
     }
 
-    let cleanTechnique: Technique = 'Unknown';
-    const upperTech = (data.technique || technique).toUpperCase();
-    if (upperTech === 'XRD' || upperTech === 'XPS' || upperTech === 'FTIR' || upperTech === 'RAMAN') {
-      cleanTechnique = upperTech as Technique;
-    }
+    const cleanTechnique = normalizeUploadTechnique(data.technique || technique);
 
     const axisDefaults = AXIS_DEFAULTS_BY_TECHNIQUE[cleanTechnique] || AXIS_DEFAULTS_BY_TECHNIQUE.Unknown;
 

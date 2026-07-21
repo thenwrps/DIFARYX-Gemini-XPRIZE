@@ -7,6 +7,38 @@
 
 import type { AgentEvidencePacket, ToolResult, XpsElementEvidence } from './types';
 import type { DemoDataset, DemoProject, Technique } from '../../data/demoProjects';
+import { createCanonicalParameterContext } from '../../data/parameterDefinitions';
+import { createEvidenceOutput, type EvidenceOutputKind } from '../../evidence/canonicalEvidence';
+
+function attachCanonicalContext(packet: AgentEvidencePacket): AgentEvidencePacket {
+  const context = createCanonicalParameterContext(packet.context, {
+    datasetId: packet.datasetId,
+    sourceFiles: [{ filename: packet.datasetName, sha256: null, role: 'primary' }],
+    analysisMode: 'scientific-baseline',
+  });
+  const kinds: Record<AgentEvidencePacket['context'], EvidenceOutputKind> = {
+    xrd: 'detected_peak',
+    xps: 'element_identity',
+    ftir: 'detected_band',
+    raman: 'detected_raman_mode',
+  };
+  const parameterIds = context.processingParameters
+    .filter((item) => item.active)
+    .map((item) => item.id);
+  return {
+    ...packet,
+    analysisMode: 'scientific-baseline',
+    parameterContext: context,
+    evidenceOutputs: packet.detectedFeatures.map((feature, index) => createEvidenceOutput(context, {
+      id: `${packet.datasetId}:${packet.context}:feature:${index + 1}`,
+      kind: kinds[packet.context],
+      value: { ...feature },
+      parameterIds: parameterIds.length ? parameterIds : ['rawSourceFilename'],
+      confidence: feature.confidence ?? packet.fusedScore,
+      warnings: [...packet.uncertaintyFlags],
+    })),
+  };
+}
 
 /**
  * Convert XPS element-focused evidence into fusion-consumable detectedFeatures
@@ -89,7 +121,7 @@ export function buildXRDEvidencePacket(
     }
   }
 
-  return {
+  return attachCanonicalContext({
     context: 'xrd',
     datasetId: dataset.id,
     datasetName: dataset.fileName,
@@ -119,7 +151,7 @@ export function buildXRDEvidencePacket(
       'Score based on matched peaks, intensity agreement, and missing/unexplained features',
     ],
     toolTrace,
-  };
+  });
 }
 
 /**
@@ -202,7 +234,7 @@ export function buildGenericEvidencePacket(
     );
   }
 
-  return {
+  return attachCanonicalContext({
     context,
     datasetId: dataset.id,
     datasetName: dataset.fileName,
@@ -227,7 +259,7 @@ export function buildGenericEvidencePacket(
     processingNotes,
     toolTrace,
     ...(elementEvidence ? { xpsElementEvidence: elementEvidence } : {}),
-  };
+  });
 }
 
 /**

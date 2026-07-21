@@ -1,178 +1,212 @@
-/**
- * Safe uploaded evidence project context factory
- * Creates complete project-like structures from uploaded evidence snapshots
- * to allow uploaded evidence to work as first-class context without crashing
- */
-
+/** First-class Agent/Notebook/Report context for validated uploaded evidence. */
 import type { ProjectEvidenceSnapshot } from './evidenceSnapshot';
-import type { RegistryProject, TechniqueId } from '../data/demoProjectRegistry';
-import type { DemoProject, JobType, ClaimStatus, ValidationState, Technique } from '../data/demoProjects';
+import type { DemoGraphData, RegistryProject, TechniqueId } from '../data/demoProjectRegistry';
+import type { ClaimStatus, DemoProject, JobType, Technique, ValidationState } from '../data/demoProjects';
+import type { UploadedSignalRun } from '../data/uploadedSignalRuns';
+import type { StandaloneReviewMetadata } from '../scientificReview/services/standaloneEvidenceIntakeService';
 
-/**
- * Create a safe RegistryProject-like object from uploaded evidence snapshot
- * Provides all required fields to prevent crashes in Agent/Notebook/Report
- */
+const ALL_TECHNIQUES: Technique[] = ['XRD', 'XPS', 'FTIR', 'Raman'];
+
+export interface UploadedRegistryProjectOptions {
+  runs?: UploadedSignalRun[];
+  metadata?: StandaloneReviewMetadata;
+  baseProject?: RegistryProject | null;
+}
+
+function techniqueRole(technique: Technique): string {
+  if (technique === 'XRD') return 'Bulk phase identification';
+  if (technique === 'XPS') return 'Surface state analysis';
+  if (technique === 'FTIR') return 'Bonding analysis';
+  return 'Vibrational mode analysis';
+}
+
+function graphForRun(run: UploadedSignalRun): DemoGraphData {
+  return {
+    kind: 'graph',
+    type: run.technique.toLowerCase() as TechniqueId,
+    xLabel: run.xAxisLabel,
+    yLabel: run.yAxisLabel,
+    data: run.points,
+    peaks: run.extractedFeatures.map((feature) => ({
+      position: feature.position,
+      intensity: feature.intensity,
+      label: feature.label,
+    })),
+  };
+}
+
 export function createUploadedEvidenceRegistryProject(
-  snapshot: ProjectEvidenceSnapshot
+  snapshot: ProjectEvidenceSnapshot,
+  options: UploadedRegistryProjectOptions = {},
 ): RegistryProject {
+  const runs = options.runs ?? [];
+  const base = options.baseProject ?? null;
+  const metadata = options.metadata;
   const uploadedId = snapshot.projectId || 'uploaded-evidence-temp';
-  const uploadedName = snapshot.activeDataset?.fileName ?? snapshot.sampleIdentity ?? 'Uploaded Evidence';
+  const uploadedName = base?.title ?? snapshot.projectName ?? snapshot.activeDataset?.fileName ?? 'Standalone Scientific Review';
   const uploadedTechniques = snapshot.availableTechniques as Technique[];
-  const primaryTech = uploadedTechniques[0] ?? 'XRD';
+  const primaryTech = snapshot.primaryTechnique ?? uploadedTechniques[0] ?? 'XRD';
   const primaryTechniqueId = primaryTech.toLowerCase() as TechniqueId;
-  const graphData = snapshot.activeDataset?.dataPoints ?? [];
-  const graphPeaks = snapshot.activeDataset?.detectedFeatures.map((feature) => ({
-    position: feature.position,
-    intensity: feature.intensity,
-    label: feature.label,
-  })) ?? [];
-  const graphSource = {
-    kind: 'graph' as const,
+  const activeRun = runs.find((run) => run.technique === primaryTech) ?? runs[runs.length - 1];
+  const graphData = activeRun?.points ?? snapshot.activeDataset?.dataPoints ?? [];
+  const graphPeaks = activeRun
+    ? activeRun.extractedFeatures.map((feature) => ({ position: feature.position, intensity: feature.intensity, label: feature.label }))
+    : snapshot.activeDataset?.detectedFeatures.map((feature) => ({ position: feature.position, intensity: feature.intensity, label: feature.label })) ?? [];
+  const graphSource: DemoGraphData = activeRun ? graphForRun(activeRun) : {
+    kind: 'graph',
     type: primaryTechniqueId,
     xLabel: snapshot.activeDataset?.xLabel ?? 'Position',
     yLabel: snapshot.activeDataset?.yLabel ?? 'Intensity',
     data: graphData,
     peaks: graphPeaks,
   };
+  const objective = metadata?.objective.trim() || base?.objective || `Analyze uploaded ${uploadedTechniques.join(', ') || primaryTech} evidence`;
+  const materialSystem = metadata?.materialSystem.trim() || base?.materialSystem || snapshot.sampleIdentity || 'Unknown material';
+  const decisionRequired = metadata?.decisionRequired.trim() || base?.notebook.decision || 'Determine the next validation experiment';
+  const uploadSources = runs.map((run) => ({
+    technique: run.technique as Technique,
+    datasetId: run.id,
+    datasetLabel: run.fileName,
+    description: `${run.technique} uploaded signal passed the ${run.evidenceQuality.label.toLowerCase()} evidence gate.`,
+    available: run.evidenceQuality.canInterpret,
+  }));
+  const mergedTechniques = ALL_TECHNIQUES.filter((technique) =>
+    uploadedTechniques.includes(technique) || base?._raw.techniques.includes(technique),
+  );
+  const mergedSources = [
+    ...(base?._raw.evidenceSources ?? []),
+    ...uploadSources,
+  ].filter((source, index, all) => all.findIndex((candidate) => candidate.datasetId === source.datasetId) === index);
 
-  // Create minimal but complete RawDemoProject
-  const rawProject: DemoProject = {
+  const rawProject: DemoProject = base ? {
+    ...base._raw,
+    objective,
+    material: materialSystem,
+    techniques: mergedTechniques,
+    techniqueMetadata: mergedTechniques.map((technique) => base._raw.techniqueMetadata.find((item) => item.key === technique) ?? {
+      key: technique,
+      label: technique,
+      role: techniqueRole(technique),
+      status: 'ready' as const,
+      dataAvailable: uploadedTechniques.includes(technique),
+    }),
+    evidenceSources: mergedSources,
+    evidence: [...base._raw.evidence, ...snapshot.evidenceEntries.map((entry) => entry.support)],
+    validationGaps: snapshot.validationGaps,
+    nextDecisions: metadata?.decisionRequired.trim() ? [{ id: 'uploaded-decision', label: 'Decision required', description: decisionRequired, urgency: 'medium' as const }, ...base._raw.nextDecisions] : base._raw.nextDecisions,
+    xrdPeaks: primaryTech === 'XRD' ? graphPeaks : base._raw.xrdPeaks,
+  } : {
     id: uploadedId,
     name: uploadedName,
-    material: snapshot.sampleIdentity ?? 'Unknown material',
-    objective: `Analyze uploaded ${primaryTech} evidence`,
+    material: materialSystem,
+    objective,
     jobType: 'research' as JobType,
     techniques: uploadedTechniques,
-    techniqueMetadata: uploadedTechniques.map((tech) => ({
-      key: tech,
-      label: tech,
-      role: tech === 'XRD' ? 'Bulk phase' : tech === 'XPS' ? 'Surface state' : tech === 'FTIR' ? 'Bonding' : 'Vibrational',
-      status: 'ready' as const,
-      dataAvailable: true,
-    })),
-    evidenceSources: [],
+    techniqueMetadata: uploadedTechniques.map((technique) => ({ key: technique, label: technique, role: techniqueRole(technique), status: 'ready' as const, dataAvailable: true })),
+    evidenceSources: uploadSources,
     status: 'active',
     claimStatus: 'partial' as ClaimStatus,
     validationState: 'limited' as ValidationState,
     phase: 'Unknown',
     lastUpdated: new Date().toISOString(),
     createdDate: new Date().toISOString(),
-    summary: `User-uploaded ${primaryTech} evidence from ${uploadedName}`,
-    xrdPeaks: graphPeaks,
+    summary: `User-uploaded ${uploadedTechniques.join(', ')} evidence for ${materialSystem}`,
+    xrdPeaks: primaryTech === 'XRD' ? graphPeaks : [],
     evidence: snapshot.evidenceEntries.map((entry) => entry.support),
-    validationGaps: snapshot.validationGaps ?? [],
-    nextDecisions: [
-      {
-        id: 'uploaded-validation',
-        label: 'Additional validation required for uploaded evidence',
-        description: 'Review validation scope and attach to project if needed',
-        urgency: 'medium' as const,
-      },
-    ],
-    recommendations: ['Review validation scope and attach to project if needed'],
-    reportReadiness: {
-      notebookReady: true,
-      exportReady: true,
-      readinessPercent: 80,
-      label: 'Ready (validation-limited)',
-    },
-    notebook: {
-      title: `${uploadedName} Analysis`,
-      pipeline: ['Upload', 'Parse', 'Feature extraction'],
-      peakDetection: 'Completed',
-      phaseIdentification: 'Limited (uploaded evidence)',
-    },
+    validationGaps: snapshot.validationGaps,
+    nextDecisions: [{ id: 'uploaded-decision', label: 'Decision required', description: decisionRequired, urgency: 'medium' as const }],
+    recommendations: [decisionRequired],
+    reportReadiness: { notebookReady: true, exportReady: true, readinessPercent: 60, label: 'Validation-limited' },
+    notebook: { title: `${materialSystem} Review`, pipeline: ['Upload', 'Parse', 'Evidence validation'], peakDetection: 'Completed', phaseIdentification: 'Validation-limited' },
     history: [],
     workspace: 'xrd',
   };
 
-  // Create complete RegistryProject
-  const registryProject: RegistryProject = {
+  const workspaceGraphs = { ...(base?.workspaceGraphs ?? {}) };
+  runs.forEach((run) => { workspaceGraphs[run.technique.toLowerCase() as TechniqueId] = graphForRun(run); });
+  if (!workspaceGraphs[primaryTechniqueId]) workspaceGraphs[primaryTechniqueId] = graphSource;
+  const techniques = mergedTechniques.map((technique) => {
+    const existing = base?.techniques.find((item) => item.id === technique.toLowerCase());
+    const run = runs.find((item) => item.technique === technique);
+    return existing ? { ...existing, available: existing.available || Boolean(run), datasetLabel: run?.fileName ?? existing.datasetLabel } : {
+      id: technique.toLowerCase() as TechniqueId,
+      label: technique,
+      role: techniqueRole(technique),
+      available: true,
+      datasetLabel: run?.fileName ?? snapshot.evidenceEntries.find((entry) => entry.technique === technique)?.datasetLabel ?? 'Uploaded evidence',
+      description: `User-uploaded ${technique} data`,
+      parameters: [],
+    };
+  });
+  const missingEvidence = ALL_TECHNIQUES.filter((technique) => !uploadedTechniques.includes(technique)).map((technique) => `${technique} evidence not included`);
+
+  return {
+    ...(base ?? {} as RegistryProject),
     id: uploadedId,
     title: uploadedName,
-    materialSystem: snapshot.sampleIdentity ?? 'Unknown',
-    jobType: 'research',
-    createdLabel: 'Uploaded',
-    statusLabel: 'User evidence',
+    materialSystem,
+    jobType: base?.jobType ?? 'research',
+    createdLabel: base?.createdLabel ?? 'Uploaded',
+    statusLabel: base ? 'Project with uploaded evidence' : 'Standalone evidence review',
     claimStatus: 'validation_limited',
-    reportReadiness: 80,
-    validationGapCount: (snapshot.validationGaps?.length ?? 0) + 1,
+    reportReadiness: Math.max(base?.reportReadiness ?? 0, 60),
+    validationGapCount: snapshot.validationGaps.length,
     decisionPendingCount: 1,
-    objective: `Analyze uploaded ${primaryTech} evidence`,
+    objective,
     context: {
-      materialSystem: snapshot.sampleIdentity ?? 'Unknown',
-      sampleDescription: `User-uploaded ${primaryTech} data from ${uploadedName}`,
-      experimentalSetup: 'External upload',
-      datasetSources: [uploadedName],
+      materialSystem,
+      sampleDescription: base?.context.sampleDescription ?? `User-uploaded evidence for ${materialSystem}`,
+      experimentalSetup: base?.context.experimentalSetup ?? 'External upload',
+      datasetSources: [...(base?.context.datasetSources ?? []), ...runs.map((run) => `${run.technique}: ${run.fileName}`)],
     },
-    techniques: uploadedTechniques.map((tech) => ({
-      id: tech.toLowerCase() as any,
-      label: tech,
-      role: tech === 'XRD' ? 'Bulk phase identification' : tech === 'XPS' ? 'Surface state analysis' : tech === 'FTIR' ? 'Bonding analysis' : 'Vibrational mode analysis',
-      available: true,
-      datasetLabel: uploadedName,
-      description: `User-uploaded ${tech} data`,
-      parameters: [],
-    })),
+    techniques,
     primaryTechnique: primaryTechniqueId,
-    selectedTechniques: uploadedTechniques.map((tech) => tech.toLowerCase() as any),
+    selectedTechniques: uploadedTechniques.map((technique) => technique.toLowerCase() as TechniqueId),
     graphPreview: graphSource,
-    workspaceGraphs: {
-      [primaryTechniqueId]: graphSource,
-    },
-    evidenceSummary: `Uploaded ${primaryTech} evidence with ${snapshot.evidenceEntries?.length ?? 0} dataset(s)`,
-    evidenceResults: [],
+    workspaceGraphs,
+    evidenceSummary: `${snapshot.evidenceEntries.length} evidence source${snapshot.evidenceEntries.length === 1 ? '' : 's'} available across ${uploadedTechniques.join(', ')}`,
+    evidenceResults: [
+      ...(base?.evidenceResults ?? []),
+      ...runs.map((run) => ({ techniqueId: run.technique.toLowerCase() as TechniqueId, displayName: run.technique, summary: `${run.extractedFeatures.length} bounded features from ${run.fileName}`, supportsClaim: true, limitation: run.claimBoundary.join(' '), findings: run.extractedFeatures.slice(0, 4).map((feature) => feature.label) })),
+    ],
     crossTechniqueComparison: {
-      agreementLevel: 'limited' as const,
-      agreementSummary: 'Single-technique uploaded evidence',
-      matrix: [],
-      missingEvidence: ['Additional techniques needed for cross-validation'],
-      validationGap: 'Multi-technique validation required',
-      recommendedNextAction: 'Add additional techniques for cross-validation',
-      references: [],
+      ...(base?.crossTechniqueComparison ?? { agreementLevel: 'limited' as const, agreementSummary: 'Uploaded evidence awaits cross-technique review', matrix: [], references: [] }),
+      missingEvidence,
+      validationGap: snapshot.claimBoundary.requiresValidation[0] ?? 'Complementary validation remains required.',
+      recommendedNextAction: decisionRequired,
     },
     agentWorkflow: {
-      trace: [],
+      trace: base?.agentWorkflow.trace ?? [],
       claimBoundary: {
-        supported: [],
-        validationLimited: ['Uploaded evidence requires validation'],
-        cannotConclude: [],
-        requiredNext: ['Additional validation required'],
+        supported: snapshot.claimBoundary.supported,
+        validationLimited: snapshot.claimBoundary.requiresValidation,
+        cannotConclude: snapshot.claimBoundary.notSupportedYet,
+        requiredNext: snapshot.claimBoundary.pending,
       },
-      nextDecisionLabel: 'Review validation scope',
+      nextDecisionLabel: decisionRequired,
     },
     notebook: {
-      title: `${uploadedName} Analysis`,
-      objective: `Analyze uploaded ${primaryTech} evidence`,
-      evidenceBasis: [`Uploaded ${primaryTech} data`],
-      interpretation: 'Uploaded evidence - validation pending',
-      validationGap: 'Additional validation required',
-      decision: 'Review and validate uploaded evidence',
-      reportDraft: `User-uploaded ${primaryTech} evidence from ${uploadedName}`,
-      missingReferences: ['Validation references needed'],
-      claimStatus: 'validation_limited' as any,
-      validationBoundary: 'Uploaded evidence remains validation-limited until attached to project',
+      title: base?.notebook.title ?? `${materialSystem} Scientific Review`,
+      objective,
+      evidenceBasis: snapshot.evidenceEntries.map((entry) => entry.support),
+      interpretation: 'Uploaded evidence is ready for bounded GPT-5.6 scientific reasoning.',
+      validationGap: snapshot.claimBoundary.requiresValidation[0] ?? 'Complementary validation remains required.',
+      decision: decisionRequired,
+      reportDraft: `Scientific review of uploaded ${uploadedTechniques.join(', ')} evidence for ${materialSystem}.`,
+      missingReferences: missingEvidence,
+      claimStatus: 'validation_limited',
+      validationBoundary: snapshot.claimBoundary.notSupportedYet.join(' '),
     },
-    experimentHistory: [],
-    workflowPath: ['objective', 'evidence', 'gap'],
+    experimentHistory: base?.experimentHistory ?? [],
+    workflowPath: ['objective', 'evidence', 'reasoning', 'gap', 'decision', 'memory'],
     _raw: rawProject,
   };
-
-  return registryProject;
 }
 
-/**
- * Get safe project techniques from uploaded registry project
- */
-export function getUploadedProjectTechniques(
-  registryProject: RegistryProject
-): Technique[] {
-  return (registryProject._raw?.techniques ?? []) as Technique[];
+export function getUploadedProjectTechniques(registryProject: RegistryProject): Technique[] {
+  return registryProject._raw.techniques;
 }
 
-/**
- * Check if a project ID indicates uploaded evidence context
- */
 export function isUploadedEvidenceProjectId(projectId: string): boolean {
-  return projectId === 'uploaded-evidence-temp' || projectId.startsWith('uploaded:');
+  return projectId === 'uploaded-evidence-temp' || projectId === 'user-uploaded-workspace' || projectId.startsWith('uploaded:');
 }
