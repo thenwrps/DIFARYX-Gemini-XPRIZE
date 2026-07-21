@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { validateLLMOutput } from '../llmPrompt';
+import { buildSystemPrompt, validateLLMOutput } from '../llmPrompt';
 import type { LLMReasoningOutput } from '../../types/llm';
 
 describe('LLM Output Validation', () => {
@@ -115,17 +115,16 @@ describe('Evidence Packet Safety', () => {
 
 describe('Prompt Safety', () => {
   it('should include anti-hallucination instructions', () => {
-    const { buildSystemPrompt } = require('../llmPrompt');
     const prompt = buildSystemPrompt();
     
     expect(prompt).toContain('Do NOT invent data');
     expect(prompt).toContain('Do NOT assume missing values');
-    expect(prompt).toContain('Do NOT fabricate');
+    // The current provider prompt uses the equivalent phrase "or fabricate features".
+    expect(prompt).toContain('fabricate features');
     expect(prompt).toContain('Use ONLY the structured evidence');
   });
 
   it('should enforce JSON output format', () => {
-    const { buildSystemPrompt } = require('../llmPrompt');
     const prompt = buildSystemPrompt();
     
     expect(prompt).toContain('Return ONLY valid JSON');

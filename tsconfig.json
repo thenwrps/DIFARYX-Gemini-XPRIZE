@@ -25,6 +25,7 @@
     "src/**/*.test.tsx",
     "src/**/*.example.ts",
     "src/pages/_*.tsx",
-    "src/agents/**/manualVerification.ts"
+    "src/agents/**/manualVerification.ts",
+    "DIFARYX-demo/**"
   ]
 }
