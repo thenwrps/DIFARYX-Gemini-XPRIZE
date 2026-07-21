@@ -227,13 +227,15 @@ class TestMultiOrgValidationWorker(unittest.IsolatedAsyncioTestCase):
             session = AsyncSession(bind=conn)
             try:
                 result = await session.execute(
-                    sa.text("SELECT * FROM science.validation_worker_reclaim_stale_across_orgs()")
+                    sa.text("SELECT * FROM science.validation_worker_reclaim_stale_across_orgs(:worker, 300)"),
+                    {"worker": "reclaim-worker-claimed"},
                 )
                 row = result.mappings().first()
                 self.assertIsNotNone(row)
-                self.assertEqual(str(row["status"]), "queued")
-                self.assertEqual(row["attempt_number"], 2)
-                self.assertIsNone(row["lock_expires_at"])
+                self.assertEqual(str(row["status"]), "claimed")
+                self.assertEqual(row["attempt_number"], 1)
+                self.assertEqual(row["claimed_by"], "reclaim-worker-claimed")
+                self.assertIsNotNone(row["lock_expires_at"])
                 await session.commit()
             finally:
                 await session.close()
@@ -275,12 +277,15 @@ class TestMultiOrgValidationWorker(unittest.IsolatedAsyncioTestCase):
             session = AsyncSession(bind=conn)
             try:
                 result = await session.execute(
-                    sa.text("SELECT * FROM science.validation_worker_reclaim_stale_across_orgs()")
+                    sa.text("SELECT * FROM science.validation_worker_reclaim_stale_across_orgs(:worker, 300)"),
+                    {"worker": "reclaim-worker-running"},
                 )
                 row = result.mappings().first()
                 self.assertIsNotNone(row)
-                self.assertEqual(str(row["status"]), "queued")
-                self.assertIsNone(row["lock_expires_at"])
+                self.assertEqual(str(row["status"]), "claimed")
+                self.assertEqual(row["attempt_number"], 1)
+                self.assertEqual(row["claimed_by"], "reclaim-worker-running")
+                self.assertIsNotNone(row["lock_expires_at"])
                 await session.commit()
             finally:
                 await session.close()
@@ -321,14 +326,16 @@ class TestMultiOrgValidationWorker(unittest.IsolatedAsyncioTestCase):
             session = AsyncSession(bind=conn)
             try:
                 result = await session.execute(
-                    sa.text("SELECT * FROM science.validation_worker_reclaim_stale_across_orgs()")
+                    sa.text("SELECT * FROM science.validation_worker_reclaim_stale_across_orgs(:worker, 300)"),
+                    {"worker": "reclaim-worker-exhausted"},
                 )
                 row = result.mappings().first()
                 self.assertIsNotNone(row)
-                self.assertEqual(str(row["status"]), "quarantined")
-                self.assertEqual(row["failure_code"], "max_attempts_exceeded")
-                self.assertIsNone(row["lock_expires_at"])
-                self.assertIsNotNone(row["completed_at"])
+                self.assertEqual(str(row["status"]), "claimed")
+                self.assertEqual(row["attempt_number"], 3)
+                self.assertEqual(row["claimed_by"], "reclaim-worker-exhausted")
+                self.assertIsNotNone(row["lock_expires_at"])
+                self.assertIsNone(row["completed_at"])
                 await session.commit()
             finally:
                 await session.close()

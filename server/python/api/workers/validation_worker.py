@@ -227,13 +227,10 @@ async def claim_next(
             SELECT id, dataset_id
             FROM science.validation_attempts
             WHERE organization_id = CAST(:org_id AS uuid)
-              AND (
-                  (status = CAST('queued' AS science.validation_attempt_status)
-                   AND (next_retry_at IS NULL OR next_retry_at <= NOW()))
-                  OR
-                  (status = CAST('failed' AS science.validation_attempt_status)
-                   AND next_retry_at IS NOT NULL AND next_retry_at <= NOW())
-              )
+              AND status = CAST('queued' AS science.validation_attempt_status)
+              AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+              AND attempt_number <= max_attempts
+              AND claimed_by IS NULL
             ORDER BY next_retry_at NULLS FIRST, created_at
             LIMIT 1
             FOR UPDATE SKIP LOCKED
@@ -255,14 +252,13 @@ async def claim_next(
                 claimed_by = :worker_id,
                 lock_expires_at = NOW() + make_interval(secs => :lease),
                 started_at = NOW(),
-                attempt_number = CASE
-                    WHEN status = CAST('failed' AS science.validation_attempt_status)
-                    THEN attempt_number + 1
-                    ELSE attempt_number
-                END,
                 updated_at = NOW()
             WHERE id = CAST(:id AS uuid)
               AND organization_id = CAST(:org_id AS uuid)
+              AND status = CAST('queued' AS science.validation_attempt_status)
+              AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+              AND attempt_number <= max_attempts
+              AND claimed_by IS NULL
             RETURNING *
         """),
         {"worker_id": worker_id, "lease": float(lease), "org_id": org_id, "id": str(picked_id)},
@@ -306,8 +302,12 @@ async def reclaim_stale(
             SELECT id, dataset_id
             FROM science.validation_attempts
             WHERE organization_id = CAST(:org_id AS uuid)
-              AND status = CAST('claimed' AS science.validation_attempt_status)
+              AND status IN (CAST('claimed' AS science.validation_attempt_status),
+                             CAST('running' AS science.validation_attempt_status))
+              AND lock_expires_at IS NOT NULL
               AND lock_expires_at < NOW()
+              AND attempt_number <= max_attempts
+              AND claimed_by IS NOT NULL
             ORDER BY lock_expires_at
             LIMIT 1
             FOR UPDATE SKIP LOCKED
@@ -329,10 +329,14 @@ async def reclaim_stale(
                 claimed_by = :worker_id,
                 lock_expires_at = NOW() + make_interval(secs => :lease),
                 started_at = NOW(),
-                attempt_number = attempt_number + 1,
                 updated_at = NOW()
             WHERE id = CAST(:id AS uuid)
               AND organization_id = CAST(:org_id AS uuid)
+              AND status IN (CAST('claimed' AS science.validation_attempt_status),
+                             CAST('running' AS science.validation_attempt_status))
+              AND lock_expires_at < NOW()
+              AND attempt_number <= max_attempts
+              AND claimed_by IS NOT NULL
             RETURNING *
         """),
         {"worker_id": worker_id, "lease": float(lease), "org_id": org_id, "id": str(picked_id)},
@@ -386,21 +390,25 @@ async def claim_next_across_orgs(
 
 async def reclaim_stale_across_orgs(
     session: AsyncSession,
+    worker_id: str,
+    lease: int,
 ) -> Optional[dict]:
-    """Reclaim a stale attempt across all organizations.
+    """Reclaim a stale attempt across all organizations for this worker.
     
     Calls the SECURITY DEFINER function that bypasses RLS to query across all orgs.
     Targets attempts with status IN ('claimed', 'running') AND lock_expires_at < NOW().
-    Respects max_attempts: quarantines if exceeded, else requeues.
+    Ownership transfers to this worker without changing the attempt identity.
     Returns dict with attempt fields including organization_id, or None if no stale work.
     
-    NOTE: This is a sweep-only operation. The returned row is now in 'queued' status
-    and this worker does NOT own it. The normal claim loop should pick it up.
+    The returned row is in 'claimed' status and is owned by this worker.
     """
     result = await session.execute(
         sa.text("""
-            SELECT * FROM science.validation_worker_reclaim_stale_across_orgs()
+            SELECT * FROM science.validation_worker_reclaim_stale_across_orgs(
+                :worker_id, :lease
+            )
         """),
+        {"worker_id": worker_id, "lease": lease},
     )
     row = result.mappings().first()
     if row is None:
@@ -499,9 +507,10 @@ async def mark_passed(
     await _set_rls_context(session, org_id, user_id)
     result = await session.execute(
         sa.text("""
-            SELECT science.validation_worker_settle_terminal(
+            SELECT science.validation_worker_settle_terminal_owned(
                 CAST(:org_id AS uuid),
                 CAST(:id AS uuid),
+                :worker_id,
                 CAST('passed' AS science.validation_attempt_status),
                 CAST('valid' AS science.dataset_status),
                 NULL,
@@ -529,38 +538,66 @@ async def mark_failed_with_retry(
     safe_failure_details = _normalize_pg_json(failure_details)
     result = await session.execute(
         sa.text("""
-            UPDATE science.validation_attempts
-            SET status = CAST('failed' AS science.validation_attempt_status),
-                failure_code = :failure_code,
-                failure_details = CAST(:failure_details AS jsonb),
-                next_retry_at = NOW() + (30 * power(2, LEAST(attempt_number - 1, 4))) * INTERVAL '1 second',
-                claimed_at = NULL,
-                claimed_by = NULL,
-                updated_at = NOW()
-            WHERE organization_id = CAST(:org_id AS uuid)
-              AND id = CAST(:id AS uuid)
-              AND status = CAST('running' AS science.validation_attempt_status)
-              AND claimed_by = :worker_id
+                WITH updated AS (
+                UPDATE science.validation_attempts AS current_attempt
+                SET status = CAST('failed' AS science.validation_attempt_status),
+                    failure_code = :failure_code,
+                    failure_details = CAST(:failure_details AS jsonb),
+                    next_retry_at = NOW() + (30 * power(2, LEAST(current_attempt.attempt_number - 1, 4))) * INTERVAL '1 second',
+                    claimed_at = NULL,
+                    claimed_by = NULL,
+                    lock_expires_at = NULL,
+                    completed_at = NOW(),
+                    updated_at = NOW()
+                WHERE current_attempt.organization_id = CAST(:org_id AS uuid)
+                  AND current_attempt.id = CAST(:id AS uuid)
+                  AND current_attempt.status = CAST('running' AS science.validation_attempt_status)
+                  AND current_attempt.claimed_by = :worker_id
+                  AND current_attempt.attempt_number < current_attempt.max_attempts
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM science.validation_attempts AS successor
+                      WHERE successor.organization_id = current_attempt.organization_id
+                        AND successor.dataset_id = current_attempt.dataset_id
+                        AND successor.attempt_number = current_attempt.attempt_number + 1
+                  )
+                RETURNING *
+            ), next_attempt AS (
+                INSERT INTO science.validation_attempts (
+                    organization_id, dataset_id, original_object_id,
+                    attempt_number, max_attempts, status, next_retry_at,
+                    created_at, updated_at
+                )
+                SELECT organization_id, dataset_id, original_object_id,
+                       attempt_number + 1, max_attempts,
+                       CAST('queued' AS science.validation_attempt_status),
+                       next_retry_at, NOW(), NOW()
+                FROM updated
+                ON CONFLICT (organization_id, dataset_id, attempt_number)
+                DO NOTHING
+                RETURNING id
+            ), dataset_updated AS (
+                UPDATE science.datasets
+                SET dataset_status = CAST('pending_validation' AS science.dataset_status),
+                    status_changed_at = NOW(),
+                    updated_at = NOW()
+                FROM next_attempt
+                WHERE science.datasets.organization_id = CAST(:org_id AS uuid)
+                  AND science.datasets.id = (SELECT dataset_id FROM updated)
+                  AND dataset_status = CAST('validating' AS science.dataset_status)
+                RETURNING id
+            )
+            SELECT 1
+            FROM updated
+            CROSS JOIN next_attempt
         """),
         {
             "org_id": org_id, "id": attempt_id, "worker_id": worker_id,
             "failure_code": failure_code, "failure_details": json.dumps(safe_failure_details),
         },
     )
-    if (result.rowcount or 0) == 0:
+    if result.scalar() is None:
         return False
-    await session.execute(
-        sa.text("""
-            UPDATE science.datasets
-            SET dataset_status = CAST('pending_validation' AS science.dataset_status),
-                status_changed_at = NOW(),
-                updated_at = NOW()
-            WHERE organization_id = CAST(:org_id AS uuid)
-              AND id IN (SELECT dataset_id FROM science.validation_attempts WHERE id = CAST(:id AS uuid))
-              AND dataset_status = CAST('validating' AS science.dataset_status)
-        """),
-        {"org_id": org_id, "id": attempt_id},
-    )
     return True
 
 
@@ -584,9 +621,10 @@ async def mark_quarantined(
     )
     result = await session.execute(
         sa.text("""
-            SELECT science.validation_worker_settle_terminal(
+            SELECT science.validation_worker_settle_terminal_owned(
                 CAST(:org_id AS uuid),
                 CAST(:id AS uuid),
+                :worker_id,
                 CAST('quarantined' AS science.validation_attempt_status),
                 CAST('quarantined' AS science.dataset_status),
                 :failure_code,
@@ -619,9 +657,10 @@ async def mark_invalid(
     safe_failure_details = _normalize_pg_json(failure_details)
     result = await session.execute(
         sa.text("""
-            SELECT science.validation_worker_settle_terminal(
+            SELECT science.validation_worker_settle_terminal_owned(
                 CAST(:org_id AS uuid),
                 CAST(:id AS uuid),
+                :worker_id,
                 CAST('failed' AS science.validation_attempt_status),
                 CAST('invalid' AS science.dataset_status),
                 :failure_code,
@@ -761,7 +800,10 @@ async def process_one(
     async with engine.begin() as conn:
         session = AsyncSession(bind=conn)
         try:
-            await mark_running(session, org_id, user_id, worker_id, attempt_id)
+            running = await mark_running(session, org_id, user_id, worker_id, attempt_id)
+            if not running:
+                await session.rollback()
+                return "lost_ownership"
             await append_audit_event(
                 session, org_id, user_id,
                 "validation.claimed", "validation_attempt", attempt_id,
@@ -804,19 +846,24 @@ async def process_one(
             async with engine.begin() as conn:
                 session = AsyncSession(bind=conn)
                 try:
-                    await mark_quarantined(
+                    settled = await mark_quarantined(
                         session, org_id, user_id, worker_id, attempt_id,
                         "OBJECT_LINEAGE_MISSING",
                         {"check": "object_exists", "detail": "Dataset or object not found"},
                         "Dataset/object lineage required for validation is missing",
                     )
-                    await append_audit_event(
-                        session, org_id, user_id,
-                        "validation.quarantined", "dataset", dataset_id,
-                    )
-                    await session.commit()
+                    if settled:
+                        await append_audit_event(
+                            session, org_id, user_id,
+                            "validation.quarantined", "dataset", dataset_id,
+                        )
+                        await session.commit()
+                    else:
+                        await session.rollback()
                 finally:
                     await session.close()
+            if not settled:
+                return "lost_ownership"
             counters.quarantined += 1
             logger.info("quarantined attempt=%s reason=OBJECT_LINEAGE_MISSING", attempt_id)
             outcome_status = "quarantined"
@@ -844,7 +891,7 @@ async def process_one(
             async with engine.begin() as conn:
                 session = AsyncSession(bind=conn)
                 try:
-                    await mark_quarantined(
+                    settled = await mark_quarantined(
                         session,
                         org_id,
                         user_id,
@@ -856,13 +903,18 @@ async def process_one(
                         checksum=integrity_result.server_checksum_sha256,
                         byte_size=integrity_result.byte_size_verified,
                     )
-                    await append_audit_event(
-                        session, org_id, user_id,
-                        "validation.quarantined", "dataset", dataset_id,
-                    )
-                    await session.commit()
+                    if settled:
+                        await append_audit_event(
+                            session, org_id, user_id,
+                            "validation.quarantined", "dataset", dataset_id,
+                        )
+                        await session.commit()
+                    else:
+                        await session.rollback()
                 finally:
                     await session.close()
+            if not settled:
+                return "lost_ownership"
             counters.quarantined += 1
             logger.info(
                 "quarantined attempt=%s dataset=%s reason=%s",
@@ -918,19 +970,25 @@ async def process_one(
                         async with engine.begin() as conn:
                             session = AsyncSession(bind=conn)
                             try:
-                                await mark_quarantined(
+                                settled = await mark_quarantined(
                                     session, org_id, user_id, worker_id, attempt_id,
                                     "OBJECT_LINEAGE_MISSING",
                                     {"check": "technique_missing", "detail": "dataset row has no technique"},
                                     "Dataset row missing technique; cannot select parser",
                                 )
-                                await append_audit_event(
-                                    session, org_id, user_id,
-                                    "validation.quarantined", "dataset", dataset_id,
-                                )
-                                await session.commit()
+                                if settled:
+                                    await append_audit_event(
+                                        session, org_id, user_id,
+                                        "validation.quarantined", "dataset", dataset_id,
+                                    )
+                                    await session.commit()
+                                else:
+                                    await session.rollback()
                             finally:
                                 await session.close()
+                        if not settled:
+                            outcome_status = "lost_ownership"
+                            return outcome_status
                         counters.quarantined += 1
                         outcome_status = "quarantined"
                         return outcome_status
@@ -986,7 +1044,7 @@ async def process_one(
                         async with engine.begin() as conn:
                             session = AsyncSession(bind=conn)
                             try:
-                                await mark_quarantined(
+                                settled = await mark_quarantined(
                                     session, org_id, user_id, worker_id, attempt_id,
                                     q_failure_code,
                                     q_failure_details,
@@ -994,13 +1052,19 @@ async def process_one(
                                     checksum=validation_result.server_checksum_sha256,
                                     byte_size=validation_result.byte_size_verified,
                                 )
-                                await append_audit_event(
-                                    session, org_id, user_id,
-                                    "validation.quarantined", "dataset", dataset_id,
-                                )
-                                await session.commit()
+                                if settled:
+                                    await append_audit_event(
+                                        session, org_id, user_id,
+                                        "validation.quarantined", "dataset", dataset_id,
+                                    )
+                                    await session.commit()
+                                else:
+                                    await session.rollback()
                             finally:
                                 await session.close()
+                        if not settled:
+                            outcome_status = "lost_ownership"
+                            return outcome_status
                         counters.quarantined += 1
                         logger.info(
                             "quarantined attempt=%s code=%s (parser_status=quarantined)",
@@ -1020,7 +1084,7 @@ async def process_one(
                         session = AsyncSession(bind=conn)
                         try:
                             if attempt_number >= max_attempts:
-                                await mark_quarantined(
+                                settled = await mark_quarantined(
                                     session,
                                     org_id,
                                     user_id,
@@ -1032,17 +1096,21 @@ async def process_one(
                                     checksum=validation_result.server_checksum_sha256,
                                     byte_size=validation_result.byte_size_verified,
                                 )
-                                await append_audit_event(
-                                    session, org_id, user_id,
-                                    "validation.quarantined", "dataset", dataset_id,
-                                )
-                                await session.commit()
-                                counters.quarantined += 1
-                                outcome_status = "quarantined"
-                                logger.info(
-                                    "quarantined attempt=%s attempt_number=%d/%d (sandbox retries exhausted)",
-                                    attempt_id, attempt_number, max_attempts,
-                                )
+                                if settled:
+                                    await append_audit_event(
+                                        session, org_id, user_id,
+                                        "validation.quarantined", "dataset", dataset_id,
+                                    )
+                                    await session.commit()
+                                    counters.quarantined += 1
+                                    outcome_status = "quarantined"
+                                    logger.info(
+                                        "quarantined attempt=%s attempt_number=%d/%d (sandbox retries exhausted)",
+                                        attempt_id, attempt_number, max_attempts,
+                                    )
+                                else:
+                                    await session.rollback()
+                                    outcome_status = "lost_ownership"
                             else:
                                 requeued = await mark_failed_with_retry(
                                     session,
@@ -1066,27 +1134,12 @@ async def process_one(
                                         attempt_id, attempt_number, max_attempts,
                                     )
                                 else:
-                                    await mark_quarantined(
-                                        session,
-                                        org_id,
-                                        user_id,
-                                        worker_id,
-                                        attempt_id,
-                                        "ISOLATION_SANDBOX_ERROR",
-                                        isolation_failure_details,
-                                        isolation_quarantine_reason,
-                                        checksum=validation_result.server_checksum_sha256,
-                                        byte_size=validation_result.byte_size_verified,
-                                    )
-                                    await append_audit_event(
-                                        session, org_id, user_id,
-                                        "validation.quarantined", "dataset", dataset_id,
-                                    )
-                                    await session.commit()
-                                    counters.quarantined += 1
-                                    outcome_status = "quarantined"
+                                    # Another worker may have settled or re-owned the
+                                    # attempt after this worker lost its lease. Do not
+                                    # quarantine or otherwise touch that worker's row.
+                                    outcome_status = "lost_ownership"
                                     logger.warning(
-                                        "quarantined attempt=%s (mark_failed_with_retry matched 0 rows)",
+                                        "lost ownership for attempt=%s; failure settlement is a no-op",
                                         attempt_id,
                                     )
                         finally:
@@ -1107,47 +1160,64 @@ async def process_one(
             session = AsyncSession(bind=conn)
             try:
                 if validation_result.passed:
-                    await mark_passed(
+                    settled = await mark_passed(
                         session, org_id, user_id, worker_id, attempt_id,
                         validation_result.server_checksum_sha256 or "",
                         validation_result.byte_size_verified or 0,
                     )
-                    await append_audit_event(
-                        session, org_id, user_id,
-                        "validation.passed", "dataset", dataset_id,
-                    )
-                    counters.passed += 1
-                    logger.info("passed attempt=%s dataset=%s", attempt_id, dataset_id)
-                    outcome_status = "passed"
+                    if settled:
+                        await append_audit_event(
+                            session, org_id, user_id,
+                            "validation.passed", "dataset", dataset_id,
+                        )
+                        counters.passed += 1
+                        logger.info("passed attempt=%s dataset=%s", attempt_id, dataset_id)
+                        outcome_status = "passed"
+                    else:
+                        await session.rollback()
+                        outcome_status = "lost_ownership"
 
                 elif validation_result.transient:
                     if attempt_number >= max_attempts:
-                        await mark_quarantined(
+                        settled = await mark_quarantined(
                             session, org_id, user_id, worker_id, attempt_id,
                             validation_result.failure_code or "UNKNOWN",
                             validation_result.failure_details or {},
                             f"Max retries ({max_attempts}) exhausted for transient failure",
                         )
-                        await append_audit_event(
-                            session, org_id, user_id,
-                            "validation.quarantined", "dataset", dataset_id,
-                        )
-                        counters.quarantined += 1
-                        logger.info("quarantined attempt=%s dataset=%s", attempt_id, dataset_id)
-                        outcome_status = "quarantined"
+                        if settled:
+                            await append_audit_event(
+                                session, org_id, user_id,
+                                "validation.quarantined", "dataset", dataset_id,
+                            )
+                            counters.quarantined += 1
+                            logger.info("quarantined attempt=%s dataset=%s", attempt_id, dataset_id)
+                            outcome_status = "quarantined"
+                        else:
+                            await session.rollback()
+                            outcome_status = "lost_ownership"
                     else:
-                        await mark_failed_with_retry(
+                        requeued = await mark_failed_with_retry(
                             session, org_id, user_id, worker_id, attempt_id,
                             validation_result.failure_code or "UNKNOWN",
                             validation_result.failure_details or {},
                         )
-                        await append_audit_event(
-                            session, org_id, user_id,
-                            "validation.failed", "validation_attempt", attempt_id,
-                        )
-                        counters.retried += 1
-                        logger.info("retry attempt=%s attempt_number=%d", attempt_id, attempt_number)
-                        outcome_status = "retry"
+                        if requeued:
+                            await append_audit_event(
+                                session, org_id, user_id,
+                                "validation.failed", "validation_attempt", attempt_id,
+                            )
+                            counters.retried += 1
+                            logger.info("retry attempt=%s attempt_number=%d", attempt_id, attempt_number)
+                            outcome_status = "retry"
+                        else:
+                            # The ownership predicate deliberately makes a stale
+                            # worker a no-op after another worker settles the row.
+                            outcome_status = "lost_ownership"
+                            logger.warning(
+                                "lost ownership for attempt=%s; failure settlement is a no-op",
+                                attempt_id,
+                            )
 
                 else:
                     quarantine_codes = {
@@ -1157,32 +1227,40 @@ async def process_one(
                         "OBJECT_LINEAGE_MISSING",
                     }
                     if validation_result.failure_code in quarantine_codes:
-                        await mark_quarantined(
+                        settled = await mark_quarantined(
                             session, org_id, user_id, worker_id, attempt_id,
                             validation_result.failure_code or "UNKNOWN",
                             validation_result.failure_details or {},
                             "Non-transient content/sandbox violation; quarantining instead of marking invalid",
                         )
-                        await append_audit_event(
-                            session, org_id, user_id,
-                            "validation.quarantined", "dataset", dataset_id,
-                        )
-                        counters.quarantined += 1
-                        logger.info("quarantined attempt=%s code=%s", attempt_id, validation_result.failure_code)
-                        outcome_status = "quarantined"
+                        if settled:
+                            await append_audit_event(
+                                session, org_id, user_id,
+                                "validation.quarantined", "dataset", dataset_id,
+                            )
+                            counters.quarantined += 1
+                            logger.info("quarantined attempt=%s code=%s", attempt_id, validation_result.failure_code)
+                            outcome_status = "quarantined"
+                        else:
+                            await session.rollback()
+                            outcome_status = "lost_ownership"
                     else:
-                        await mark_invalid(
+                        settled = await mark_invalid(
                             session, org_id, user_id, worker_id, attempt_id,
                             validation_result.failure_code or "UNKNOWN",
                             validation_result.failure_details or {},
                         )
-                        await append_audit_event(
-                            session, org_id, user_id,
-                            "validation.invalid", "dataset", dataset_id,
-                        )
-                        counters.failed += 1
-                        logger.info("failed attempt=%s code=%s", attempt_id, validation_result.failure_code)
-                        outcome_status = "failed"
+                        if settled:
+                            await append_audit_event(
+                                session, org_id, user_id,
+                                "validation.invalid", "dataset", dataset_id,
+                            )
+                            counters.failed += 1
+                            logger.info("failed attempt=%s code=%s", attempt_id, validation_result.failure_code)
+                            outcome_status = "failed"
+                        else:
+                            await session.rollback()
+                            outcome_status = "lost_ownership"
 
                 await session.commit()
             finally:
@@ -1320,14 +1398,14 @@ class ValidationWorker:
                 session = AsyncSession(bind=conn)
                 try:
                     if self.mode == "multi_org":
-                        # Sweep-only: reclaim across all orgs, but don't process the returned row
-                        # The returned row is now in 'queued' status and will be picked up by claim loop
-                        reclaimed = await reclaim_stale_across_orgs(session)
+                        reclaimed = await reclaim_stale_across_orgs(
+                            session, self.worker_id, self.lease,
+                        )
                         await session.commit()
                         if reclaimed:
                             counters.reclaimed += 1
                             logger.info(
-                                "reclaimed attempt=%s from_crashed_worker (sweep-only, not processing)",
+                                "reclaimed attempt=%s from_crashed_worker",
                                 str(reclaimed["id"]),
                             )
                     else:

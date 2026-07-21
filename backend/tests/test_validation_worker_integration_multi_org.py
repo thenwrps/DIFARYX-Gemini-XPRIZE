@@ -73,7 +73,8 @@ def seed_full_org(super_conn, org_id, user_id, ds_id, obj_id, proj_id, us_id,
                    dataset_status='pending_validation', attempt_status='queued',
                    attempt_id=None, attempt_extra=None, attempt_number=1, test_inst=None):
     if test_inst is not None and hasattr(test_inst, "seeded_orgs"):
-        test_inst.seeded_orgs.append(org_id)
+        if org_id not in test_inst.seeded_orgs:
+            test_inst.seeded_orgs.append(org_id)
     cur = super_conn.cursor()
     cur.execute("SET session_replication_role = 'replica'")
 
@@ -209,6 +210,19 @@ def seed_full_org(super_conn, org_id, user_id, ds_id, obj_id, proj_id, us_id,
     cur.execute("SET session_replication_role = 'origin'")
     super_conn.commit()
     cur.close()
+    return str(attempt_id) if attempt_id else _attempt_id_for_dataset(super_conn, org_id, ds_id, attempt_number)
+
+
+def _attempt_id_for_dataset(super_conn, org_id, dataset_id, attempt_number):
+    cur = super_conn.cursor()
+    cur.execute(
+        "SELECT id::text FROM science.validation_attempts "
+        "WHERE organization_id = %s::uuid AND dataset_id = %s::uuid AND attempt_number = %s",
+        (org_id, dataset_id, attempt_number),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row[0] if row else None
 
 
 class TestMultiOrgIntegration(unittest.IsolatedAsyncioTestCase):
@@ -437,12 +451,24 @@ class TestMultiOrgIntegration(unittest.IsolatedAsyncioTestCase):
         proj_id = str(uuid.uuid4())
         us_id = str(uuid.uuid4())
 
-        seed_full_org(self.super_conn, org_id, user_id, ds_id, obj_id, proj_id, us_id,
-                       dataset_status='invalid', attempt_status='failed_terminal', attempt_number=1, test_inst=self)
-        seed_full_org(self.super_conn, org_id, user_id, ds_id, obj_id, proj_id, us_id,
-                       dataset_status='invalid', attempt_status='quarantined', attempt_number=2, test_inst=self)
-        seed_full_org(self.super_conn, org_id, user_id, ds_id, obj_id, proj_id, us_id,
-                       dataset_status='invalid', attempt_status='cancelled', attempt_number=3, test_inst=self)
+        cur = self.super_conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM science.validation_attempts WHERE organization_id = %s::uuid",
+            (org_id,),
+        )
+        self.assertEqual(cur.fetchone()[0], 0, "terminal-row suite org must be empty before seeding")
+        cur.close()
+
+        terminal_ids = [
+            seed_full_org(self.super_conn, org_id, user_id, ds_id, obj_id, proj_id, us_id,
+                          dataset_status='invalid', attempt_status='failed_terminal', attempt_number=1, test_inst=self),
+            seed_full_org(self.super_conn, org_id, user_id, ds_id, obj_id, proj_id, us_id,
+                          dataset_status='invalid', attempt_status='quarantined', attempt_number=2, test_inst=self),
+            seed_full_org(self.super_conn, org_id, user_id, ds_id, obj_id, proj_id, us_id,
+                          dataset_status='invalid', attempt_status='cancelled', attempt_number=3, test_inst=self),
+            seed_full_org(self.super_conn, org_id, user_id, ds_id, obj_id, proj_id, us_id,
+                          dataset_status='invalid', attempt_status='queued', attempt_number=4, test_inst=self),
+        ]
 
         async with self.engine.begin() as conn:
             session = AsyncSession(bind=conn)
@@ -455,7 +481,32 @@ class TestMultiOrgIntegration(unittest.IsolatedAsyncioTestCase):
                     """)
                 )
                 row = result.mappings().first()
-                self.assertIsNone(row, "Terminal failed/quarantined/cancelled attempts must NOT be re-claimed")
+                if row is not None:
+                    self.assertNotIn(str(row["id"]), terminal_ids,
+                                     "claim function must not return a seeded terminal/exhausted row")
+                # The cross-org function may legitimately select work from a
+                # different organization already in the shared queue. Roll
+                # back that probe, then inspect only this test's seeded rows
+                # with the bootstrap connection so RLS cannot hide them.
+                await session.rollback()
+                cur = self.super_conn.cursor()
+                cur.execute(
+                    """
+                    SELECT id::text, attempt_number, status::text, claimed_by
+                    FROM science.validation_attempts
+                    WHERE organization_id = %s::uuid
+                    ORDER BY attempt_number
+                    """,
+                    (org_id,),
+                )
+                rows = [tuple(r) for r in cur.fetchall()]
+                cur.close()
+                print("Terminal-row claim evidence:", rows)
+                self.assertEqual(
+                    [(r[1], r[2], r[3]) for r in rows],
+                    [(1, "failed", None), (2, "quarantined", None),
+                     (3, "cancelled", None), (4, "queued", None)],
+                )
                 await session.commit()
             finally:
                 await session.close()
@@ -532,13 +583,16 @@ class TestMultiOrgIntegration(unittest.IsolatedAsyncioTestCase):
                 sess2 = AsyncSession(bind=conn2)
                 try:
                     r1 = await sess1.execute(
-                        sa.text("SELECT * FROM science.validation_worker_reclaim_stale_across_orgs()")
+                        sa.text("SELECT * FROM science.validation_worker_reclaim_stale_across_orgs(:worker, 300)"),
+                        {"worker": "concurrent-reclaim-a"},
                     )
                     r2 = await sess2.execute(
-                        sa.text("SELECT * FROM science.validation_worker_reclaim_stale_across_orgs()")
+                        sa.text("SELECT * FROM science.validation_worker_reclaim_stale_across_orgs(:worker, 300)"),
+                        {"worker": "concurrent-reclaim-b"},
                     )
                     row1 = r1.mappings().first()
                     row2 = r2.mappings().first()
+                    self.assertTrue(row1 or row2)
                     if row1 and row2:
                         self.assertNotEqual(str(row1["id"]), str(row2["id"]))
                     await sess1.commit()
@@ -615,17 +669,35 @@ class TestMultiOrgIntegration(unittest.IsolatedAsyncioTestCase):
 
                 await session.execute(
                     sa.text("""
-                        UPDATE science.validation_attempts
-                        SET status = CAST('failed' AS science.validation_attempt_status),
-                            failure_code = 'TRANSIENT_ERROR',
-                            failure_details = CAST('{"reason":"simulated transient"}' AS jsonb),
-                            next_retry_at = NOW() + (30 * power(2, LEAST(attempt_number - 1, 4))) * INTERVAL '1 second',
-                            claimed_at = NULL,
-                            claimed_by = NULL,
-                            updated_at = NOW()
-                        WHERE id = CAST(:id AS uuid)
-                          AND organization_id = CAST(:org_id AS uuid)
-                          AND status = CAST('running' AS science.validation_attempt_status)
+                        WITH updated AS (
+                            UPDATE science.validation_attempts
+                            SET status = CAST('failed' AS science.validation_attempt_status),
+                                failure_code = 'TRANSIENT_ERROR',
+                                failure_details = CAST('{"reason":"simulated transient"}' AS jsonb),
+                                next_retry_at = NOW(),
+                                claimed_at = NULL,
+                                claimed_by = NULL,
+                                lock_expires_at = NULL,
+                                completed_at = NOW(),
+                                updated_at = NOW()
+                            WHERE id = CAST(:id AS uuid)
+                              AND organization_id = CAST(:org_id AS uuid)
+                              AND status = CAST('running' AS science.validation_attempt_status)
+                              AND attempt_number < max_attempts
+                            RETURNING organization_id, dataset_id, original_object_id,
+                                      attempt_number, max_attempts, next_retry_at
+                        )
+                        INSERT INTO science.validation_attempts (
+                            organization_id, dataset_id, original_object_id,
+                            attempt_number, max_attempts, status, next_retry_at,
+                            claimed_at, claimed_by, lock_expires_at, created_at, updated_at
+                        )
+                        SELECT organization_id, dataset_id, original_object_id,
+                               attempt_number + 1, max_attempts,
+                               CAST('queued' AS science.validation_attempt_status), next_retry_at,
+                               NULL, NULL, NULL, NOW(), NOW()
+                        FROM updated
+                        ON CONFLICT (organization_id, dataset_id, attempt_number) DO NOTHING
                     """),
                     {"id": attempt_id, "org_id": claimed_org}
                 )
@@ -642,18 +714,37 @@ class TestMultiOrgIntegration(unittest.IsolatedAsyncioTestCase):
                 vrow = verify.mappings().first()
                 self.assertEqual(vrow["status"], "failed")
                 self.assertIsNotNone(vrow["next_retry_at"])
-                self.assertIsNone(vrow["completed_at"])
+                self.assertIsNotNone(vrow["completed_at"])
                 self.assertEqual(vrow["failure_code"], "TRANSIENT_ERROR")
 
                 await session.execute(
                     sa.text("""
                         UPDATE science.validation_attempts
                         SET next_retry_at = NOW() - INTERVAL '1 second'
-                        WHERE id = CAST(:id AS uuid)
-                          AND organization_id = CAST(:org_id AS uuid)
+                        WHERE organization_id = CAST(:org_id AS uuid)
+                          AND dataset_id = (
+                              SELECT dataset_id FROM science.validation_attempts
+                              WHERE id = CAST(:id AS uuid)
+                                AND organization_id = CAST(:org_id AS uuid)
+                          )
+                          AND attempt_number = 2
+                        RETURNING id::text
                     """),
                     {"id": attempt_id, "org_id": claimed_org}
                 )
+                attempt_2_id = str((await session.execute(
+                    sa.text("""
+                        SELECT id::text FROM science.validation_attempts
+                        WHERE organization_id = CAST(:org_id AS uuid)
+                          AND dataset_id = (
+                              SELECT dataset_id FROM science.validation_attempts
+                              WHERE id = CAST(:id AS uuid)
+                                AND organization_id = CAST(:org_id AS uuid)
+                          )
+                          AND attempt_number = 2
+                    """),
+                    {"id": attempt_id, "org_id": claimed_org},
+                )).scalar_one())
 
                 await session.commit()
             finally:
@@ -671,7 +762,9 @@ class TestMultiOrgIntegration(unittest.IsolatedAsyncioTestCase):
                 )
                 row2 = result.mappings().first()
                 self.assertIsNotNone(row2, "Retry attempt should be re-claimed after backoff expires")
-                self.assertEqual(str(row2["id"]), attempt_id)
+                self.assertEqual(str(row2["id"]), attempt_2_id)
+                self.assertNotEqual(str(row2["id"]), attempt_id)
+                self.assertEqual(row2["attempt_number"], 2)
                 self.assertEqual(str(row2["organization_id"]), org_id)
 
                 re_org = str(row2["organization_id"])
@@ -695,7 +788,7 @@ class TestMultiOrgIntegration(unittest.IsolatedAsyncioTestCase):
                         WHERE id = CAST(:id AS uuid)
                           AND organization_id = CAST(:org_id AS uuid)
                     """),
-                    {"id": attempt_id, "org_id": re_org}
+                    {"id": attempt_2_id, "org_id": re_org}
                 )
 
                 final = await session.execute(
@@ -705,7 +798,7 @@ class TestMultiOrgIntegration(unittest.IsolatedAsyncioTestCase):
                         WHERE id = CAST(:id AS uuid)
                           AND organization_id = CAST(:org_id AS uuid)
                     """),
-                    {"id": attempt_id, "org_id": re_org}
+                    {"id": attempt_2_id, "org_id": re_org}
                 )
                 frow = final.mappings().first()
                 self.assertEqual(frow["status"], "passed")

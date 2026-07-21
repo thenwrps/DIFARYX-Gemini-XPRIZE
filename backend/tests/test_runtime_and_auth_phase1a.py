@@ -167,16 +167,16 @@ class TestDatabaseRuntimeAndAuth(unittest.IsolatedAsyncioTestCase):
             await async_eng.dispose()
 
     async def test_engine_verify_database_readiness_rejects_mismatched_revision(self):
-        """Verify that readiness check rejects versions other than 0015."""
+        """Verify that readiness check rejects versions other than 0016."""
         # Temporarily mock alembic version
         self.su_cur.execute("UPDATE public.alembic_version SET version_num = '0008'")
         async_eng = create_async_engine(make_async_url(API_TEST_URL))
         try:
             with self.assertRaises(RuntimeError) as ctx:
                 await verify_database_readiness(async_eng)
-            self.assertIn("expected revision '0015'", str(ctx.exception))
+            self.assertIn("expected revision '0016'", str(ctx.exception))
         finally:
-            self.su_cur.execute("UPDATE public.alembic_version SET version_num = '0015'")
+            self.su_cur.execute("UPDATE public.alembic_version SET version_num = '0016'")
             await async_eng.dispose()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -376,7 +376,7 @@ class TestDatabaseRuntimeAndAuth(unittest.IsolatedAsyncioTestCase):
     async def test_health_readiness_mismatch_revision_returns_503(self):
         """Verify readiness endpoint returns generic 503 on revision mismatch."""
         response = MagicMock()
-        with patch("api.routes.health.verify_database_readiness", side_effect=RuntimeError("Database Migration Mismatch: expected revision '0015', got '0008'")):
+        with patch("api.routes.health.verify_database_readiness", side_effect=RuntimeError("Database Migration Mismatch: expected revision '0016', got '0008'")):
             res = await readiness_check(response=response)
             self.assertEqual(res, {"status": "unavailable", "detail": "Database readiness checks failed"})
             self.assertEqual(response.status_code, 503)

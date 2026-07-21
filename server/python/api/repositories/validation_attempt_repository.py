@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -44,31 +45,34 @@ class ValidationAttemptRepository:
     ) -> Optional[Dict[str, Any]]:
         result = await session.execute(
             sa.text("""
-                WITH claimed AS (
+                WITH picked AS (
+                    SELECT id
+                    FROM science.validation_attempts
+                    WHERE organization_id = :org_id
+                      AND status = 'queued'::science.validation_attempt_status
+                      AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+                      AND attempt_number <= max_attempts
+                      AND claimed_by IS NULL
+                    ORDER BY next_retry_at NULLS FIRST, created_at
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                ), claimed AS (
                     UPDATE science.validation_attempts
                     SET status = 'claimed'::science.validation_attempt_status,
                         claimed_at = NOW(),
                         claimed_by = :worker_id,
-                        lock_expires_at = NOW() + INTERVAL ':lock_timeout seconds',
+                        lock_expires_at = NOW() + make_interval(secs => :lock_timeout),
                         started_at = NOW(),
                         updated_at = NOW()
-                    WHERE organization_id = :org_id
-                      AND status IN ('queued'::science.validation_attempt_status,
-                                     'failed'::science.validation_attempt_status)
-                      AND (next_retry_at IS NULL OR next_retry_at <= NOW())
-                    ORDER BY next_retry_at NULLS FIRST, created_at
-                    LIMIT 1
-                    FOR UPDATE SKIP LOCKED
+                    FROM picked
+                    WHERE science.validation_attempts.organization_id = :org_id
+                      AND science.validation_attempts.id = picked.id
+                      AND science.validation_attempts.status = 'queued'::science.validation_attempt_status
+                      AND science.validation_attempts.attempt_number <= science.validation_attempts.max_attempts
+                      AND science.validation_attempts.claimed_by IS NULL
                     RETURNING *
                 )
-                UPDATE science.datasets
-                SET dataset_status = 'validating'::science.dataset_status,
-                    status_changed_at = NOW(),
-                    updated_at = NOW()
-                WHERE organization_id = :org_id
-                  AND id = (SELECT dataset_id FROM claimed)
-                  AND dataset_status = 'pending_validation'::science.dataset_status
-                RETURNING (SELECT * FROM claimed)
+                SELECT * FROM claimed
             """),
             {
                 "org_id": organization_id,
@@ -77,7 +81,26 @@ class ValidationAttemptRepository:
             },
         )
         row = result.mappings().first()
-        return dict(row) if row else None
+        if not row:
+            return None
+
+        attempt = dict(row)
+        await session.execute(
+            sa.text("""
+                UPDATE science.datasets
+                SET dataset_status = 'validating'::science.dataset_status,
+                    status_changed_at = NOW(),
+                    updated_at = NOW()
+                WHERE organization_id = :org_id
+                  AND id = :dataset_id
+                  AND dataset_status = 'pending_validation'::science.dataset_status
+            """),
+            {
+                "org_id": organization_id,
+                "dataset_id": attempt["dataset_id"],
+            },
+        )
+        return attempt
 
     @staticmethod
     async def mark_running(
@@ -159,35 +182,64 @@ class ValidationAttemptRepository:
         result = await session.execute(
             sa.text("""
                 WITH updated AS (
-                    UPDATE science.validation_attempts
+                    UPDATE science.validation_attempts AS current_attempt
                     SET status = 'failed'::science.validation_attempt_status,
                         failure_code = :failure_code,
                         failure_details = CAST(:failure_details AS jsonb),
-                        next_retry_at = NOW() + (30 * power(2, LEAST(attempt_number - 1, 4))) * INTERVAL '1 second',
+                        next_retry_at = NOW() + (30 * power(2, LEAST(current_attempt.attempt_number - 1, 4))) * INTERVAL '1 second',
                         claimed_at = NULL,
                         claimed_by = NULL,
+                        lock_expires_at = NULL,
+                        completed_at = NOW(),
                         updated_at = NOW()
-                    WHERE organization_id = :org_id
-                      AND id = :id
-                      AND status = 'running'::science.validation_attempt_status
-                      AND claimed_by = :worker_id
+                    WHERE current_attempt.organization_id = :org_id
+                      AND current_attempt.id = :id
+                      AND current_attempt.status = 'running'::science.validation_attempt_status
+                      AND current_attempt.claimed_by = :worker_id
+                      AND current_attempt.attempt_number < current_attempt.max_attempts
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM science.validation_attempts AS successor
+                          WHERE successor.organization_id = current_attempt.organization_id
+                            AND successor.dataset_id = current_attempt.dataset_id
+                            AND successor.attempt_number = current_attempt.attempt_number + 1
+                      )
                     RETURNING *
+                ), next_attempt AS (
+                    INSERT INTO science.validation_attempts (
+                        organization_id, dataset_id, original_object_id,
+                        attempt_number, max_attempts, status, next_retry_at,
+                        created_at, updated_at
+                    )
+                    SELECT organization_id, dataset_id, original_object_id,
+                           attempt_number + 1, max_attempts,
+                           'queued'::science.validation_attempt_status,
+                           next_retry_at, NOW(), NOW()
+                    FROM updated
+                    ON CONFLICT (organization_id, dataset_id, attempt_number)
+                    DO NOTHING
+                    RETURNING id
+                ), dataset_updated AS (
+                    UPDATE science.datasets
+                    SET dataset_status = 'pending_validation'::science.dataset_status,
+                        status_changed_at = NOW(),
+                        updated_at = NOW()
+                    FROM next_attempt
+                    WHERE science.datasets.organization_id = :org_id
+                      AND science.datasets.id = (SELECT dataset_id FROM updated)
+                      AND dataset_status = 'validating'::science.dataset_status
+                    RETURNING id
                 )
-                UPDATE science.datasets
-                SET dataset_status = 'pending_validation'::science.dataset_status,
-                    status_changed_at = NOW(),
-                    updated_at = NOW()
-                WHERE organization_id = :org_id
-                  AND id = (SELECT dataset_id FROM updated)
-                  AND dataset_status = 'validating'::science.dataset_status
-                RETURNING (SELECT * FROM updated)
+                SELECT updated.*
+                FROM updated
+                CROSS JOIN next_attempt
             """),
             {
                 "org_id": organization_id,
                 "id": attempt_id,
                 "worker_id": worker_id,
                 "failure_code": failure_code,
-                "failure_details": str(failure_details),
+                "failure_details": json.dumps(failure_details),
             },
         )
         row = result.mappings().first()
@@ -322,31 +374,41 @@ class ValidationAttemptRepository:
     ) -> Optional[Dict[str, Any]]:
         result = await session.execute(
             sa.text("""
-                WITH reclaimed AS (
+                WITH picked AS (
+                    SELECT id
+                    FROM science.validation_attempts
+                    WHERE organization_id = :org_id
+                      AND status IN ('claimed'::science.validation_attempt_status,
+                                     'running'::science.validation_attempt_status)
+                      AND lock_expires_at IS NOT NULL
+                      AND lock_expires_at < NOW()
+                      AND attempt_number <= max_attempts
+                      AND claimed_by IS NOT NULL
+                    ORDER BY lock_expires_at
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                ), reclaimed AS (
                     UPDATE science.validation_attempts
                     SET status = 'claimed'::science.validation_attempt_status,
                         claimed_at = NOW(),
                         claimed_by = :worker_id,
-                        lock_expires_at = NOW() + INTERVAL ':lock_timeout seconds',
+                        lock_expires_at = NOW() + make_interval(secs => :lock_timeout),
                         started_at = NOW(),
-                        attempt_number = attempt_number + 1,
                         updated_at = NOW()
-                    WHERE organization_id = :org_id
-                      AND status = 'claimed'::science.validation_attempt_status
-                      AND lock_expires_at < NOW()
-                    ORDER BY lock_expires_at
-                    LIMIT 1
-                    FOR UPDATE SKIP LOCKED
+                    FROM picked
+                    WHERE science.validation_attempts.organization_id = :org_id
+                      AND science.validation_attempts.id = picked.id
+                      AND science.validation_attempts.status IN (
+                          'claimed'::science.validation_attempt_status,
+                          'running'::science.validation_attempt_status
+                      )
+                      AND science.validation_attempts.lock_expires_at IS NOT NULL
+                      AND science.validation_attempts.lock_expires_at < NOW()
+                      AND science.validation_attempts.attempt_number <= science.validation_attempts.max_attempts
+                      AND science.validation_attempts.claimed_by IS NOT NULL
                     RETURNING *
                 )
-                UPDATE science.datasets
-                SET dataset_status = 'validating'::science.dataset_status,
-                    status_changed_at = NOW(),
-                    updated_at = NOW()
-                WHERE organization_id = :org_id
-                  AND id = (SELECT dataset_id FROM reclaimed)
-                  AND dataset_status = 'pending_validation'::science.dataset_status
-                RETURNING (SELECT * FROM reclaimed)
+                SELECT * FROM reclaimed
             """),
             {
                 "org_id": organization_id,
@@ -355,7 +417,26 @@ class ValidationAttemptRepository:
             },
         )
         row = result.mappings().first()
-        return dict(row) if row else None
+        if not row:
+            return None
+
+        attempt = dict(row)
+        await session.execute(
+            sa.text("""
+                UPDATE science.datasets
+                SET dataset_status = 'validating'::science.dataset_status,
+                    status_changed_at = NOW(),
+                    updated_at = NOW()
+                WHERE organization_id = :org_id
+                  AND id = :dataset_id
+                  AND dataset_status = 'pending_validation'::science.dataset_status
+            """),
+            {
+                "org_id": organization_id,
+                "dataset_id": attempt["dataset_id"],
+            },
+        )
+        return attempt
 
     @staticmethod
     async def renew_lock(
@@ -369,7 +450,7 @@ class ValidationAttemptRepository:
         result = await session.execute(
             sa.text("""
                 UPDATE science.validation_attempts
-                SET lock_expires_at = NOW() + INTERVAL ':lock_timeout seconds',
+                SET lock_expires_at = NOW() + make_interval(secs => :lock_timeout),
                     updated_at = NOW()
                 WHERE organization_id = :org_id
                   AND id = :id
@@ -489,8 +570,9 @@ class ValidationAttemptRepository:
             sa.text("""
                 SELECT * FROM science.validation_attempts
                 WHERE organization_id = :org_id
-                  AND status IN ('queued'::science.validation_attempt_status,
-                                 'failed'::science.validation_attempt_status)
+                  AND status = 'queued'::science.validation_attempt_status
+                  AND attempt_number <= max_attempts
+                  AND claimed_by IS NULL
                   AND (next_retry_at IS NULL OR next_retry_at <= NOW())
                 ORDER BY next_retry_at NULLS FIRST, created_at
                 LIMIT :limit

@@ -45,7 +45,7 @@ async def verify_database_readiness(async_engine: AsyncEngine) -> None:
                 if super_check.scalar():
                     raise RuntimeError("Security Violation: API runtime connected using a database SUPERUSER role.")
 
-            # 3. Assert exact Alembic revision is exactly '0009'
+            # 3. Assert exact Alembic revision is exactly '0016'
             # Do not use numerical comparison; match string exactly
             try:
                 version_res = await conn.execute(sa.text("SELECT version_num FROM public.alembic_version"))
@@ -59,8 +59,8 @@ async def verify_database_readiness(async_engine: AsyncEngine) -> None:
                 raise RuntimeError(f"Database Readiness Failure: alembic_version table is missing, empty, or unreadable: {e}")
 
             logger.info(f"Current Alembic revision verified: '{active_revision}'")
-            if active_revision != "0015":
-                raise RuntimeError(f"Database Migration Mismatch: expected revision '0015', got '{active_revision}'")
+            if active_revision != "0016":
+                raise RuntimeError(f"Database Migration Mismatch: expected revision '0016', got '{active_revision}'")
 
             # 4. Check function existence
             funcs_to_check = [

@@ -4,12 +4,10 @@ DIFARYX Validation Worker — Retry / Exhaustion / Survival Integration Test
 
 Proves the P0 runtime-failure semantics end-to-end against live PostgreSQL:
 
-  1. First runtime failure (sandbox crash/timeout/OOM) is REQUEUED via
-     mark_failed_with_retry — status becomes 'failed', next_retry_at is set,
-     attempt_number is NOT advanced yet (advances on next claim).
-  2. claim_next increments attempt_number when re-claiming a 'failed' attempt.
-     Retry metadata (attempt_number, failure_code, next_retry_at) advances
-     correctly across retries.
+  1. First runtime failure (sandbox crash/timeout/OOM) is recorded as a
+     completed 'failed' row and a distinct queued attempt is inserted.
+  2. Each retry has an immutable (dataset, attempt_number) identity and a
+     distinct row; claim_next never mutates history.
   3. At exhaustion (attempt_number >= max_attempts) the next sandbox failure
      terminal-quarantines the attempt via mark_quarantined — status becomes
      'quarantined', completed_at is set, no further retry.
@@ -26,7 +24,7 @@ failure path specified in P0.
 
 Prerequisites:
     - Database: difaryx_phase0_test @ localhost:5432
-    - Migrations 0001-0015 applied (alembic_version = 0015)
+    - Migrations 0001-0016 applied (alembic_version = 0016)
     - DIFARYX_BOOTSTRAP_DATABASE_URL set
 
 Usage:
@@ -51,10 +49,8 @@ DATABASE_URL = os.getenv("DATABASE_URL") or BOOTSTRAP_URL
 
 if not DATABASE_URL:
     DATABASE_URL = "postgresql://postgres:difaryx_dev_pw@127.0.0.1:5432/difaryx_phase0_test"
-
-ORG_ID = "aaaaaaaa-0000-0000-0000-000000000002"
-USER_ID = "00000000-0000-0000-0000-000000000002"
-WORKER_ID = "test-worker-retry"
+if not BOOTSTRAP_URL:
+    BOOTSTRAP_URL = DATABASE_URL
 
 MAX_ATTEMPTS = 3
 
@@ -64,8 +60,6 @@ def get_conn():
 
 
 def get_superuser_conn():
-    if not BOOTSTRAP_URL:
-        raise RuntimeError("DIFARYX_BOOTSTRAP_DATABASE_URL required for setup/teardown")
     return psycopg2.connect(BOOTSTRAP_URL)
 
 
@@ -88,13 +82,13 @@ def create_test_file(content: bytes) -> tuple[str, str, int]:
     return object_key, checksum, len(content)
 
 
-def seed_test_data(super_conn, object_key, checksum, byte_size, technique="xrd"):
+def seed_test_data(super_conn, object_key, checksum, byte_size, technique="xrd", org_id=None, user_id=None):
     """Insert org/user/project/dataset/object. Returns dataset_id, object_id."""
     cur = super_conn.cursor()
     cur.execute("SET session_replication_role = 'replica'")
 
-    org_id = ORG_ID
-    user_id = USER_ID
+    org_id = org_id or str(uuid.uuid4())
+    user_id = user_id or str(uuid.uuid4())
     project_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"retry-proj-{object_key}"))
     dataset_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"retry-ds-{object_key}"))
     object_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"retry-obj-{object_key}"))
@@ -205,7 +199,7 @@ def get_attempt_status(conn, org_id, attempt_id):
     cur = conn.cursor()
     cur.execute("SET LOCAL app.organization_id = %s", (org_id,))
     cur.execute("""
-        SELECT status::text, claimed_by, next_retry_at,
+        SELECT status::text, claimed_by, claimed_at, lock_expires_at, next_retry_at,
                failure_code, quarantine_reason, completed_at,
                attempt_number, max_attempts, failure_details
         FROM science.validation_attempts
@@ -217,14 +211,30 @@ def get_attempt_status(conn, org_id, attempt_id):
     return {
         "status": row[0],
         "claimed_by": row[1],
-        "next_retry_at": row[2],
-        "failure_code": row[3],
-        "quarantine_reason": row[4],
-        "completed_at": row[5],
-        "attempt_number": row[6],
-        "max_attempts": row[7],
-        "failure_details": row[8],
+        "claimed_at": row[2],
+        "lock_expires_at": row[3],
+        "next_retry_at": row[4],
+        "failure_code": row[5],
+        "quarantine_reason": row[6],
+        "completed_at": row[7],
+        "attempt_number": row[8],
+        "max_attempts": row[9],
+        "failure_details": row[10],
     }
+
+
+def get_attempt_rows(conn, org_id, dataset_id):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id::text, attempt_number, status::text, next_retry_at,
+               completed_at, claimed_by
+        FROM science.validation_attempts
+        WHERE organization_id = %s::uuid AND dataset_id = %s::uuid
+        ORDER BY attempt_number
+    """, (org_id, dataset_id))
+    rows = cur.fetchall()
+    cur.close()
+    return rows
 
 
 def force_retry_due(super_conn, org_id, attempt_id):
@@ -251,27 +261,6 @@ def cleanup_test_data(super_conn, org_id, dataset_id=None):
     super_conn.commit()
 
 
-def purge_leftover_test_data():
-    try:
-        sconn = get_superuser_conn()
-        cur = sconn.cursor()
-        cur.execute("SET session_replication_role = 'replica'")
-        cur.execute("DELETE FROM science.validation_attempts WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM science.dataset_objects WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM science.upload_sessions WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM science.datasets WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM science.projects WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM identity.memberships WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM identity.users WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM identity.organizations WHERE id = %s::uuid", (ORG_ID,))
-        cur.execute("SET session_replication_role = 'origin'")
-        sconn.commit()
-        sconn.close()
-        print("[+] Purged leftover retry-test data.")
-    except Exception as e:
-        print(f"[!] Could not purge leftover data: {e}")
-
-
 # ---------------------------------------------------------------------------
 # Test runner
 # ---------------------------------------------------------------------------
@@ -292,37 +281,38 @@ async def test_retry_exhaustion_survival():
     engine = None
     failing_dataset_id = None
     benign_dataset_id = None
+    benign_attempt_id = None
+    test_org = str(uuid.uuid4())
+    test_user = str(uuid.uuid4())
+    worker_id = f"test-worker-retry-{test_org[:8]}"
     try:
         _ensure_path()
+
+        cur = sconn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM science.validation_attempts WHERE organization_id = %s::uuid",
+            (test_org,),
+        )
+        assert cur.fetchone()[0] == 0, "focused retry org must have an empty queue before seeding"
+        cur.close()
 
         # -- Dataset A: will fail 3 times and quarantine -------------------
         failing_content = b"1.0 10.0\n2.0 20.0\n3.0 30.0\n"
         failing_checksum = hashlib.sha256(failing_content).hexdigest()
         failing_key, failing_checksum, failing_size = create_test_file(failing_content)
         failing_dataset_id, failing_object_id = seed_test_data(
-            sconn, failing_key, failing_checksum, failing_size
+            sconn, failing_key, failing_checksum, failing_size, org_id=test_org, user_id=test_user
         )
         failing_attempt_id = seed_validation_attempt(
-            sconn, ORG_ID, failing_dataset_id, failing_object_id,
-            max_attempts=MAX_ATTEMPTS,
-        )
-
-        # -- Dataset B: benign, will pass after A is quarantined ------------
-        benign_content = b"10.0 100.0\n20.0 200.0\n30.0 300.0\n"
-        benign_key, benign_checksum, benign_size = create_test_file(benign_content)
-        benign_dataset_id, benign_object_id = seed_test_data(
-            sconn, benign_key, benign_checksum, benign_size
-        )
-        benign_attempt_id = seed_validation_attempt(
-            sconn, ORG_ID, benign_dataset_id, benign_object_id,
+            sconn, test_org, failing_dataset_id, failing_object_id,
             max_attempts=MAX_ATTEMPTS,
         )
 
         from api.workers.validation_worker import process_one, _make_engine, counters
         import api.validation.isolated_runner as runner_module
 
-        os.environ["VW_ORGANIZATION_ID"] = ORG_ID
-        os.environ["VW_USER_ID"] = USER_ID
+        os.environ["VW_ORGANIZATION_ID"] = test_org
+        os.environ["VW_USER_ID"] = test_user
         os.environ["DATABASE_URL"] = DATABASE_URL
         # Ensure bypass is OFF — we want the real run_parser path
         os.environ.pop("DIFARYX_BYPASS_CONTAINER_PARSER", None)
@@ -360,8 +350,9 @@ async def test_retry_exhaustion_survival():
         counters.quarantined = 0
 
         # --- Attempt 1: first runtime failure → requeued ------------------
-        outcome_1 = await process_one(engine, ORG_ID, USER_ID, WORKER_ID, 60, 10.0)
-        st_1 = get_attempt_status(sconn, ORG_ID, failing_attempt_id)
+        outcome_1 = await process_one(engine, test_org, test_user, worker_id, 60, 10.0)
+        st_1 = get_attempt_status(sconn, test_org, failing_attempt_id)
+        rows_1 = get_attempt_rows(sconn, test_org, failing_dataset_id)
 
         first_failure_requeued = (
             outcome_1 == "retry"
@@ -370,7 +361,12 @@ async def test_retry_exhaustion_survival():
             and st_1["attempt_number"] == 1
             and st_1["next_retry_at"] is not None
             and st_1["failure_code"] == "ISOLATION_SANDBOX_ERROR"
-            and st_1["completed_at"] is None
+            and st_1["completed_at"] is not None
+            and st_1["claimed_by"] is None
+            and st_1["claimed_at"] is None
+            and st_1["lock_expires_at"] is None
+            and len(rows_1) == 2
+            and rows_1[1][1:3] == (2, "queued")
         )
         report(
             "1_first_failure_requeued",
@@ -382,9 +378,11 @@ async def test_retry_exhaustion_survival():
         )
 
         # --- Attempt 2: retry advances attempt_number → requeued ----------
-        force_retry_due(sconn, ORG_ID, failing_attempt_id)
-        outcome_2 = await process_one(engine, ORG_ID, USER_ID, WORKER_ID, 60, 10.0)
-        st_2 = get_attempt_status(sconn, ORG_ID, failing_attempt_id)
+        attempt_2_id = rows_1[1][0]
+        force_retry_due(sconn, test_org, attempt_2_id)
+        outcome_2 = await process_one(engine, test_org, test_user, worker_id, 60, 10.0)
+        st_2 = get_attempt_status(sconn, test_org, attempt_2_id)
+        rows_2 = get_attempt_rows(sconn, test_org, failing_dataset_id)
 
         retry_advances = (
             outcome_2 == "retry"
@@ -393,7 +391,12 @@ async def test_retry_exhaustion_survival():
             and st_2["attempt_number"] == 2
             and st_2["next_retry_at"] is not None
             and st_2["failure_code"] == "ISOLATION_SANDBOX_ERROR"
-            and st_2["completed_at"] is None
+            and st_2["completed_at"] is not None
+            and st_2["claimed_by"] is None
+            and st_2["claimed_at"] is None
+            and st_2["lock_expires_at"] is None
+            and len(rows_2) == 3
+            and rows_2[2][1:3] == (3, "queued")
         )
         report(
             "2_retry_advances_attempt_number",
@@ -403,9 +406,11 @@ async def test_retry_exhaustion_survival():
         )
 
         # --- Attempt 3: exhaustion → terminal quarantine ------------------
-        force_retry_due(sconn, ORG_ID, failing_attempt_id)
-        outcome_3 = await process_one(engine, ORG_ID, USER_ID, WORKER_ID, 60, 10.0)
-        st_3 = get_attempt_status(sconn, ORG_ID, failing_attempt_id)
+        attempt_3_id = rows_2[2][0]
+        force_retry_due(sconn, test_org, attempt_3_id)
+        outcome_3 = await process_one(engine, test_org, test_user, worker_id, 60, 10.0)
+        st_3 = get_attempt_status(sconn, test_org, attempt_3_id)
+        rows_3 = get_attempt_rows(sconn, test_org, failing_dataset_id)
 
         exhaustion_quarantines = (
             outcome_3 == "quarantined"
@@ -415,6 +420,10 @@ async def test_retry_exhaustion_survival():
             and st_3["failure_code"] == "ISOLATION_SANDBOX_ERROR"
             and st_3["quarantine_reason"] is not None
             and st_3["completed_at"] is not None
+            and st_3["claimed_by"] is None
+            and st_3["claimed_at"] is None
+            and st_3["lock_expires_at"] is None
+            and len(rows_3) == 3
         )
         report(
             "3_exhaustion_quarantines",
@@ -424,9 +433,20 @@ async def test_retry_exhaustion_survival():
             f"completed_at={st_3 and st_3['completed_at'] is not None}",
         )
 
-        # --- Survival: benign queued dataset becomes valid ----------------
-        outcome_4 = await process_one(engine, ORG_ID, USER_ID, WORKER_ID, 60, 10.0)
-        st_4 = get_attempt_status(sconn, ORG_ID, benign_attempt_id)
+        # --- Survival: seed a benign dataset only after the retry chain is
+        # terminal, so queue ordering cannot hide the attempt-2 assertion.
+        benign_content = b"10.0 100.0\n20.0 200.0\n30.0 300.0\n"
+        benign_key, benign_checksum, benign_size = create_test_file(benign_content)
+        benign_dataset_id, benign_object_id = seed_test_data(
+            sconn, benign_key, benign_checksum, benign_size,
+            org_id=test_org, user_id=test_user,
+        )
+        benign_attempt_id = seed_validation_attempt(
+            sconn, test_org, benign_dataset_id, benign_object_id,
+            max_attempts=MAX_ATTEMPTS,
+        )
+        outcome_4 = await process_one(engine, test_org, test_user, worker_id, 60, 10.0)
+        st_4 = get_attempt_status(sconn, test_org, benign_attempt_id)
 
         survival_benign_passes = (
             outcome_4 == "passed"
@@ -448,7 +468,7 @@ async def test_retry_exhaustion_survival():
             SELECT COUNT(*) FROM science.validation_attempts
             WHERE organization_id = %s::uuid
               AND status IN ('claimed', 'running')
-        """, (ORG_ID,))
+        """, (test_org,))
         stuck_count = cur.fetchone()[0]
         cur.close()
         no_stuck = stuck_count == 0
@@ -460,7 +480,7 @@ async def test_retry_exhaustion_survival():
         cur.execute("""
             SELECT failure_details FROM science.validation_attempts
             WHERE organization_id = %s::uuid AND id = %s::uuid
-        """, (ORG_ID, failing_attempt_id))
+        """, (test_org, failing_attempt_id))
         fd_row = cur.fetchone()
         cur.close()
         p1_no_persisted_identity = True
@@ -480,6 +500,11 @@ async def test_retry_exhaustion_survival():
 
         # --- Restore monkeypatch -------------------------------------------
         runner_module.ContainerParserRunner.run_parser = original_run_parser
+
+        print("Retry chain rows (id, attempt_number, status, next_retry_at, completed_at, claimed_by):")
+        for row in rows_3:
+            print(f"  {row}")
+        print("  no attempt 4:", len(rows_3) == 3)
 
         all_pass = (
             first_failure_requeued
@@ -505,9 +530,9 @@ async def test_retry_exhaustion_survival():
         if engine is not None:
             await engine.dispose()
         if failing_dataset_id:
-            cleanup_test_data(sconn, ORG_ID, failing_dataset_id)
+            cleanup_test_data(sconn, test_org, failing_dataset_id)
         if benign_dataset_id:
-            cleanup_test_data(sconn, ORG_ID, benign_dataset_id)
+            cleanup_test_data(sconn, test_org, benign_dataset_id)
         sconn.close()
 
 
@@ -529,7 +554,6 @@ async def main():
         print("    Ensure PostgreSQL is running and DIFARYX_BOOTSTRAP_DATABASE_URL is set.")
         sys.exit(1)
 
-    purge_leftover_test_data()
     await test_retry_exhaustion_survival()
 
     print("\n" + "=" * 70)

@@ -47,9 +47,6 @@ if not DATABASE_URL and BOOTSTRAP_URL:
 if not DATABASE_URL:
     DATABASE_URL = "postgresql://postgres:difaryx_dev_pw@127.0.0.1:5432/difaryx_phase0_test"
 
-# Test org/user IDs (deterministic UUIDs for idempotent seeding)
-ORG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
-USER_ID = "00000000-0000-0000-0000-000000000001"
 WORKER_ID_A = "test-worker-A"
 WORKER_ID_B = "test-worker-B"
 
@@ -79,7 +76,8 @@ def create_test_file(content: bytes = b"WAVE 1 0 0 1\nWAVE 2 0 0 1\n") -> tuple[
     return object_key, checksum, len(content)
 
 
-def seed_test_data(super_conn, object_key, checksum, byte_size, dataset_status="pending_validation"):
+def seed_test_data(super_conn, object_key, checksum, byte_size, dataset_status="pending_validation",
+                    org_id=None, user_id=None):
     """Insert organization, user, project, dataset, and object for testing.
     
     Uses superuser connection with session_replication_role='replica'
@@ -88,8 +86,8 @@ def seed_test_data(super_conn, object_key, checksum, byte_size, dataset_status="
     """
     cur = super_conn.cursor()
 
-    org_id = ORG_ID
-    user_id = USER_ID
+    org_id = org_id or str(uuid.uuid4())
+    user_id = user_id or str(uuid.uuid4())
     project_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"vw-test-proj-{object_key}"))
     dataset_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"ds-{object_key}"))
     object_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"obj-{object_key}"))
@@ -315,7 +313,9 @@ async def test_a_worker_drains_queue():
         # Seed 3 queued attempts
         attempt_ids = []
         for _ in range(3):
-            aid = seed_validation_attempt(sconn, org_id, dataset_id, object_id, status="queued")
+            aid = seed_validation_attempt(
+                sconn, org_id, dataset_id, object_id, status="queued", max_attempts=4
+            )
             attempt_ids.append(aid)
 
         _ensure_path()
@@ -328,8 +328,8 @@ async def test_a_worker_drains_queue():
         counters.retried = 0
         counters.quarantined = 0
 
-        os.environ["VW_ORGANIZATION_ID"] = ORG_ID
-        os.environ["VW_USER_ID"] = USER_ID
+        os.environ["VW_ORGANIZATION_ID"] = org_id
+        os.environ["VW_USER_ID"] = user_id
         os.environ["DATABASE_URL"] = DATABASE_URL
 
         engine = _make_engine()
@@ -337,7 +337,7 @@ async def test_a_worker_drains_queue():
         # Process until queue drained
         processed = 0
         for _ in range(10):
-            outcome = await process_one(engine, ORG_ID, USER_ID, WORKER_ID_A, 60, 10.0)
+            outcome = await process_one(engine, org_id, user_id, WORKER_ID_A, 60, 10.0)
             if outcome is None:
                 break
             processed += 1
@@ -347,14 +347,14 @@ async def test_a_worker_drains_queue():
         # Verify all attempts settled
         all_settled = True
         for aid in attempt_ids:
-            st = get_attempt_status(sconn, ORG_ID, aid)
+            st = get_attempt_status(sconn, org_id, aid)
             if st and st["status"] in ("queued", "claimed", "running"):
                 all_settled = False
 
         report("a_worker_drains_queue", all_settled and processed >= 1,
                f"processed={processed}, all_settled={all_settled}, counters_passed={counters.passed}")
 
-        cleanup_test_data(sconn, ORG_ID, dataset_id)
+        cleanup_test_data(sconn, org_id, dataset_id)
     except Exception as e:
         report("a_worker_drains_queue", False, str(e))
         import traceback; traceback.print_exc()
@@ -396,7 +396,7 @@ async def test_b_respects_next_retry_at():
         async with engine.begin() as conn_async:
             session = AsyncSession(bind=conn_async)
             try:
-                claimed = await claim_next(session, ORG_ID, USER_ID, WORKER_ID_A, 60)
+                claimed = await claim_next(session, org_id, user_id, WORKER_ID_A, 60)
                 await session.rollback()
             finally:
                 await session.close()
@@ -407,7 +407,7 @@ async def test_b_respects_next_retry_at():
         report("b_respects_next_retry_at", claimed is None,
                f"claimed={'attempt picked (BUG!)' if claimed else 'None (correct)'}")
 
-        cleanup_test_data(sconn, ORG_ID, dataset_id)
+        cleanup_test_data(sconn, org_id, dataset_id)
     except Exception as e:
         report("b_respects_next_retry_at", False, str(e))
         import traceback; traceback.print_exc()
@@ -459,7 +459,7 @@ async def test_c_reclaims_stale_lock():
         async with engine.begin() as conn_async:
             session = AsyncSession(bind=conn_async)
             try:
-                reclaimed = await reclaim_stale(session, org_id, USER_ID, WORKER_ID_A, 60)
+                reclaimed = await reclaim_stale(session, org_id, user_id, WORKER_ID_A, 60)
                 await session.commit()
             finally:
                 await session.close()
@@ -497,10 +497,13 @@ async def test_d_concurrent_workers_no_double_process():
             sconn, object_key, checksum, byte_size
         )
 
-        # Seed 5 queued attempts
+        # Seed 5 queued attempts below exhaustion; the claim predicate must
+        # still exclude any row at or beyond max_attempts.
         attempt_ids = []
         for _ in range(5):
-            aid = seed_validation_attempt(sconn, org_id, dataset_id, object_id, status="queued")
+            aid = seed_validation_attempt(
+                sconn, org_id, dataset_id, object_id, status="queued", max_attempts=6
+            )
             attempt_ids.append(aid)
 
         _ensure_path()
@@ -687,7 +690,9 @@ async def test_f_graceful_shutdown_no_stuck_attempts():
 
         attempt_ids = []
         for _ in range(5):
-            aid = seed_validation_attempt(sconn, org_id, dataset_id, object_id, status="queued")
+            aid = seed_validation_attempt(
+                sconn, org_id, dataset_id, object_id, status="queued", max_attempts=6
+            )
             attempt_ids.append(aid)
 
         _ensure_path()
@@ -827,33 +832,6 @@ finally:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def purge_leftover_test_data():
-    """Remove any leftover test data from previous failed runs.
-
-    This runs once before any test, cleaning up stale attempts/datasets
-    from the test org so claim_next doesn't pick them up.
-    """
-    try:
-        sconn = get_superuser_conn()
-        cur = sconn.cursor()
-        cur.execute("SET session_replication_role = 'replica'")
-        # Delete all test data belonging to our test org
-        cur.execute("DELETE FROM science.validation_attempts WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM science.dataset_objects WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM science.upload_sessions WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM science.datasets WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM science.projects WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM identity.memberships WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM identity.users WHERE organization_id = %s::uuid", (ORG_ID,))
-        cur.execute("DELETE FROM identity.organizations WHERE id = %s::uuid", (ORG_ID,))
-        cur.execute("SET session_replication_role = 'origin'")
-        sconn.commit()
-        sconn.close()
-        print("[+] Purged leftover test data from previous runs.")
-    except Exception as e:
-        print(f"[!] Could not purge leftover data: {e}")
-
-
 async def test_g_authoritative_integrity_mismatch_quarantines():
     """Independent final-object verification quarantines tampering and survives."""
     print("\n=== Test (g): Authoritative digest mismatch quarantines before validation ===")
@@ -862,13 +840,15 @@ async def test_g_authoritative_integrity_mismatch_quarantines():
     second_dataset_id = None
     third_dataset_id = None
     engine = None
+    test_org = str(uuid.uuid4())
+    test_user = str(uuid.uuid4())
     try:
         # 1. Size mismatch scenario
         object_key, checksum, byte_size = create_test_file()
-        _org_id, user_id, _project_id, first_dataset_id, object_id = seed_test_data(
-            sconn, object_key, checksum, byte_size
+        org_id, user_id, _project_id, first_dataset_id, object_id = seed_test_data(
+            sconn, object_key, checksum, byte_size, org_id=test_org, user_id=test_user
         )
-        attempt_id = seed_validation_attempt(sconn, ORG_ID, first_dataset_id, object_id)
+        attempt_id = seed_validation_attempt(sconn, org_id, first_dataset_id, object_id)
 
         final_path = Path(os.environ["DIFARYX_LOCAL_STORAGE_PATH"]) / object_key
         final_path.write_bytes(b"TAMPERED\n")
@@ -876,27 +856,27 @@ async def test_g_authoritative_integrity_mismatch_quarantines():
         _ensure_path()
         from api.workers.validation_worker import process_one, _make_engine
 
-        os.environ["VW_ORGANIZATION_ID"] = ORG_ID
-        os.environ["VW_USER_ID"] = USER_ID
+        os.environ["VW_ORGANIZATION_ID"] = org_id
+        os.environ["VW_USER_ID"] = user_id
         os.environ["DATABASE_URL"] = DATABASE_URL
         engine = _make_engine()
-        outcome = await process_one(engine, ORG_ID, user_id, WORKER_ID_A, 60, 10.0)
-        first_status = get_attempt_status(sconn, ORG_ID, attempt_id)
+        outcome = await process_one(engine, org_id, user_id, WORKER_ID_A, 60, 10.0)
+        first_status = get_attempt_status(sconn, org_id, attempt_id)
 
         # 2. SHA256 digest mismatch scenario (same size, different bytes)
         digest_key, digest_checksum, digest_size = create_test_file()
         _org_id, _user_id, _project_id, second_dataset_id, digest_object_id = seed_test_data(
-            sconn, digest_key, digest_checksum, digest_size
+            sconn, digest_key, digest_checksum, digest_size, org_id=org_id, user_id=user_id
         )
-        digest_attempt_id = seed_validation_attempt(sconn, ORG_ID, second_dataset_id, digest_object_id)
+        digest_attempt_id = seed_validation_attempt(sconn, org_id, second_dataset_id, digest_object_id)
         
         digest_path = Path(os.environ["DIFARYX_LOCAL_STORAGE_PATH"]) / digest_key
         # original is 26 bytes: b"WAVE 1 0 0 1\nWAVE 2 0 0 1\n"
         # mismatch is also 26 bytes: b"WAVE 1 0 0 1\nWAVE 2 0 0 9\n"
         digest_path.write_bytes(b"WAVE 1 0 0 1\nWAVE 2 0 0 9\n")
         
-        digest_outcome = await process_one(engine, ORG_ID, user_id, WORKER_ID_A, 60, 10.0)
-        digest_status = get_attempt_status(sconn, ORG_ID, digest_attempt_id)
+        digest_outcome = await process_one(engine, org_id, user_id, WORKER_ID_A, 60, 10.0)
+        digest_status = get_attempt_status(sconn, org_id, digest_attempt_id)
 
         # 3. Clean validation scenario
         # The worker remains usable after quarantine and can process a clean
@@ -911,13 +891,13 @@ async def test_g_authoritative_integrity_mismatch_quarantines():
         clean_path.write_bytes(clean_content)
 
         _org_id, _user_id, _project_id, third_dataset_id, clean_object_id = seed_test_data(
-            sconn, clean_key, clean_checksum, clean_size
+            sconn, clean_key, clean_checksum, clean_size, org_id=org_id, user_id=user_id
         )
         clean_attempt_id = seed_validation_attempt(
-            sconn, ORG_ID, third_dataset_id, clean_object_id
+            sconn, org_id, third_dataset_id, clean_object_id
         )
-        clean_outcome = await process_one(engine, ORG_ID, user_id, WORKER_ID_A, 60, 10.0)
-        clean_status = get_attempt_status(sconn, ORG_ID, clean_attempt_id)
+        clean_outcome = await process_one(engine, org_id, user_id, WORKER_ID_A, 60, 10.0)
+        clean_status = get_attempt_status(sconn, org_id, clean_attempt_id)
 
         cur = sconn.cursor()
         cur.execute(
@@ -929,7 +909,7 @@ async def test_g_authoritative_integrity_mismatch_quarantines():
              AND o.id = d.original_object_id
             WHERE d.organization_id = %s::uuid AND d.id = %s::uuid
             """,
-            (ORG_ID, first_dataset_id),
+            (org_id, first_dataset_id),
         )
         lineage = cur.fetchone()
         cur.close()
@@ -967,11 +947,11 @@ async def test_g_authoritative_integrity_mismatch_quarantines():
         if engine is not None:
             await engine.dispose()
         if first_dataset_id:
-            cleanup_test_data(sconn, ORG_ID, first_dataset_id)
+            cleanup_test_data(sconn, org_id, first_dataset_id)
         if second_dataset_id:
-            cleanup_test_data(sconn, ORG_ID, second_dataset_id)
+            cleanup_test_data(sconn, org_id, second_dataset_id)
         if third_dataset_id:
-            cleanup_test_data(sconn, ORG_ID, third_dataset_id)
+            cleanup_test_data(sconn, org_id, third_dataset_id)
         sconn.close()
 
 
@@ -991,9 +971,6 @@ async def main():
         print(f"[-] Cannot connect to database: {e}")
         print("    Ensure PostgreSQL is running and DIFARYX_BOOTSTRAP_DATABASE_URL is set.")
         sys.exit(1)
-
-    # Purge leftover test data from previous failed runs
-    purge_leftover_test_data()
 
     await test_a_worker_drains_queue()
     await test_b_respects_next_retry_at()
