@@ -79,11 +79,17 @@ class IsolatedRuntimeError(RuntimeError):
         returncode: int | None = None,
         stdout: Any = b"",
         stderr: Any = b"",
+        container_exit_code: int | None = None,
+        container_inspect: Any = "",
+        container_logs: Any = "",
     ) -> None:
         super().__init__(message)
         self.returncode = returncode
         self.stdout_summary = _normalize_hostile_text(stdout)
         self.stderr_summary = _normalize_hostile_text(stderr)
+        self.container_exit_code = container_exit_code
+        self.container_inspect = _normalize_hostile_text(container_inspect)
+        self.container_logs = _normalize_hostile_text(container_logs, limit_bytes=8192)
 
 
 class IsolatedParserRunner(ABC):
@@ -109,6 +115,8 @@ class ContainerParserRunner(IsolatedParserRunner):
         self.wsl_distro = wsl_distro
         self.image_name = image_name
         self.last_lifecycle_commands: List[Dict[str, Any]] = []
+        self.last_start_result: Dict[str, Any] = {}
+        self.last_container_diagnostics: Dict[str, Any] = {}
         self._zipapp_path: str | None = None
 
     def _is_windows(self) -> bool:
@@ -240,6 +248,60 @@ class ContainerParserRunner(IsolatedParserRunner):
         cmd = self._container_cmd("podman", "rm", "-f", container_name)
         self._assert_no_bind_mounts(cmd)
         return cmd
+
+    def _build_inspect_command(self, container_name: str) -> List[str]:
+        cmd = self._container_cmd(
+            "podman", "inspect", "--format", "{{.State.ExitCode}} {{.State.Error}}",
+            container_name,
+        )
+        self._assert_no_bind_mounts(cmd)
+        return cmd
+
+    def _build_logs_command(self, container_name: str) -> List[str]:
+        cmd = self._container_cmd("podman", "logs", container_name)
+        self._assert_no_bind_mounts(cmd)
+        return cmd
+
+    def _collect_container_diagnostics(self, container_name: str) -> Dict[str, Any]:
+        """Collect bounded diagnostics while the container still exists."""
+        diagnostics: Dict[str, Any] = {}
+        for label, command, limit in (
+            ("inspect", self._build_inspect_command(container_name), _SUMMARY_LIMIT_BYTES),
+            ("logs", self._build_logs_command(container_name), 8192),
+        ):
+            self._record_command(f"podman {label}", command)
+            try:
+                result = self._run_command(command, timeout=30.0)
+                diagnostics[label] = {
+                    "returncode": result.returncode,
+                    "stdout_summary": _normalize_hostile_text(result.stdout, limit),
+                    "stderr_summary": _normalize_hostile_text(result.stderr, limit),
+                }
+            except subprocess.TimeoutExpired as exc:
+                diagnostics[label] = {
+                    "returncode": None,
+                    "stdout_summary": _normalize_hostile_text(getattr(exc, "output", b""), limit),
+                    "stderr_summary": _normalize_hostile_text(getattr(exc, "stderr", b""), limit),
+                    "timeout": True,
+                }
+            except Exception as exc:
+                diagnostics[label] = {
+                    "returncode": None,
+                    "stdout_summary": "",
+                    "stderr_summary": _normalize_hostile_text(str(exc), limit),
+                }
+        return diagnostics
+
+    def _diagnostic_summaries(self) -> tuple[str, str]:
+        inspect_diagnostics = self.last_container_diagnostics.get("inspect", {})
+        inspect_summary = inspect_diagnostics.get("stdout_summary", "") or inspect_diagnostics.get(
+            "stderr_summary", ""
+        )
+        logs_diagnostics = self.last_container_diagnostics.get("logs", {})
+        container_logs = logs_diagnostics.get("stdout_summary", "") or logs_diagnostics.get(
+            "stderr_summary", ""
+        )
+        return inspect_summary, container_logs
 
     # ------------------------------------------------------------------
     # Self-check
@@ -383,6 +445,8 @@ class ContainerParserRunner(IsolatedParserRunner):
             )
 
         self.last_lifecycle_commands = []
+        self.last_start_result = {}
+        self.last_container_diagnostics = {}
         input_filename = os.path.basename(input_path)
         zipapp_host = self._to_wsl_path(self._ensure_zipapp())
         input_host = self._to_wsl_path(input_path)
@@ -429,19 +493,49 @@ class ContainerParserRunner(IsolatedParserRunner):
             try:
                 res = self._run_command(start_cmd, timeout=timeout)
             except subprocess.TimeoutExpired as exc:
+                self.last_container_diagnostics = self._collect_container_diagnostics(container_name)
+                inspect_summary, container_logs = self._diagnostic_summaries()
                 logger.error(
                     "Parser container exceeded wall-clock timeout of %ss.", timeout
                 )
-                raise TimeoutError(f"Parser execution timed out: {exc}") from exc
+                detail = f"Parser execution timed out after {timeout}s"
+                if inspect_summary:
+                    detail += f"; container inspect: {inspect_summary}"
+                if container_logs:
+                    detail += f"; container logs: {container_logs}"
+                raise IsolatedRuntimeError(
+                    detail,
+                    stdout=getattr(exc, "output", b""),
+                    stderr=getattr(exc, "stderr", b""),
+                    container_inspect=inspect_summary,
+                    container_logs=container_logs,
+                ) from exc
+
+            self.last_start_result = {
+                "returncode": res.returncode,
+                "stdout_summary": _normalize_hostile_text(res.stdout),
+                "stderr_summary": _normalize_hostile_text(res.stderr),
+            }
+            success_diagnostics_enabled = os.getenv(
+                "DIFARYX_CONTAINER_SUCCESS_DIAGNOSTICS", ""
+            ).strip().lower() in {"1", "true", "yes", "on"}
+            if res.returncode != 0 or success_diagnostics_enabled:
+                self.last_container_diagnostics = self._collect_container_diagnostics(container_name)
+            inspect_summary, container_logs = self._diagnostic_summaries()
 
             # Exit code 3 = OOM (parser signaled). Anything non-zero other
             # than the envelope-written case is a sandbox error.
             if res.returncode == 3:
                 raise IsolatedRuntimeError(
-                    "Parser container exited with OOM signal (code 3)",
+                    "Parser container exited with OOM signal (code 3)"
+                    + (f"; container inspect: {inspect_summary}" if inspect_summary else "")
+                    + (f"; container logs: {container_logs}" if container_logs else ""),
                     returncode=res.returncode,
                     stdout=res.stdout,
                     stderr=res.stderr,
+                    container_exit_code=res.returncode,
+                    container_inspect=inspect_summary,
+                    container_logs=container_logs,
                 )
             if res.returncode != 0:
                 logger.error(
@@ -449,7 +543,20 @@ class ContainerParserRunner(IsolatedParserRunner):
                     res.returncode,
                     _normalize_hostile_text(res.stderr),
                 )
-                self._raise_process_error("Parser execution", res)
+                detail = "Parser execution"
+                if inspect_summary:
+                    detail += f"; container inspect: {inspect_summary}"
+                if container_logs:
+                    detail += f"; container logs: {container_logs}"
+                raise IsolatedRuntimeError(
+                    f"{detail} failed (code {res.returncode})",
+                    returncode=res.returncode,
+                    stdout=res.stdout,
+                    stderr=res.stderr,
+                    container_exit_code=res.returncode,
+                    container_inspect=inspect_summary,
+                    container_logs=container_logs,
+                )
 
             # 5. Copy result channel back to host. The podman cp destination
             # must be a WSL path so WSL/podman does not misinterpret the

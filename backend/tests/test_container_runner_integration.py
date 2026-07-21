@@ -5,8 +5,9 @@ import sys
 import tempfile
 import uuid
 import json
+import subprocess
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 # Force development environment so LocalObjectStore is used, enabling WSL container mounts
 os.environ["APP_ENV"] = "development"
@@ -18,7 +19,7 @@ if sys.platform == "win32":
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "server" / "python"))
 
 import psycopg2
-from api.validation.isolated_runner import ContainerParserRunner
+from api.validation.isolated_runner import ContainerParserRunner, IsolatedRuntimeError
 from api.workers.validation_worker import process_one, _make_engine, counters
 
 # Database Configuration
@@ -284,6 +285,83 @@ async def test_invalid_parse():
         os.unlink(in_path)
         os.unlink(out_path)
 
+async def test_success_skips_diagnostics_by_default():
+    """Successful runs retain start evidence without inspect/log subprocesses."""
+    print("=== Test 3b: Successful run skips container diagnostics by default ===")
+    fd_in, in_path = tempfile.mkstemp(suffix=".csv")
+    os.close(fd_in)
+    fd_out, out_path = tempfile.mkstemp(suffix=".json")
+    os.close(fd_out)
+
+    try:
+        Path(in_path).write_bytes(b"1.0 10.0\n")
+        runner = ContainerParserRunner()
+        command_calls = []
+
+        def fake_run_command(cmd, timeout):
+            command_calls.append(list(cmd))
+            return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+        with patch.object(runner, "self_check", new=AsyncMock(return_value=True)), \
+             patch.object(runner, "_ensure_zipapp", return_value=in_path), \
+             patch.object(runner, "_run_command", side_effect=fake_run_command), \
+             patch.object(runner, "_validate_result_envelope", return_value={"status": "valid"}), \
+             patch.object(runner, "_collect_container_diagnostics") as collect:
+            result = await runner.run_parser("xrd", in_path, out_path)
+
+        assert result == {"status": "valid"}
+        assert runner.last_start_result["returncode"] == 0
+        assert not collect.called
+        assert not any("inspect" in call or "logs" in call for call in command_calls)
+        print("[PASS] Success path did not invoke podman inspect/logs.")
+    finally:
+        for path in (in_path, out_path):
+            if os.path.exists(path):
+                os.unlink(path)
+
+async def test_failure_diagnostics_are_bounded_before_removal():
+    """Timeout diagnostics are sanitized and collected before rm -f."""
+    print("=== Test 3c: Failure diagnostics precede container removal ===")
+    fd_in, in_path = tempfile.mkstemp(suffix=".csv")
+    os.close(fd_in)
+    fd_out, out_path = tempfile.mkstemp(suffix=".json")
+    os.close(fd_out)
+    try:
+        Path(in_path).write_bytes(b"1.0 10.0\n")
+        runner = ContainerParserRunner()
+        command_labels = []
+
+        def fake_run_command(cmd, timeout):
+            if "start" in cmd:
+                raise subprocess.TimeoutExpired(cmd, timeout, output=b"start\x00output", stderr=b"start\x00error")
+            if "inspect" in cmd:
+                command_labels.append("inspect")
+                return MagicMock(returncode=0, stdout=b"inspect\x00" + b"x" * 5000, stderr=b"")
+            if "logs" in cmd:
+                command_labels.append("logs")
+                return MagicMock(returncode=0, stdout=b"logs\x00" + b"y" * 20000, stderr=b"")
+            if "rm" in cmd:
+                command_labels.append("rm")
+            return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+        with patch.object(runner, "self_check", new=AsyncMock(return_value=True)), \
+             patch.object(runner, "_ensure_zipapp", return_value=in_path), \
+             patch.object(runner, "_run_command", side_effect=fake_run_command):
+            try:
+                await runner.run_parser("xrd", in_path, out_path, timeout=0.01)
+                assert False, "expected timeout failure"
+            except IsolatedRuntimeError as exc:
+                assert "\x00" not in exc.container_inspect
+                assert "\x00" not in exc.container_logs
+                assert len(exc.container_logs.encode("utf-8")) <= 8192
+                assert command_labels[-1] == "rm"
+                assert command_labels[:2] == ["inspect", "logs"]
+        print("[PASS] Timeout diagnostics were bounded, sanitized, and collected before removal.")
+    finally:
+        for path in (in_path, out_path):
+            if os.path.exists(path):
+                os.unlink(path)
+
 async def test_timeout_kill():
     print("=== Test 4: Wall-clock timeout enforcement ===")
     # Create a valid input file
@@ -301,8 +379,10 @@ async def test_timeout_kill():
         try:
             await runner.run_parser("xrd", in_path, out_path, timeout=0.001)
             assert False, "Should have timed out!"
-        except TimeoutError as te:
-            print("Successfully caught TimeoutError:", te)
+        except IsolatedRuntimeError as exc:
+            print("Successfully caught bounded IsolatedRuntimeError:", exc)
+            assert exc.container_inspect is not None
+            assert exc.container_logs is not None
             print("[PASS] Wall-clock deadline enforcement killed container.")
     finally:
         os.unlink(in_path)
@@ -312,6 +392,40 @@ async def test_worker_integration_valid():
     print("=== Test 5: End-to-end Worker run with Valid file ===")
     sconn = get_superuser_conn()
     content = b"1.0 5.0\n2.0 10.0\n"
+
+    # Focused P0 proof: exercise one real container before the worker path so
+    # the lifecycle evidence is available even if worker settlement fails.
+    direct_in = tempfile.NamedTemporaryFile(suffix=".csv", delete=False)
+    direct_out = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+    direct_in.close()
+    direct_out.close()
+    try:
+        Path(direct_in.name).write_bytes(content)
+        direct_runner = ContainerParserRunner()
+        direct_result = await direct_runner.run_parser("xrd", direct_in.name, direct_out.name)
+        direct_rows = json.loads(Path(direct_out.name).read_text(encoding="utf-8"))
+        print("Container exit code:", direct_runner.last_start_result.get("returncode"))
+        print("Bounded container inspect:", direct_runner.last_container_diagnostics.get("inspect"))
+        print("Bounded container logs:", direct_runner.last_container_diagnostics.get("logs"))
+        print("/scratch writable (result copied and readable):", Path(direct_out.name).exists())
+        print("zipapp import/entrypoint traceback: none")
+        assert direct_runner.last_start_result.get("returncode") == 0
+        assert direct_rows == direct_result
+        assert direct_result.get("status") == "valid"
+        assert Path(direct_out.name).exists()
+    except Exception as exc:
+        if direct_runner.last_start_result:
+            print("zipapp import/entrypoint traceback:")
+            import traceback
+            traceback.print_exc()
+        else:
+            print("zipapp import/entrypoint traceback: none (container start was not reached)")
+        raise
+    finally:
+        for direct_path in (direct_in.name, direct_out.name):
+            if os.path.exists(direct_path):
+                os.unlink(direct_path)
+
     storage_dir = Path(tempfile.mkdtemp())
     object_key = f"datasets/runner-test-{uuid.uuid4().hex}.csv"
     filepath = storage_dir / object_key.replace("/", os.sep)
@@ -716,6 +830,10 @@ async def test_hostile_stderr_nul_bytes():
                 return MagicMock(returncode=0, stdout=b"", stderr=b"")
             if "podman" in cmd and "start" in cmd:
                 return fake_start_process
+            if "podman" in cmd and "inspect" in cmd:
+                return MagicMock(returncode=0, stdout=b"1 entrypoint failed", stderr=b"")
+            if "podman" in cmd and "logs" in cmd:
+                return MagicMock(returncode=0, stdout=b"proxy warning\x00entrypoint traceback", stderr=b"")
             if "podman" in cmd and "rm" in cmd:
                 return MagicMock(returncode=0, stdout=b"", stderr=b"")
             return original_run_command(self, cmd, timeout)
@@ -747,6 +865,9 @@ async def test_hostile_stderr_nul_bytes():
         details_str = json.dumps(att["failure_details"])
         assert "\x00" not in details_str, f"NUL byte found in persisted failure_details: {details_str!r}"
         assert "attacker-data" not in details_str or "proxy" in details_str, "raw hostile content persisted without normalization"
+        assert "container_inspect" in details_str
+        assert "container_logs" in details_str
+        assert len(details_str.encode("utf-8")) < 12000
 
         print("[PASS] Hostile stderr with NUL bytes → quarantined, stable code, no NUL persisted.")
 
@@ -854,6 +975,8 @@ async def main():
         await test_egress_reachable_quarantines()
         await test_valid_parse()
         await test_invalid_parse()
+        await test_success_skips_diagnostics_by_default()
+        await test_failure_diagnostics_are_bounded_before_removal()
         await test_timeout_kill()
         await test_worker_integration_valid()
         await test_worker_integration_invalid()

@@ -190,6 +190,18 @@ def _build_isolation_failure_payload(exc: Exception) -> tuple[dict, str]:
     stdout_summary = _normalize_pg_text(getattr(exc, "stdout_summary", None))
     if stdout_summary:
         details["stdout_summary"] = stdout_summary
+    container_exit_code = getattr(exc, "container_exit_code", None)
+    if container_exit_code is not None:
+        details["container_exit_code"] = container_exit_code
+    container_inspect = _normalize_pg_text(getattr(exc, "container_inspect", None))
+    if container_inspect:
+        details["container_inspect"] = container_inspect
+    container_logs = _normalize_pg_text(
+        getattr(exc, "container_logs", None),
+        limit_bytes=8192,
+    )
+    if container_logs:
+        details["container_logs"] = container_logs
     quarantine_reason = _normalize_pg_text(
         f"Isolated parser execution failed: {summary}",
         limit_bytes=_QUARANTINE_REASON_LIMIT_BYTES,
