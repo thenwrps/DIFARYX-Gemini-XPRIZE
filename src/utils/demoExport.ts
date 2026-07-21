@@ -60,7 +60,7 @@ function buildCsv(options: DemoExportOptions) {
   return [headers.join(','), ...rows.map((row) => headers.map((header) => escapeCell(row[header])).join(','))].join('\n');
 }
 
-export function exportDemoArtifact(format: DemoExportFormat, options: DemoExportOptions) {
+export async function exportDemoArtifact(format: DemoExportFormat, options: DemoExportOptions): Promise<void> {
   const filenameBase = cleanFilename(options.filenameBase || options.title || 'difaryx-export');
 
   if (format === 'png') {
@@ -68,9 +68,92 @@ export function exportDemoArtifact(format: DemoExportFormat, options: DemoExport
     return;
   }
 
+  if (format === 'pdf') {
+    await exportDemoPdf(filenameBase, options.title, options.sections);
+    return;
+  }
+
   const content = format === 'csv' ? buildCsv(options) : buildTextReport(options);
   const blob = new Blob([content], { type: mimeByFormat[format] });
   downloadBlob(blob, `${filenameBase}.${format}`);
+}
+
+async function exportDemoPdf(filenameBase: string, title: string, sections: DemoExportSection[]): Promise<void> {
+  const { jsPDF } = await import('jspdf');
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+  const margin = 18;
+  const pageWidth = 210;
+  const pageHeight = 297;
+  const contentWidth = pageWidth - margin * 2;
+  const bottom = pageHeight - margin;
+  let y = margin;
+
+  const addPageIfNeeded = (height: number) => {
+    if (y + height <= bottom) return;
+    pdf.addPage();
+    y = margin;
+  };
+
+  pdf.setFillColor(15, 23, 42);
+  pdf.rect(0, 0, pageWidth, 24, 'F');
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(15);
+  pdf.text('DIFARYX', margin, 15);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8);
+  pdf.text('Scientific Workflow Intelligence', pageWidth - margin, 15, { align: 'right' });
+
+  y = 38;
+  pdf.setTextColor(15, 23, 42);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(17);
+  pdf.text(title, margin, y);
+  y += 7;
+  pdf.setTextColor(100, 116, 139);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8);
+  pdf.text(`Generated ${new Date().toLocaleString('en-GB')}`, margin, y);
+  y += 11;
+
+  sections.forEach((section) => {
+    const lines = section.lines
+      .filter((line) => line !== undefined && line !== null && String(line).trim() !== '')
+      .flatMap((line) => pdf.splitTextToSize(String(line), contentWidth - 4));
+    addPageIfNeeded(12 + lines.length * 4.4);
+
+    pdf.setFillColor(239, 246, 255);
+    pdf.rect(margin, y - 4.5, contentWidth, 7, 'F');
+    pdf.setTextColor(30, 64, 175);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10);
+    pdf.text(section.heading, margin + 3, y);
+    y += 7;
+
+    pdf.setTextColor(51, 65, 85);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    lines.forEach((line) => {
+      addPageIfNeeded(4.4);
+      pdf.text(line, margin + 2, y);
+      y += 4.4;
+    });
+    y += 6;
+  });
+
+  const pageCount = pdf.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page += 1) {
+    pdf.setPage(page);
+    pdf.setDrawColor(226, 232, 240);
+    pdf.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
+    pdf.setTextColor(148, 163, 184);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7);
+    pdf.text('DIFARYX - Local report export', margin, pageHeight - 7);
+    pdf.text(`${page} / ${pageCount}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
+  }
+
+  pdf.save(`${filenameBase}.pdf`);
 }
 
 function wrapText(

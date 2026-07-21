@@ -221,9 +221,10 @@ const commonPolicy = (
   database: string,
   tolerance: number,
   toleranceUnit: string,
+  databaseOptions: string[],
 ): CanonicalParameterDefinition[] => [
   parameter('referenceDatabase', 'Reference database provider', 'interpretation', 'select', database, {
-    options: ['COD', 'ICDD', 'ICSD', 'NIST XPS', 'PHI Handbook', 'SDBS', 'NIST Chemistry WebBook', 'RRUFF', 'Custom', 'Local approved reference'],
+    options: databaseOptions,
     affects: ['reference-matching', 'assignment'],
   }),
   parameter('referenceDatabaseVersion', 'Reference database version', 'interpretation', 'string', 'demo-curated-2026.07', { affects: ['reference-matching', 'assignment'] }),
@@ -295,7 +296,7 @@ const XRD_DEFINITIONS: CanonicalParameterDefinition[] = [
   parameter('boundaryRequireSampleContext', 'Require sample context', 'validation', 'boolean', true, { affects: ['claim-boundary'] }),
   parameter('referenceApprovalStatus', 'Reference approval status', 'validation', 'select', 'not_reviewed', { options: ['approved', 'not_reviewed', 'requires_peak_extraction', 'requires_converter', 'unsupported_format', 'corrupted_file', 'parse_error', 'not_supported_yet'], affects: ['match', 'claim-boundary'] }),
   parameter('refinementStatus', 'Refinement status', 'validation', 'select', 'not_run', { options: ['not_run', 'pending', 'complete', 'failed'], active: false, affects: ['refinement', 'claim-boundary'] }),
-  ...commonPolicy('COD', 0.1, '°2θ'),
+  ...commonPolicy('COD', 0.1, '°2θ', ['COD', 'ICDD', 'ICSD', 'Custom', 'Uploaded reference', 'Local approved reference']),
 ];
 
 const XPS_DEFINITIONS: CanonicalParameterDefinition[] = [
@@ -329,7 +330,7 @@ const XPS_DEFINITIONS: CanonicalParameterDefinition[] = [
   parameter('areaRatio', 'Area ratio', 'processing', 'string', 'reference-constrained', { active: false, affects: ['peak-fitting', 'assignment'] }),
   parameter('peakAsymmetry', 'Peak asymmetry', 'processing', 'select', 'symmetric', { options: ['symmetric', 'asymmetric'], active: false, affects: ['peak-fitting'] }),
   parameter('assignmentPolicy', 'Assignment policy', 'interpretation', 'select', 'surface-evidence-only', { options: ['surface-evidence-only', 'candidate-oxidation-state', 'approved-reference-required'], affects: ['assignment', 'claim-boundary'] }),
-  ...commonPolicy('NIST XPS', 0.3, 'eV'),
+  ...commonPolicy('NIST XPS', 0.3, 'eV', ['NIST XPS', 'PHI Handbook', 'Custom', 'Uploaded reference']),
 ];
 
 const FTIR_DEFINITIONS: CanonicalParameterDefinition[] = [
@@ -360,7 +361,7 @@ const FTIR_DEFINITIONS: CanonicalParameterDefinition[] = [
   parameter('normalization', 'Normalization', 'processing', 'select', 'None', { options: ['None', 'Min-max', 'Area', 'Vector'], affects: ['smoothing', 'band-detection'] }),
   parameter('assignmentLibrary', 'Assignment library', 'interpretation', 'select', 'Functional groups', { options: ['Functional groups', 'Surface hydroxyl', 'Metal-oxygen', 'Custom'], affects: ['band-assignment'] }),
   parameter('functionalGroupAnalysisMode', 'Functional-group analysis mode', 'interpretation', 'select', 'full', { options: ['full', 'fingerprint', 'functional-group'], affects: ['band-assignment'] }),
-  ...commonPolicy('SDBS', 10, 'cm⁻¹'),
+  ...commonPolicy('SDBS', 10, 'cm⁻¹', ['SDBS', 'NIST Chemistry WebBook', 'Custom', 'Uploaded reference']),
 ];
 
 const RAMAN_DEFINITIONS: CanonicalParameterDefinition[] = [
@@ -392,7 +393,7 @@ const RAMAN_DEFINITIONS: CanonicalParameterDefinition[] = [
   parameter('modeLibrary', 'Mode library', 'interpretation', 'select', 'Ferrite modes', { options: ['Ferrite modes', 'Carbon bands', 'Oxide modes', 'Custom'], active: false, affects: ['mode-assignment'] }),
   parameter('symmetryAnalysis', 'Symmetry analysis', 'interpretation', 'select', 'group-theory', { options: ['group-theory', 'empirical'], active: false, affects: ['mode-assignment'] }),
   parameter('defectModePolicy', 'Defect-mode policy', 'interpretation', 'select', 'include-with-caveat', { options: ['include-with-caveat', 'exclude', 'separate'], active: false, affects: ['mode-assignment', 'claim-boundary'] }),
-  ...commonPolicy('RRUFF', 8, 'cm⁻¹'),
+  ...commonPolicy('RRUFF', 8, 'cm⁻¹', ['RRUFF', 'Custom', 'Uploaded reference']),
 ];
 
 export const CANONICAL_PARAMETER_REGISTRY: Record<CanonicalTechnique, readonly CanonicalParameterDefinition[]> = {

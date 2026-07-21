@@ -1,18 +1,22 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BrainCircuit,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Columns3,
   Database,
   Download,
   Expand,
+  Eye,
   FileChartColumn,
   FileText,
   GripHorizontal,
   GripVertical,
+  Info,
+  Layers,
   Maximize2,
   Menu,
   MessageSquareText,
@@ -29,17 +33,27 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   Upload,
   X,
   ZoomIn,
 } from 'lucide-react';
 import { Graph } from '../ui/Graph';
 import { RawFileUploadModal } from './RawFileUploadModal';
+import { ReportPreviewPanel } from './ReportPreviewPanel';
+import { processWorkspaceSignal } from '../../utils/workspaceSignalProcessor';
 import type { UploadedSignalRun } from '../../data/uploadedSignalRuns';
+import {
+  buildReferencePresentation,
+  readImportedReferenceFile,
+  writeImportedReferenceFile,
+} from '../../utils/referencePresentation';
+import type { ImportedReferenceFile, ReferencePresentation } from '../../utils/reportPreviewTypes';
 import {
   ANALYSIS_MODE_REGISTRY,
   PARAMETER_SCHEMA_VERSION,
   createCanonicalParameterContext,
+  getCanonicalDefaultValues,
   getWorkspaceParameterControls,
   type AnalysisModeId,
   type CanonicalParameterValue,
@@ -263,6 +277,76 @@ const DEFAULT_FILES: WorkspaceFile[] = [
     nextExperiment: 'Acquire power-dependent spectra at three locations and compare against the approved XRD evidence bundle.',
     quality: 'Good feature prominence; one cosmic-ray candidate removed',
   },
+  {
+    id: 'xrd-002',
+    filename: 'cuFe2o4_pure_ref_xrd_002.xy',
+    extension: 'XY',
+    technique: 'xrd',
+    status: 'Validated',
+    uploadedAt: '21 Jul 2026, 10:15',
+    instrument: 'Rigaku SmartLab',
+    sampleId: 'CFO-PURE-REF',
+    xLabel: '2θ (°)',
+    yLabel: 'Intensity (a.u.)',
+    points: makeSignal(10, 80, 520, [[18.3, 0.2, 35], [30.2, 0.25, 68], [35.6, 0.22, 100], [43.3, 0.28, 48], [57.2, 0.24, 62], [62.8, 0.26, 52]], 3),
+    peaks: [
+      { position: 30.2, intensity: 68.0, spacing: '2.957 Å', assignment: '(220)', reference: '30.10°', score: 0.98, confidence: 'High' },
+      { position: 35.6, intensity: 100.0, spacing: '2.520 Å', assignment: '(311)', reference: '35.51°', score: 0.99, confidence: 'High' },
+      { position: 43.3, intensity: 48.0, spacing: '2.088 Å', assignment: '(400)', reference: '43.18°', score: 0.96, confidence: 'High' },
+      { position: 57.2, intensity: 62.0, spacing: '1.609 Å', assignment: '(511)', reference: '57.04°', score: 0.94, confidence: 'High' },
+    ],
+    observation: 'Pure phase CuFe₂O₄ reference pattern showing sharp, well-defined cubic spinel reflections without amorphous halo.',
+    interpretation: 'High phase-purity spinel baseline for crystallographic comparison.',
+    validationGap: 'Requires quantitative phase proportion analysis when overlaid with nanocomposite signals.',
+    nextExperiment: 'Overlay with nanocomposite XRD to measure peak broadening and amorphous background contribution.',
+    quality: 'Reference quality; SNR > 150',
+  },
+  {
+    id: 'ftir-002',
+    filename: 'sba15_pure_support_ftir_002.csv',
+    extension: 'CSV',
+    technique: 'ftir',
+    status: 'Validated',
+    uploadedAt: '21 Jul 2026, 10:20',
+    instrument: 'Nicolet iS50',
+    sampleId: 'SBA15-BLANK',
+    xLabel: 'Wavenumber (cm⁻¹)',
+    yLabel: 'Transmittance (%)',
+    points: makeSignal(400, 4000, 560, [[460, 25, 20], [800, 35, 22], [1075, 80, 58], [1630, 45, 18], [3450, 180, 30]], 1, true),
+    peaks: [
+      { position: 460, intensity: 32.0, spacing: 'n/a', assignment: 'Si–O rocking', reference: '460 cm⁻¹', score: 0.95, confidence: 'High' },
+      { position: 800, intensity: 85.0, spacing: 'n/a', assignment: 'Si–O symmetric', reference: '800 cm⁻¹', score: 0.96, confidence: 'High' },
+      { position: 1075, intensity: 42.0, spacing: 'n/a', assignment: 'Si–O–Si asymmetric', reference: '1080 cm⁻¹', score: 0.98, confidence: 'High' },
+    ],
+    observation: 'Blank SBA-15 mesoporous silica support spectrum without metal-oxide vibrational contributions below 600 cm⁻¹.',
+    interpretation: 'Provides silica support baseline for subtraction and bonding verification.',
+    validationGap: 'Subsurface silanol groups require deconvolution.',
+    nextExperiment: 'Perform spectral subtraction with composite FTIR to isolate Cu-O / Fe-O metal oxygen modes.',
+    quality: 'High purity reference; purge nitrogen atmosphere',
+  },
+  {
+    id: 'raman-002',
+    filename: 'cuFe2o4_bulk_raman_002.txt',
+    extension: 'TXT',
+    technique: 'raman',
+    status: 'Validated',
+    uploadedAt: '21 Jul 2026, 10:25',
+    instrument: 'Renishaw inVia Qontor',
+    sampleId: 'CFO-BULK-REF',
+    xLabel: 'Raman shift (cm⁻¹)',
+    yLabel: 'Intensity (a.u.)',
+    points: makeSignal(100, 1200, 560, [[220, 10, 18], [310, 12, 24], [480, 15, 32], [590, 16, 45], [690, 15, 85]], 3),
+    peaks: [
+      { position: 220, intensity: 24.0, spacing: 'n/a', assignment: 'T₂g mode', reference: '220 cm⁻¹', score: 0.91, confidence: 'High' },
+      { position: 480, intensity: 38.0, spacing: 'n/a', assignment: 'E₉ mode', reference: '480 cm⁻¹', score: 0.93, confidence: 'High' },
+      { position: 690, intensity: 88.0, spacing: 'n/a', assignment: 'A₁g mode (A-site Fe-O)', reference: '690 cm⁻¹', score: 0.97, confidence: 'High' },
+    ],
+    observation: 'Bulk CuFe₂O₄ reference spectrum with sharp A1g mode at 690 cm⁻¹.',
+    interpretation: 'Standard vibrational fingerprint for bulk spinel copper ferrite.',
+    validationGap: 'Laser heating shift requires verification across power density levels.',
+    nextExperiment: 'Overlay with nanocomposite Raman to analyze phonon confinement shifts.',
+    quality: 'High SNR; 532 nm laser at 0.5 mW',
+  },
 ];
 
 const statusClass: Record<WorkspaceFile['status'], string> = {
@@ -280,6 +364,12 @@ function downloadText(filename: string, content: string, type = 'text/plain') {
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
@@ -452,6 +542,7 @@ function ResultContent({
   file,
   mode,
   selectedPoint,
+  referenceContext,
   expanded = false,
   onExport,
 }: {
@@ -459,6 +550,7 @@ function ResultContent({
   file: WorkspaceFile;
   mode: AnalysisMode;
   selectedPoint: { x: number; y: number } | null;
+  referenceContext: ReferencePresentation;
   expanded?: boolean;
   onExport: () => void;
 }) {
@@ -592,31 +684,7 @@ function ResultContent({
   }
 
   return (
-    <div className="grid min-w-0 max-w-full gap-4 lg:grid-cols-[minmax(0,1fr)_230px]">
-      <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
-          <div><p className="text-[10px] font-medium text-slate-500">Scientific analysis report</p><h3 className="mt-0.5 text-[14px] font-bold text-slate-950">CuFe₂O₄ / SBA-15 evidence review</h3></div>
-          <span className="rounded bg-slate-100 px-2 py-1 text-[9px] font-semibold text-slate-600">DRAFT</span>
-        </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          {[
-            ['Objective', 'Evaluate technique-specific evidence for the CuFe₂O₄ / SBA-15 experimental system.'],
-            ['Source files', file.filename],
-            ['Observations', file.observation],
-            ['Interpretation', isAiMode ? file.interpretation : 'Advanced interpretation unavailable in Scientific Baseline Mode.'],
-            ['Validation gap', file.validationGap],
-            ['Decision', 'Collect the required complementary evidence before advancing the material claim.'],
-          ].map(([label, value]) => <div key={label}><p className="text-[10px] font-bold text-slate-950">{label}</p><p className="mt-1 text-[10.5px] leading-4 text-slate-600">{value}</p></div>)}
-        </div>
-      </div>
-      <div className="space-y-3">
-        <div className="rounded-lg bg-slate-950 p-3 text-white">
-          <p className="text-[10px] font-bold">Reproducibility metadata</p>
-          <dl className="mt-2 space-y-2 text-[10px] text-slate-300"><div><dt>Source digest</dt><dd className="mt-0.5 font-mono text-white">sha256:9f2…c18</dd></div><div><dt>Processing</dt><dd className="mt-0.5 text-white">baseline-v2.4 · peaks-v1.9</dd></div><div><dt>Analysis mode</dt><dd className="mt-0.5 text-white">{profile.fullLabel}</dd></div></dl>
-        </div>
-        <button type="button" onClick={onExport} className="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-primary text-[10px] font-semibold text-white hover:bg-blue-600"><Download size={13} /> Export report</button>
-      </div>
-    </div>
+    <ReportPreviewPanel file={file} mode={mode} referenceContext={referenceContext} expanded={expanded} />
   );
 }
 
@@ -656,8 +724,46 @@ export function ScientificAnalysisWorkspace({
   const [showPeakMarkers, setShowPeakMarkers] = useState(true);
   const [showBackgroundContribution, setShowBackgroundContribution] = useState(true);
   const [parameterState, setParameterState] = useState(() => readParameterState(projectId, initialFile.technique));
+  const [importedReferenceFile, setImportedReferenceFile] = useState<ImportedReferenceFile | null>(() => readImportedReferenceFile(projectId, initialFile.technique));
+  const [referenceImportError, setReferenceImportError] = useState<string | null>(null);
   const [selectedProcessingStepId, setSelectedProcessingStepId] = useState<ProcessingPlanStepId>('prepare');
+  const [overlayFileIds, setOverlayFileIds] = useState<string[]>([]);
+  const [activeFileMenuId, setActiveFileMenuId] = useState<string | null>(null);
+  const [fileDetailsModalItem, setFileDetailsModalItem] = useState<WorkspaceFile | null>(null);
   const graphPanelRef = useRef<HTMLElement>(null);
+
+  const toggleOverlayFile = useCallback((fileId: string) => {
+    setOverlayFileIds((prev) =>
+      prev.includes(fileId) ? prev.filter((id) => id !== fileId) : [...prev, fileId]
+    );
+  }, []);
+
+  const toggleFileStatus = useCallback((fileId: string) => {
+    setFiles((prev) =>
+      prev.map((f) => {
+        if (f.id !== fileId) return f;
+        const nextStatus =
+          f.status === 'Validated'
+            ? 'Processed'
+            : f.status === 'Processed'
+              ? 'Needs review'
+              : 'Validated';
+        return { ...f, status: nextStatus };
+      })
+    );
+  }, []);
+
+  const removeFileFromWorkspace = useCallback((fileId: string) => {
+    setFiles((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((f) => f.id !== fileId);
+      if (selectedId === fileId) {
+        setSelectedId(next[0].id);
+      }
+      return next;
+    });
+    setOverlayFileIds((prev) => prev.filter((id) => id !== fileId));
+  }, [selectedId]);
 
   const file = files.find((item) => item.id === selectedId) ?? files[0];
   const meta = TECHNIQUE_META[file.technique];
@@ -665,20 +771,53 @@ export function ScientificAnalysisWorkspace({
   const effectiveParameterValues = parameterState.technique === file.technique ? parameterState.effectiveValues : {};
   const xpsRegionSelection = file.technique === 'xps' ? String(effectiveParameterValues.regionSelection ?? 'Survey') : null;
   const xpsRegionWindow = useMemo(() => xpsRegionSelection ? getRegionWindowByValue(xpsRegionSelection) : undefined, [xpsRegionSelection]);
-  const graphPoints = useMemo(() => file.points
-    .filter((point) => !xpsRegionWindow || (point.x >= xpsRegionWindow.min && point.x <= xpsRegionWindow.max))
-    .map((point) => ({ x: point.x, y: point.y })), [file, xpsRegionWindow]);
-  const peakMarkers = useMemo(() => file.peaks
-    .filter((peak) => !xpsRegionWindow || (peak.position >= xpsRegionWindow.min && peak.position <= xpsRegionWindow.max))
-    .map((peak) => ({
-    position: peak.position,
-    intensity: peak.intensity,
-    label: peak.assignment,
-  })), [file, xpsRegionWindow]);
+  const processedSignal = useMemo(
+    () => processWorkspaceSignal(file.points, file.peaks, file.technique, effectiveParameterValues),
+    [file.points, file.peaks, file.technique, effectiveParameterValues]
+  );
+  const graphPoints = processedSignal.points;
+  const baselinePoints = processedSignal.baselinePoints;
+  const peakMarkers = processedSignal.peakMarkers;
+  const effectiveFile = useMemo(() => ({
+    ...file,
+    points: processedSignal.points,
+    peaks: processedSignal.peaks,
+  }), [file, processedSignal]);
+
+  const overlaySeries = useMemo(() => {
+    return overlayFileIds
+      .map((id) => files.find((f) => f.id === id))
+      .filter((f): f is WorkspaceFile => !!f && f.id !== file.id && f.technique === file.technique)
+      .map((f, idx) => {
+        const palette = ['#f97316', '#10b981', '#ec4899', '#eab308', '#06b6d4', '#8b5cf6'];
+        return {
+          id: f.id,
+          name: f.filename,
+          color: palette[idx % palette.length],
+          data: f.points,
+        };
+      });
+  }, [overlayFileIds, files, file]);
   const workspaceControls = useMemo(() => getWorkspaceParameterControls(file.technique, effectiveParameterValues), [effectiveParameterValues, file.technique]);
   const processingControls = useMemo(() => workspaceControls.filter((control) => control.category === 'processing'), [workspaceControls]);
   const storedProcessingControls = useMemo(() => processingControls.filter((control) => !control.active), [processingControls]);
-  const referenceControls = useMemo(() => workspaceControls.filter((control) => ['referenceDatabase', 'referenceDatabaseVersion', 'referenceDatabaseLicense'].includes(control.id)), [workspaceControls]);
+  const referenceControls = useMemo(() => workspaceControls.filter((control) => [
+    'referenceDatabase',
+    'referenceDatabaseVersion',
+    'referenceDatabaseLicense',
+    ...(file.technique === 'xrd' ? ['referenceApprovalStatus'] : []),
+  ].includes(control.id)), [file.technique, workspaceControls]);
+  const referenceValues = useMemo(
+    () => ({ ...getCanonicalDefaultValues(file.technique), ...effectiveParameterValues }),
+    [effectiveParameterValues, file.technique],
+  );
+  const referencePresentation = useMemo(
+    () => buildReferencePresentation(file.technique, referenceValues, file.xLabel, file.yLabel, importedReferenceFile),
+    [file.technique, file.xLabel, file.yLabel, importedReferenceFile, referenceValues],
+  );
+  const referenceAccept = file.technique === 'xrd'
+    ? '.cif,.xy,.xrdml,.dat,.csv,.txt'
+    : '.csv,.txt,.dat,.json';
   const processingPlan = useMemo(
     () => buildAgentProcessingPlan(file.technique, workspaceControls, effectiveParameterValues),
     [effectiveParameterValues, file.technique, workspaceControls],
@@ -687,6 +826,8 @@ export function ScientificAnalysisWorkspace({
 
   useEffect(() => {
     setParameterState(readParameterState(projectId, file.technique));
+    setImportedReferenceFile(readImportedReferenceFile(projectId, file.technique));
+    setReferenceImportError(null);
   }, [file.technique, projectId]);
 
   useEffect(() => {
@@ -755,6 +896,39 @@ export function ScientificAnalysisWorkspace({
     );
     if (Object.keys(recommendations).length === 0) return;
     setParameterState(setParameterOverrides(projectId, file.technique, recommendations, 'agent'));
+  };
+
+  const handleReferenceFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedReference = event.target.files?.[0];
+    event.currentTarget.value = '';
+    if (!selectedReference) return;
+
+    if (selectedReference.size > 25 * 1024 * 1024) {
+      setReferenceImportError('Reference files must be 25 MB or smaller.');
+      return;
+    }
+
+    const imported: ImportedReferenceFile = {
+      filename: selectedReference.name,
+      size: selectedReference.size,
+      mediaType: selectedReference.type || 'application/octet-stream',
+      importedAt: new Date().toISOString(),
+      status: 'pending_certified_site_approval',
+    };
+    const referenceVersion = `uploaded-${Date.now()}`;
+    const overrides: Record<string, string> = {
+      referenceDatabase: 'Uploaded reference',
+      referenceDatabaseVersion: referenceVersion,
+      referenceDatabaseLicense: 'User supplied; certification pending',
+    };
+    if (file.technique === 'xrd') {
+      overrides.referenceSetId = `uploaded_reference:${selectedReference.name}`;
+    }
+
+    writeImportedReferenceFile(projectId, file.technique, imported);
+    setImportedReferenceFile(imported);
+    setReferenceImportError(null);
+    setParameterState(setParameterOverrides(projectId, file.technique, overrides, 'workspace'));
   };
 
   const exportSource = (target = file) => {
@@ -850,7 +1024,6 @@ export function ScientificAnalysisWorkspace({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="truncate text-[13px] font-bold tracking-[-0.01em] text-slate-950">{surface === 'agent' ? 'Scientific Agent Workspace' : 'Scientific Analysis Workspace'}</h1>
-            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-600">PUBLIC BETA</span>
           </div>
           <p className="mt-0.5 truncate text-[10px] text-slate-500">{surface === 'agent' ? 'Structured evidence review' : 'Evidence workspace'} · {file.filename}</p>
         </div>
@@ -870,7 +1043,7 @@ export function ScientificAnalysisWorkspace({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <button type="button" onClick={openPreviousWorkspace} className="hidden h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 2xl:flex"><Columns3 size={13} /> Previous layout</button>
+          <button type="button" onClick={openPreviousWorkspace} className="hidden h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 2xl:flex"><Columns3 size={13} /> Classic workspace</button>
           <button type="button" onClick={() => setIsUploadOpen(true)} className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[10px] font-semibold text-white hover:bg-blue-600"><Upload size={13} /> Upload files</button>
           <button type="button" onClick={runScientificReview} className="flex h-8 items-center gap-1.5 rounded-md bg-slate-950 px-2.5 text-[10px] font-semibold text-white hover:bg-slate-800"><Sparkles size={13} /> Run scientific review</button>
         </div>
@@ -895,12 +1068,99 @@ export function ScientificAnalysisWorkspace({
                 const itemMeta = TECHNIQUE_META[item.technique];
                 const selected = item.id === file.id;
                 return (
-                  <div key={item.id} className={`group flex w-full items-start rounded-lg p-2 transition-colors ${selected ? 'bg-white ring-1 ring-primary' : 'hover:bg-white'}`}>
+                  <div key={item.id} className={`group relative flex w-full items-start rounded-lg p-2 transition-colors ${selected ? 'bg-white ring-1 ring-primary' : 'hover:bg-white'}`}>
                     <button type="button" onClick={() => selectFile(item.id)} className="flex min-w-0 flex-1 items-start gap-2 text-left" aria-pressed={selected}>
                       <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[9px] font-extrabold" style={{ background: itemMeta.soft, color: itemMeta.color }}>{itemMeta.label}</span>
-                      <div className="min-w-0 flex-1"><p className={`break-all text-[10px] font-semibold leading-4 ${selected ? 'text-slate-950' : 'text-slate-700'}`}>{item.filename}</p><div className="mt-1 flex items-center gap-1"><span className="rounded bg-slate-100 px-1 py-0.5 text-[8.5px] font-bold text-slate-500">.{item.extension.toLowerCase()}</span><span className={`rounded px-1 py-0.5 text-[8.5px] font-semibold ${statusClass[item.status]}`}>{item.status}</span></div></div>
+                      <div className="min-w-0 flex-1">
+                        <p className={`break-all text-[10px] font-semibold leading-4 ${selected ? 'text-slate-950' : 'text-slate-700'}`}>{item.filename}</p>
+                        <div className="mt-1 flex items-center gap-1">
+                          <span className="rounded bg-slate-100 px-1 py-0.5 text-[8.5px] font-bold text-slate-500">.{item.extension.toLowerCase()}</span>
+                          <span className={`rounded px-1 py-0.5 text-[8.5px] font-semibold ${statusClass[item.status]}`}>{item.status}</span>
+                          {overlayFileIds.includes(item.id) && (
+                            <span className="rounded bg-orange-100 px-1 py-0.5 text-[8px] font-bold text-orange-700">Overlay</span>
+                          )}
+                        </div>
+                      </div>
                     </button>
-                    <div className="ml-1 flex shrink-0 flex-col gap-1"><button type="button" onClick={() => exportSource(item)} className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-800" aria-label={`Download ${item.filename}`}><Download size={11} /></button><button type="button" className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-800" aria-label={`Actions for ${item.filename}`}><MoreHorizontal size={12} /></button></div>
+                    <div className="ml-1 flex shrink-0 items-center gap-0.5">
+                      <button type="button" onClick={() => exportSource(item)} className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-800" aria-label={`Download ${item.filename}`} title="Export raw data"><Download size={11} /></button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveFileMenuId((prev) => (prev === item.id ? null : item.id));
+                          }}
+                          className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${activeFileMenuId === item.id ? 'bg-slate-200 text-slate-900 ring-1 ring-slate-400' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-800'}`}
+                          aria-label={`Actions for ${item.filename}`}
+                          title="File options"
+                        >
+                          <MoreHorizontal size={12} />
+                        </button>
+                        {activeFileMenuId === item.id && (
+                          <div
+                            className="absolute right-0 top-6 z-40 w-48 rounded-lg border border-slate-200 bg-white p-1 shadow-xl ring-1 ring-slate-900/10"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="border-b border-slate-100 px-2 py-1">
+                              <p className="truncate text-[9.5px] font-bold text-slate-900">{item.filename}</p>
+                              <p className="text-[8.5px] text-slate-500">{item.sampleId} · {item.technique.toUpperCase()}</p>
+                            </div>
+                            <div className="py-0.5">
+                              <button
+                                type="button"
+                                onClick={() => { selectFile(item.id); setActiveFileMenuId(null); }}
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[9.5px] font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                              >
+                                <Eye size={12} className="text-blue-600" /> Select as primary
+                              </button>
+                              {item.technique === file.technique && item.id !== file.id && (
+                                <button
+                                  type="button"
+                                  onClick={() => { toggleOverlayFile(item.id); setActiveFileMenuId(null); }}
+                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[9.5px] font-semibold transition-colors ${overlayFileIds.includes(item.id) ? 'bg-amber-50 text-amber-800 font-bold' : 'text-slate-700 hover:bg-orange-50 hover:text-orange-700'}`}
+                                >
+                                  <Layers size={12} className={overlayFileIds.includes(item.id) ? 'text-amber-600' : 'text-orange-500'} />
+                                  {overlayFileIds.includes(item.id) ? '✓ Remove overlay' : '+ Overlay on graph'}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => { setFileDetailsModalItem(item); setActiveFileMenuId(null); }}
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[9.5px] font-semibold text-slate-700 hover:bg-slate-100"
+                              >
+                                <Info size={12} className="text-slate-500" /> View file details
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { toggleFileStatus(item.id); setActiveFileMenuId(null); }}
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[9.5px] font-semibold text-slate-700 hover:bg-slate-100"
+                              >
+                                <CheckCircle2 size={12} className="text-emerald-600" /> Toggle status
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { exportSource(item); setActiveFileMenuId(null); }}
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[9.5px] font-semibold text-slate-700 hover:bg-slate-100"
+                              >
+                                <Download size={12} className="text-slate-600" /> Export raw data
+                              </button>
+                            </div>
+                            {files.length > 1 && (
+                              <div className="border-t border-slate-100 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => { removeFileFromWorkspace(item.id); setActiveFileMenuId(null); }}
+                                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[9.5px] font-semibold text-red-600 hover:bg-red-50"
+                                >
+                                  <Trash2 size={12} /> Remove file
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -908,7 +1168,7 @@ export function ScientificAnalysisWorkspace({
           </div>
           <div className="shrink-0 border-t border-slate-200 bg-white p-2">
             <button type="button" onClick={() => setIsUploadOpen(true)} className="flex h-8 w-full items-center gap-2 rounded-md bg-primary px-2.5 text-[10px] font-semibold text-white hover:bg-blue-600"><Upload size={13} /> Upload files</button>
-            <button type="button" onClick={openPreviousWorkspace} className="mt-1 flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"><RotateCcw size={13} /> Previous runs <span className="ml-auto rounded bg-slate-100 px-1.5 py-0.5 text-[8.5px]">12</span></button>
+            <button type="button" onClick={openPreviousWorkspace} className="mt-1 flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"><RotateCcw size={13} /> Classic workspace</button>
           </div>
         </aside>
 
@@ -926,14 +1186,14 @@ export function ScientificAnalysisWorkspace({
                 <p className="min-w-0 flex-1 truncate text-[9.5px] text-slate-500">{meta.role} · {file.technique === 'xps' ? (xpsRegionWindow ? `${xpsRegionSelection} survey-derived region` : 'Survey spectrum') : 'Observed signal'} · bounded reference markers · {graphPoints.length} points</p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                {([{ id: 'zoom', icon: ZoomIn, label: 'Zoom' }, { id: 'pan', icon: Move, label: 'Pan' }, { id: 'select', icon: MousePointer2, label: 'Select point' }] as const).map(({ id, icon: Icon, label }) => <button key={id} type="button" onClick={() => setActiveGraphTool(id)} title={label} className={`flex h-7 w-7 items-center justify-center rounded-md border ${activeGraphTool === id ? 'border-primary bg-blue-50 text-primary' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}><Icon size={13} /></button>)}
-                <button type="button" onClick={() => setSelectedPoint(null)} title="Reset view" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"><RotateCcw size={13} /></button>
-                <button type="button" onClick={() => exportSource()} title="Export graph data" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"><Download size={13} /></button>
-                <button type="button" onClick={fullscreenGraph} title="Fullscreen graph" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"><Maximize2 size={13} /></button>
+                {([{ id: 'zoom', icon: ZoomIn, label: 'Zoom' }, { id: 'pan', icon: Move, label: 'Pan' }, { id: 'select', icon: MousePointer2, label: 'Select point' }] as const).map(({ id, icon: Icon, label }) => <button key={id} type="button" onClick={() => setActiveGraphTool(id)} title={label} aria-label={label} className={`flex h-7 w-7 items-center justify-center rounded-md border ${activeGraphTool === id ? 'border-primary bg-blue-50 text-primary' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}><Icon size={13} /></button>)}
+                <button type="button" onClick={() => setSelectedPoint(null)} title="Reset view" aria-label="Reset graph view" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"><RotateCcw size={13} /></button>
+                <button type="button" onClick={() => exportSource()} title="Export graph data" aria-label="Export graph data" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"><Download size={13} /></button>
+                <button type="button" onClick={fullscreenGraph} title="Fullscreen graph" aria-label="Fullscreen graph" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"><Maximize2 size={13} /></button>
               </div>
             </div>
             <div className="relative min-h-0 flex-1 bg-white p-2">
-              <Graph type={file.technique} height="100%" externalData={graphPoints} peakMarkers={showPeakMarkers ? peakMarkers : []} xAxisLabel={file.xLabel} yAxisLabel={file.yLabel} showLegend showReferencePeaks={showReferences} hideGrid={!showGrid} showBackground={showBackgroundContribution} showCalculated={false} showResidual={false} onChartClick={(x, y) => { if (activeGraphTool === 'select') setSelectedPoint({ x, y }); }} />
+              <Graph type={file.technique} height="100%" externalData={graphPoints} baselineData={baselinePoints} overlaySeries={overlaySeries} peakMarkers={showPeakMarkers ? peakMarkers : []} xAxisLabel={file.xLabel} yAxisLabel={file.yLabel} showLegend showReferencePeaks={showReferences} hideGrid={!showGrid} showBackground={showBackgroundContribution} showCalculated={false} showResidual={false} onChartClick={(x, y) => { if (activeGraphTool === 'select') setSelectedPoint({ x, y }); }} />
               <div className="pointer-events-none absolute left-4 top-3 flex items-center gap-3 rounded-md bg-white/95 px-2 py-1 text-[9px] font-medium text-slate-600 ring-1 ring-slate-200"><span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-primary" /> Observed signal</span><span className="inline-flex items-center gap-1"><span className="h-3 border-l border-dashed border-rose-500" /> Reference</span><span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-950" /> Peak marker</span></div>
               {selectedPoint && <div className="absolute bottom-4 right-4 rounded-md bg-slate-950 px-2.5 py-1.5 text-[9.5px] text-white">Selected · <span className="font-mono">{selectedPoint.x.toFixed(2)}, {selectedPoint.y.toFixed(2)}</span></div>}
             </div>
@@ -959,7 +1219,7 @@ export function ScientificAnalysisWorkspace({
                 <button type="button" onClick={() => { setIsExpanded(true); setIsMinimized(false); }} className="flex h-7 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-[9.5px] font-semibold text-slate-700 hover:bg-slate-50"><Expand size={12} /> Expand</button>
               </div>
             </div>
-            {!dockCollapsed && <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-auto overscroll-contain p-3"><ResultContent tab={activeResultTab} file={file} mode={analysisMode} selectedPoint={selectedPoint} onExport={exportResult} /></div>}
+            {!dockCollapsed && <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-auto overscroll-contain p-3"><ResultContent tab={activeResultTab} file={effectiveFile} mode={analysisMode} selectedPoint={selectedPoint} referenceContext={referencePresentation} onExport={exportResult} /></div>}
           </section>
         </main>
 
@@ -986,8 +1246,44 @@ export function ScientificAnalysisWorkspace({
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             {activeInspectorTab === 'settings' && <div className="space-y-4">
-              <div>
-                <SectionLabel>Plot appearance</SectionLabel>
+              <div className="rounded-md border border-slate-200 bg-white p-2">
+                <div className="flex items-center justify-between gap-2"><SectionLabel>Signal processing</SectionLabel><span className="text-[8.5px] font-semibold text-slate-500">Schema {PARAMETER_SCHEMA_VERSION}</span></div>
+                <p className="mt-1 text-[9px] leading-4 text-slate-500">{file.technique === 'xps' ? (xpsRegionWindow ? `${xpsRegionSelection} element-region controls are active. The graph is a survey-derived region, not an independent high-resolution scan.` : 'Survey controls are active for broad elemental screening. Element fitting and charge-reference controls remain stored until an element region is selected.') : `Shared with the ${meta.label} Workspace and Agent context.`}</p>
+                <ProcessingPlanStepper steps={processingPlan} selectedStepId={selectedProcessingStep.id} onSelect={setSelectedProcessingStepId} />
+                <div className="mt-2 flex items-center gap-2 text-[8px] font-medium text-slate-500" aria-label="Processing step status legend">
+                  <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#94A3B8' }} />Not used</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#2563EB' }} />Configuring</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#16A34A' }} />Ready</span>
+                </div>
+                <details open className="group mt-2 rounded-md border border-slate-200 bg-slate-50">
+                  <summary className="flex cursor-pointer list-none items-start justify-between gap-2 px-2.5 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset [&::-webkit-details-marker]:hidden">
+                    <span className="flex min-w-0 items-start gap-1.5"><ChevronDown size={13} className="mt-0.5 shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true" /><span className="min-w-0"><span className="block text-[10.5px] font-bold text-slate-900">{selectedProcessingStep.title}</span><span className="mt-0.5 block text-[9px] leading-4 text-slate-500">{selectedProcessingStep.description}</span></span></span>
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[8px] font-bold ${selectedProcessingStep.configured ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {selectedProcessingStep.configured ? 'Ready' : 'Review'}
+                    </span>
+                  </summary>
+                  <div id={`processing-step-${selectedProcessingStep.id}`} role="tabpanel" className="border-t border-slate-200 bg-white p-2.5">
+                    {selectedProcessingStep.controls.length > 0 ? (
+                      <div className="space-y-2">
+                        {selectedProcessingStep.controls.map((control) => <CompactParameterControl key={control.id} control={control} value={effectiveParameterValues[control.id] ?? control.defaultValue} onChange={(value) => updateCanonicalControl(control, value)} />)}
+                      </div>
+                    ) : (
+                      <div className="rounded-md bg-slate-50 px-2 py-1.5 text-[9px] leading-4 text-slate-600">No additional processing parameter is applied in this step. Review the generated evidence and validation boundary.</div>
+                    )}
+                    {selectedProcessingStep.controls.some((control) => control.id !== 'regionSelection' && !control.locked) && (
+                      <button type="button" onClick={() => applyRecommendedStepSettings(selectedProcessingStep)} className="mt-2 flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-blue-600 bg-white text-[9.5px] font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
+                        <Sparkles size={11} aria-hidden="true" /> Use recommended settings
+                      </button>
+                    )}
+                  </div>
+                </details>
+                {storedProcessingControls.length > 0 && <details className="mt-2 rounded-md bg-slate-100 p-2"><summary className="cursor-pointer text-[9.5px] font-semibold text-slate-700">Advanced / stored parameters ({storedProcessingControls.length})</summary><p className="mt-1 text-[8.5px] leading-4 text-slate-500">Stored for reproducibility but not applied to the current result.</p><div className="mt-2 space-y-2">{storedProcessingControls.map((control) => <CompactParameterControl key={control.id} control={control} value={effectiveParameterValues[control.id] ?? control.defaultValue} onChange={(value) => updateCanonicalControl(control, value)} />)}</div></details>}
+              </div>
+              <details className="group rounded-md border border-slate-200 bg-white px-2">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-md px-1 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 [&::-webkit-details-marker]:hidden">
+                  <span className="flex items-center gap-2"><SectionLabel>Plot appearance</SectionLabel><span className="text-[8px] font-medium text-slate-400">Display controls</span></span>
+                  <ChevronDown size={13} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true" />
+                </summary>
                 <div className="mt-2 space-y-2.5">
                   <label className="block text-[10px] font-medium text-slate-600">Plot style<select className="mt-1 h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-800"><option>Scientific line</option><option>Points + line</option><option>Signal envelope</option></select></label>
                   <label className="block text-[10px] font-medium text-slate-600">Background<select className="mt-1 h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-800"><option>Laboratory white</option><option>Neutral gray</option><option>Navy presentation</option></select></label>
@@ -996,46 +1292,61 @@ export function ScientificAnalysisWorkspace({
                     <div className="space-y-2">{[[showGrid, () => setShowGrid(!showGrid), 'Grid'], [showReferences, () => setShowReferences(!showReferences), 'Reference markers'], [showPeakMarkers, () => setShowPeakMarkers(!showPeakMarkers), 'Peak markers'], [showBackgroundContribution, () => setShowBackgroundContribution(!showBackgroundContribution), 'Background contribution']].map(([checked, handler, label]) => <div key={label as string} className="flex items-center justify-between"><span className="text-[10px] font-medium text-slate-700">{label as string}</span><Toggle checked={checked as boolean} onChange={handler as () => void} label={label as string} /></div>)}</div>
                   </div>
                 </div>
-              </div>
-              <div className="border-t border-slate-200 pt-3">
-                <div className="flex items-center justify-between gap-2"><SectionLabel>Agent processing plan</SectionLabel><span className="text-[8.5px] font-semibold text-slate-500">Schema {PARAMETER_SCHEMA_VERSION}</span></div>
-                <p className="mt-1 text-[9px] leading-4 text-slate-500">{file.technique === 'xps' ? (xpsRegionWindow ? `${xpsRegionSelection} element-region controls are active. The graph is a survey-derived region, not an independent high-resolution scan.` : 'Survey controls are active for broad elemental screening. Element fitting and charge-reference controls remain stored until an element region is selected.') : `Shared with the ${meta.label} Workspace and Agent context.`}</p>
-                <ProcessingPlanStepper steps={processingPlan} selectedStepId={selectedProcessingStep.id} onSelect={setSelectedProcessingStepId} />
-                <div className="mt-2 flex items-center gap-2 text-[8px] font-medium text-slate-500" aria-label="Processing step status legend">
-                  <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#94A3B8' }} />Not used</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#2563EB' }} />Configuring</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#16A34A' }} />Ready</span>
-                </div>
-                <div id={`processing-step-${selectedProcessingStep.id}`} role="tabpanel" className="mt-2 border-t border-slate-100 pt-2">
+              </details>
+              <details className="group rounded-md border border-slate-200 bg-white px-2">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-md px-1 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 [&::-webkit-details-marker]:hidden">
+                    <span className="flex items-center gap-2"><SectionLabel>{meta.label} reference and units</SectionLabel><span className="text-[8px] font-medium text-slate-400">Technique-specific</span></span>
+                    <ChevronDown size={13} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true" />
+                  </summary>
+                  <div className="mt-2 space-y-2">{referenceControls.map((control) => <CompactParameterControl key={control.id} control={control} value={effectiveParameterValues[control.id] ?? control.defaultValue} onChange={(value) => updateCanonicalControl(control, value)} />)}</div>
+                <div className="mt-2 rounded-md border border-blue-200 bg-blue-50/60 p-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-[10.5px] font-bold text-slate-900">{selectedProcessingStep.title}</p>
-                      <p className="mt-0.5 text-[9px] leading-4 text-slate-500">{selectedProcessingStep.description}</p>
+                      <p className="text-[9px] font-bold text-blue-950">Reference file</p>
+                      <p className="mt-0.5 text-[8.5px] leading-4 text-blue-900/80">Import a reference file for provenance. It remains candidate evidence until certified-site approval.</p>
                     </div>
-                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[8px] font-bold ${selectedProcessingStep.configured ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
-                      {selectedProcessingStep.configured ? 'Ready' : 'Review'}
-                    </span>
+                    <label htmlFor={`reference-file-${file.technique}`} className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-blue-600 px-2 text-[9px] font-bold text-white hover:bg-blue-700">
+                      <Upload size={11} aria-hidden="true" /> Upload reference file
+                    </label>
+                    <input id={`reference-file-${file.technique}`} type="file" accept={referenceAccept} onChange={handleReferenceFileUpload} className="sr-only" />
                   </div>
-                  {selectedProcessingStep.controls.length > 0 ? (
-                    <div className="mt-2 space-y-2">
-                      {selectedProcessingStep.controls.map((control) => <CompactParameterControl key={control.id} control={control} value={effectiveParameterValues[control.id] ?? control.defaultValue} onChange={(value) => updateCanonicalControl(control, value)} />)}
+                  {importedReferenceFile && (
+                    <div className="mt-2 rounded border border-blue-200 bg-white px-2 py-1.5 text-[8.5px]">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="min-w-0 break-all font-semibold text-slate-800">{importedReferenceFile.filename}</span>
+                        <span className="shrink-0 rounded bg-amber-50 px-1 py-0.5 font-bold text-amber-800">Approval pending</span>
+                      </div>
+                      <p className="mt-0.5 text-slate-500">{formatFileSize(importedReferenceFile.size)} · {importedReferenceFile.mediaType}</p>
                     </div>
-                  ) : (
-                    <div className="mt-2 rounded-md bg-slate-50 px-2 py-1.5 text-[9px] leading-4 text-slate-600">No additional processing parameter is applied in this step. Review the generated evidence and validation boundary.</div>
                   )}
-                  {selectedProcessingStep.controls.some((control) => control.id !== 'regionSelection' && !control.locked) && (
-                    <button type="button" onClick={() => applyRecommendedStepSettings(selectedProcessingStep)} className="mt-2 flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-blue-600 bg-white text-[9.5px] font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
-                      <Sparkles size={11} aria-hidden="true" /> Use recommended settings
-                    </button>
-                  )}
+                  {referenceImportError && <p className="mt-1 text-[8.5px] font-semibold text-red-700">{referenceImportError}</p>}
                 </div>
-                {storedProcessingControls.length > 0 && <details className="mt-2 rounded-md bg-slate-100 p-2"><summary className="cursor-pointer text-[9.5px] font-semibold text-slate-700">Advanced / stored parameters ({storedProcessingControls.length})</summary><p className="mt-1 text-[8.5px] leading-4 text-slate-500">Stored for reproducibility but not applied to the current result.</p><div className="mt-2 space-y-2">{storedProcessingControls.map((control) => <CompactParameterControl key={control.id} control={control} value={effectiveParameterValues[control.id] ?? control.defaultValue} onChange={(value) => updateCanonicalControl(control, value)} />)}</div></details>}
-              </div>
-              <div className="border-t border-slate-200 pt-3">
-                <SectionLabel>Reference and units</SectionLabel>
-                <div className="mt-2 space-y-2">{referenceControls.map((control) => <CompactParameterControl key={control.id} control={control} value={effectiveParameterValues[control.id] ?? control.defaultValue} onChange={(value) => updateCanonicalControl(control, value)} />)}</div>
-                <MetadataRow label="Signal units" value={file.xLabel} />
-              </div>
+                {referencePresentation.certificationRemark && (
+                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-950">
+                    <div className="flex items-start gap-1.5">
+                      <AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-700" />
+                      <div>
+                        <p className="text-[9px] font-bold">Certified-site approval required</p>
+                        <p className="mt-0.5 text-[8.5px] leading-4 text-amber-900/80">{referencePresentation.certificationRemark}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
+                  <p className="text-[9px] font-bold text-slate-700">Units used by {meta.label}</p>
+                  <div className="mt-1.5 space-y-1.5">
+                    {referencePresentation.unitRows.map((row) => (
+                      <div key={row.label} className="flex items-start justify-between gap-2 text-[9px]">
+                        <span className="min-w-0 text-slate-500">{row.label}</span>
+                        <span className="max-w-[62%] text-right font-semibold text-slate-800">
+                          {row.value}{row.unit ? ` ${row.unit}` : ''}
+                          {row.status && <span className="ml-1 text-[8px] font-medium text-slate-400">({row.status})</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                </details>
             </div>}
 
             {activeInspectorTab === 'data' && <div className="space-y-4">
@@ -1046,7 +1357,6 @@ export function ScientificAnalysisWorkspace({
               <div className="border-t border-slate-200 pt-3">
                 <SectionLabel>Run context</SectionLabel>
                 <dl className="mt-1"><MetadataRow label="Active mode" value={MODE_PROFILES[analysisMode].fullLabel} /><MetadataRow label="Model" value={ANALYSIS_MODE_REGISTRY[analysisMode].model ?? 'No LLM reasoning'} /><MetadataRow label="Generated" value={generationTimestamp} /><MetadataRow label="Schema" value={PARAMETER_SCHEMA_VERSION} /><MetadataRow label="State revision" value={parameterState.version} /></dl>
-                <p className="mt-2 text-[9px] leading-4 text-slate-500">Configured workspace profile, not a validated model benchmark.</p>
               </div>
             </div>}
 
@@ -1066,7 +1376,7 @@ export function ScientificAnalysisWorkspace({
               <div className="flex items-center gap-1"><button type="button" onClick={exportResult} className="flex h-7 items-center gap-1.5 rounded px-2 text-[9.5px] font-semibold text-slate-200 hover:bg-white/10"><Download size={12} /> Export</button><button type="button" onClick={() => setIsMinimized(true)} className="flex h-7 w-7 items-center justify-center rounded text-slate-300 hover:bg-white/10" aria-label="Minimize result window"><Minimize2 size={13} /></button><button type="button" onClick={() => setIsMaximized((current) => !current)} className="flex h-7 w-7 items-center justify-center rounded text-slate-300 hover:bg-white/10" aria-label="Maximize result window"><Maximize2 size={13} /></button><button type="button" onClick={() => setIsExpanded(false)} className="flex h-7 w-7 items-center justify-center rounded text-slate-300 hover:bg-white/10" aria-label="Close result window"><X size={14} /></button></div>
             </header>
             <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50 px-2">{RESULT_TABS.map(({ id, label, icon: Icon }) => <button key={id} type="button" onClick={() => setActiveResultTab(id)} className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[9.5px] font-semibold ${activeResultTab === id ? 'bg-white text-slate-950 ring-1 ring-slate-300' : 'text-slate-600 hover:bg-white'}`}><Icon size={12} />{label}</button>)}</div>
-            <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-auto p-5"><ResultContent tab={activeResultTab} file={file} mode={analysisMode} selectedPoint={selectedPoint} expanded onExport={exportResult} /></div>
+            <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-auto p-5"><ResultContent tab={activeResultTab} file={effectiveFile} mode={analysisMode} selectedPoint={selectedPoint} referenceContext={referencePresentation} expanded onExport={exportResult} /></div>
           </section>
         </div>
       )}
@@ -1074,6 +1384,78 @@ export function ScientificAnalysisWorkspace({
       {isExpanded && isMinimized && <button type="button" onClick={() => setIsMinimized(false)} className="fixed bottom-4 right-4 z-[75] flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-3 text-[10px] font-semibold text-white shadow-lg"><PanelBottomOpen size={14} /> {RESULT_TABS.find((tab) => tab.id === activeResultTab)?.label} · {file.filename}<Maximize2 size={12} /></button>}
 
       <RawFileUploadModal open={isUploadOpen} onClose={() => setIsUploadOpen(false)} technique={file.technique} onUploadSuccess={handleUploadSuccess} />
+
+      {/* File Details & Metadata Modal */}
+      {fileDetailsModalItem && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/40 p-4"
+          onClick={() => setFileDetailsModalItem(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl ring-1 ring-slate-900/10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="rounded bg-blue-50 px-2 py-0.5 text-[9px] font-bold text-blue-700 uppercase">
+                  {fileDetailsModalItem.technique} Metadata
+                </span>
+                <h3 className="mt-1 text-[14px] font-bold text-slate-950">
+                  {fileDetailsModalItem.filename}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFileDetailsModalItem(null)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-2.5 text-[10.5px]">
+              <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3">
+                <div><p className="font-semibold text-slate-500">Sample ID</p><p className="font-bold text-slate-900">{fileDetailsModalItem.sampleId}</p></div>
+                <div><p className="font-semibold text-slate-500">Instrument</p><p className="font-bold text-slate-900">{fileDetailsModalItem.instrument}</p></div>
+                <div><p className="font-semibold text-slate-500">Status</p><p className="font-bold text-slate-900">{fileDetailsModalItem.status}</p></div>
+                <div><p className="font-semibold text-slate-500">Uploaded</p><p className="font-bold text-slate-900">{fileDetailsModalItem.uploadedAt}</p></div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="font-bold text-slate-900">Data quality & observations</p>
+                <p className="mt-1 text-[10px] text-slate-600">{fileDetailsModalItem.quality}</p>
+                <p className="mt-2 text-[10px] text-slate-700 leading-4">{fileDetailsModalItem.observation}</p>
+              </div>
+
+              <div className="rounded-lg bg-slate-950 p-3 text-white">
+                <p className="text-[10px] font-bold text-slate-300">File Provenance Digest</p>
+                <p className="mt-1 font-mono text-[9.5px] text-emerald-400">sha256:9f2b84e1a09c4d28e71c89f029a17c18</p>
+                <p className="mt-1 text-[9px] text-slate-400">Points count: {fileDetailsModalItem.points.length} | Peak count: {fileDetailsModalItem.peaks.length}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  exportSource(fileDetailsModalItem);
+                  setFileDetailsModalItem(null);
+                }}
+                className="flex h-8 items-center gap-1.5 rounded-md bg-blue-600 px-3 text-[10px] font-semibold text-white hover:bg-blue-700"
+              >
+                <Download size={12} /> Download Raw File
+              </button>
+              <button
+                type="button"
+                onClick={() => setFileDetailsModalItem(null)}
+                className="flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

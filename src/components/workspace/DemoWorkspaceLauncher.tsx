@@ -379,14 +379,14 @@ export function DemoWorkspaceLauncher() {
             </div>
           </Card>
 
-          <div className="grid min-h-0 flex-1 gap-3 overflow-hidden xl:grid-cols-[minmax(0,1fr)_330px]">
+          <div className="grid min-h-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_330px]">
             <div className="min-h-0 overflow-y-auto pr-1">
               <div className="mb-2 flex items-center gap-2">
                 <h2 className="text-[13px] font-bold text-text-main">Start a new analysis</h2>
                 <span className="h-px flex-1 bg-border" />
                 <span className="text-[10px] text-text-muted">pick a technique to open the bench</span>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 <HubCard
                   icon={Upload}
                   title="Quick Analysis"

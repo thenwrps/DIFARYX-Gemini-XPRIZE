@@ -1,0 +1,653 @@
+/**
+ * reportExportEngine.ts
+ *
+ * Real file export for the Agent Workspace Report Preview.
+ * - PDF  via html2canvas + jsPDF
+ * - DOCX via docx library (with SVG graph rendered as embedded image)
+ * - Markdown via plain text Blob
+ */
+
+import type { PeakResult, ReferencePresentation } from './reportPreviewTypes';
+
+// ---- Types ----------------------------------------------------------------
+
+export interface ReportSection {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
+
+export interface ReportData {
+  title: string;
+  date: string;
+  projectId: string;
+  technique: string;
+  techniqueLabel: string;
+  filename: string;
+  instrument: string;
+  sampleId: string;
+  analysisMode: string;
+  modeLabel: string;
+  objective: string;
+  observation: string;
+  interpretation: string;
+  validationGap: string;
+  nextExperiment: string;
+  quality: string;
+  peaks: PeakResult[];
+  points: Array<{ x: number; y: number }>;
+  xLabel: string;
+  yLabel: string;
+  reference: ReferencePresentation;
+  sourceDigest: string;
+  processingVersion: string;
+  enabledSections: Record<string, boolean>;
+}
+
+// ---- Markdown Export -------------------------------------------------------
+
+export function buildMarkdownReport(data: ReportData): string {
+  const lines: string[] = [];
+
+  lines.push(`# ${data.title}`);
+  lines.push('');
+  lines.push(`**DIFARYX Scientific Analysis Report** — DRAFT`);
+  lines.push(`Date: ${data.date}`);
+  lines.push(`Technique: ${data.techniqueLabel} | File: ${data.filename}`);
+  lines.push(`Sample: ${data.sampleId} | Instrument: ${data.instrument}`);
+  lines.push(`Analysis mode: ${data.modeLabel}`);
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+
+  let sectionNum = 1;
+
+  if (data.enabledSections.objective) {
+    lines.push(`## ${sectionNum}. Objective`);
+    lines.push('');
+    lines.push(data.objective);
+    lines.push('');
+    sectionNum++;
+  }
+
+  if (data.enabledSections.observations) {
+    lines.push(`## ${sectionNum}. Experimental Observations`);
+    lines.push('');
+    lines.push(data.observation);
+    lines.push('');
+    sectionNum++;
+  }
+
+  if (data.enabledSections.peakTable) {
+    lines.push(`## ${sectionNum}. Detected Features (Peak Table)`);
+    lines.push('');
+    const isXrd = data.technique === 'xrd';
+    lines.push(`| # | Position | Intensity | ${isXrd ? 'd-spacing' : 'Spacing'} | Assignment | Reference | Score | Confidence |`);
+    lines.push('|---|----------|-----------|---------|------------|-----------|-------|------------|');
+    data.peaks.forEach((peak, i) => {
+      lines.push(`| ${i + 1} | ${peak.position.toFixed(2)} | ${peak.intensity.toFixed(1)} | ${peak.spacing} | ${peak.assignment} | ${peak.reference} | ${(peak.score * 100).toFixed(0)}% | ${peak.confidence} |`);
+    });
+    lines.push('');
+    sectionNum++;
+  }
+
+  if (data.enabledSections.graph) {
+    lines.push(`## ${sectionNum}. Spectrum Graph`);
+    lines.push('');
+    lines.push(`*Graph snapshot: ${data.xLabel} vs ${data.yLabel} — see exported PDF for embedded image.*`);
+    lines.push('');
+    sectionNum++;
+  }
+
+  if (data.enabledSections.reference) {
+    lines.push(`## ${sectionNum}. ${data.techniqueLabel.split(' (')[0]} Reference and Units`);
+    lines.push('');
+    lines.push(`- Provider: ${data.reference.provider}`);
+    lines.push(`- Version: ${data.reference.version}`);
+    lines.push(`- License: ${data.reference.license}`);
+    lines.push(`- Approval status: ${data.reference.approvalStatus}`);
+    if (data.reference.importedFile) {
+      lines.push(`- Imported file: ${data.reference.importedFile.filename}`);
+    }
+    data.reference.unitRows.forEach((row) => {
+      lines.push(`- ${row.label}: ${row.value}${row.unit ? ` ${row.unit}` : ''}${row.status ? ` (${row.status})` : ''}`);
+    });
+    if (data.reference.certificationRemark) {
+      lines.push(`- Validation remark: ${data.reference.certificationRemark}`);
+    }
+    lines.push('');
+    sectionNum++;
+  }
+
+  if (data.enabledSections.interpretation) {
+    lines.push(`## ${sectionNum}. Interpretation`);
+    lines.push('');
+    lines.push(data.interpretation);
+    lines.push('');
+    sectionNum++;
+  }
+
+  if (data.enabledSections.validationGap) {
+    lines.push(`## ${sectionNum}. Validation Gap`);
+    lines.push('');
+    lines.push(data.validationGap);
+    lines.push('');
+    sectionNum++;
+  }
+
+  if (data.enabledSections.nextAction) {
+    lines.push(`## ${sectionNum}. Recommended Next Experiment`);
+    lines.push('');
+    lines.push(data.nextExperiment);
+    lines.push('');
+    sectionNum++;
+  }
+
+  if (data.enabledSections.metadata) {
+    lines.push(`## ${sectionNum}. Reproducibility Metadata`);
+    lines.push('');
+    lines.push(`- Source digest: ${data.sourceDigest}`);
+    lines.push(`- Processing: ${data.processingVersion}`);
+    lines.push(`- Analysis mode: ${data.modeLabel}`);
+    lines.push(`- Data quality: ${data.quality}`);
+    lines.push('');
+    sectionNum++;
+  }
+
+  lines.push('---');
+  lines.push('');
+  lines.push('*Generated by DIFARYX — Scientific Workflow Intelligence*');
+
+  return lines.join('\n');
+}
+
+export function exportReportAsMarkdown(data: ReportData): void {
+  const content = buildMarkdownReport(data);
+  downloadBlob(
+    new Blob([content], { type: 'text/markdown;charset=utf-8' }),
+    `${cleanFilename(data.title)}.md`,
+  );
+}
+
+// ---- PDF Export ------------------------------------------------------------
+
+export async function exportReportAsPdf(
+  previewElement: HTMLElement,
+  filename: string,
+): Promise<void> {
+  const html2canvas = (await import('html2canvas')).default;
+  const { jsPDF } = await import('jspdf');
+
+  // Clone the element and render off-screen so scroll position doesn't affect capture
+  const clone = previewElement.cloneNode(true) as HTMLElement;
+  clone.style.position = 'absolute';
+  clone.style.left = '-9999px';
+  clone.style.top = '0';
+  clone.style.width = `${previewElement.scrollWidth}px`;
+  clone.style.overflow = 'visible';
+  clone.style.height = 'auto';
+  clone.style.maxHeight = 'none';
+  clone.style.boxShadow = 'none';
+  document.body.appendChild(clone);
+
+  try {
+    const canvas = await html2canvas(clone, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: clone.scrollWidth,
+      height: clone.scrollHeight,
+      windowWidth: clone.scrollWidth,
+      windowHeight: clone.scrollHeight,
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+    const imgWidthMm = 210; // A4 width in mm
+    const pageHeightMm = 297; // A4 height in mm
+    const marginMm = 8;
+    const contentWidthMm = imgWidthMm - marginMm * 2;
+    const imgHeightMm = (canvas.height * contentWidthMm) / canvas.width;
+
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    let heightLeft = imgHeightMm;
+    let position = marginMm;
+
+    pdf.addImage(imgData, 'PNG', marginMm, position, contentWidthMm, imgHeightMm);
+    heightLeft -= (pageHeightMm - marginMm * 2);
+
+    while (heightLeft > 0) {
+      position = marginMm - (imgHeightMm - heightLeft);
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', marginMm, position, contentWidthMm, imgHeightMm);
+      heightLeft -= (pageHeightMm - marginMm * 2);
+    }
+
+    pdf.save(`${cleanFilename(filename)}.pdf`);
+  } finally {
+    document.body.removeChild(clone);
+  }
+}
+
+// ---- Graph rendering to PNG buffer (for DOCX) ------------------------------
+
+function renderSpectrumToPngBuffer(
+  points: Array<{ x: number; y: number }>,
+  peaks: PeakResult[],
+  xLabel: string,
+  yLabel: string,
+  technique: string,
+): Uint8Array | null {
+  if (points.length < 2) return null;
+
+  const w = 900;
+  const h = 340;
+  const pad = { top: 28, right: 36, bottom: 48, left: 68 };
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const xMin = Math.min(...xs);
+  const xMax = Math.max(...xs);
+  const yMin = Math.min(...ys) * 0.95;
+  const yMax = Math.max(...ys) * 1.05;
+
+  const sx = (v: number) => pad.left + ((v - xMin) / (xMax - xMin)) * plotW;
+  const sy = (v: number) => pad.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w * 2;
+  canvas.height = h * 2;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.scale(2, 2);
+
+  // White background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+
+  // Plot area background
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(pad.left, pad.top, plotW, plotH);
+
+  // Grid lines
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (plotH * i) / 4;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(w - pad.right, y);
+    ctx.stroke();
+  }
+  for (let i = 0; i <= 5; i++) {
+    const x = pad.left + (plotW * i) / 5;
+    ctx.beginPath();
+    ctx.moveTo(x, pad.top);
+    ctx.lineTo(x, pad.top + plotH);
+    ctx.stroke();
+  }
+
+  // Plot border
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad.left, pad.top, plotW, plotH);
+
+  // Signal line
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const px = sx(p.x);
+    const py = sy(p.y);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  // Peak markers
+  peaks.forEach((pk) => {
+    const px = sx(pk.position);
+    const nearest = points.reduce((best, p) =>
+      Math.abs(p.x - pk.position) < Math.abs(best.x - pk.position) ? p : best,
+    );
+    const py = sy(nearest.y);
+
+    // Dashed reference line
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(px, py - 8);
+    ctx.lineTo(px, pad.top + 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Dot
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(px, py, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Label
+    ctx.fillStyle = '#64748b';
+    ctx.font = '10px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(pk.assignment, px, pad.top - 4);
+  });
+
+  // X-axis labels
+  ctx.fillStyle = '#64748b';
+  ctx.font = '11px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= 5; i++) {
+    const v = xMin + ((xMax - xMin) * i) / 5;
+    ctx.fillText(v.toFixed(0), sx(v), h - pad.bottom + 20);
+  }
+  ctx.font = '12px Arial, sans-serif';
+  ctx.fillText(xLabel, pad.left + plotW / 2, h - 6);
+
+  // Y-axis labels
+  ctx.textAlign = 'right';
+  ctx.font = '11px Arial, sans-serif';
+  for (let i = 0; i <= 4; i++) {
+    const v = yMin + ((yMax - yMin) * i) / 4;
+    ctx.fillText(v.toFixed(0), pad.left - 8, sy(v) + 4);
+  }
+  ctx.save();
+  ctx.translate(14, pad.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.font = '12px Arial, sans-serif';
+  ctx.fillText(yLabel, 0, 0);
+  ctx.restore();
+
+  // Convert canvas to PNG data
+  const dataUrl = canvas.toDataURL('image/png');
+  const base64 = dataUrl.split(',')[1];
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// ---- DOCX Export -----------------------------------------------------------
+
+export async function exportReportAsDocx(data: ReportData): Promise<void> {
+  const {
+    Document,
+    Packer,
+    Paragraph,
+    TextRun,
+    HeadingLevel,
+    Table,
+    TableRow,
+    TableCell,
+    WidthType,
+    BorderStyle,
+    AlignmentType,
+    ImageRun,
+  } = await import('docx');
+
+  const children: (InstanceType<typeof Paragraph> | InstanceType<typeof Table>)[] = [];
+
+  // Title
+  children.push(
+    new Paragraph({
+      children: [new TextRun({ text: data.title, bold: true, size: 32, font: 'Calibri' })],
+      heading: HeadingLevel.TITLE,
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 120 },
+    }),
+  );
+
+  // Subtitle
+  children.push(
+    new Paragraph({
+      children: [new TextRun({ text: 'DIFARYX Scientific Analysis Report — DRAFT', size: 20, color: '666666', font: 'Calibri' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 80 },
+    }),
+  );
+
+  // Meta line
+  children.push(
+    new Paragraph({
+      children: [new TextRun({ text: `Date: ${data.date} | Technique: ${data.techniqueLabel} | File: ${data.filename}`, size: 18, color: '888888', font: 'Calibri' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+    }),
+  );
+
+  // Horizontal rule
+  children.push(new Paragraph({ spacing: { after: 200 }, border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' } } }));
+
+  let sectionNum = 1;
+
+  const addSection = (title: string, content: string) => {
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: `${sectionNum}. ${title}`, bold: true, size: 24, font: 'Calibri' })],
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 240, after: 120 },
+      }),
+    );
+    content.split('\n').forEach((line) => {
+      children.push(
+        new Paragraph({
+          children: [new TextRun({ text: line, size: 22, font: 'Calibri' })],
+          spacing: { after: 80 },
+        }),
+      );
+    });
+    sectionNum++;
+  };
+
+  if (data.enabledSections.objective) {
+    addSection('Objective', data.objective);
+  }
+
+  if (data.enabledSections.observations) {
+    addSection('Experimental Observations', data.observation);
+  }
+
+  if (data.enabledSections.peakTable) {
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: `${sectionNum}. Detected Features (Peak Table)`, bold: true, size: 24, font: 'Calibri' })],
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 240, after: 120 },
+      }),
+    );
+
+    const isXrd = data.technique === 'xrd';
+    const headers = ['#', 'Position', 'Intensity', isXrd ? 'd-spacing' : 'Spacing', 'Assignment', 'Reference', 'Score', 'Confidence'];
+
+    const makeCell = (text: string, bold = false) =>
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun({ text, bold, size: 18, font: 'Calibri' })] })],
+        width: { size: 100 / headers.length, type: WidthType.PERCENTAGE },
+      });
+
+    const headerRow = new TableRow({ children: headers.map((h) => makeCell(h, true)) });
+    const dataRows = data.peaks.map((peak, i) =>
+      new TableRow({
+        children: [
+          makeCell(`${i + 1}`),
+          makeCell(`${peak.position.toFixed(2)}`),
+          makeCell(`${peak.intensity.toFixed(1)}`),
+          makeCell(peak.spacing),
+          makeCell(peak.assignment),
+          makeCell(peak.reference),
+          makeCell(`${(peak.score * 100).toFixed(0)}%`),
+          makeCell(peak.confidence),
+        ],
+      }),
+    );
+
+    children.push(
+      new Table({
+        rows: [headerRow, ...dataRows],
+        width: { size: 100, type: WidthType.PERCENTAGE },
+      }),
+    );
+
+    sectionNum++;
+  }
+
+  if (data.enabledSections.graph) {
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: `${sectionNum}. Spectrum Graph`, bold: true, size: 24, font: 'Calibri' })],
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 240, after: 120 },
+      }),
+    );
+
+    // Render the graph as a PNG and embed it
+    const graphPng = renderSpectrumToPngBuffer(
+      data.points,
+      data.peaks,
+      data.xLabel,
+      data.yLabel,
+      data.technique,
+    );
+
+    if (graphPng) {
+      children.push(
+        new Paragraph({
+          children: [
+            new ImageRun({
+              data: graphPng,
+              transformation: { width: 580, height: 220 },
+              type: 'png',
+            }),
+          ],
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 80 },
+        }),
+      );
+      children.push(
+        new Paragraph({
+          children: [new TextRun({
+            text: `Figure 1. ${data.techniqueLabel.split(' (')[0]} spectrum — ${data.xLabel} vs ${data.yLabel}`,
+            italics: true,
+            size: 18,
+            color: '666666',
+            font: 'Calibri',
+          })],
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 120 },
+        }),
+      );
+    } else {
+      children.push(
+        new Paragraph({
+          children: [new TextRun({ text: `Graph: ${data.xLabel} vs ${data.yLabel}`, size: 22, font: 'Calibri' })],
+          spacing: { after: 80 },
+        }),
+      );
+    }
+
+    sectionNum++;
+  }
+
+  if (data.enabledSections.reference) {
+    addSection(
+      `${data.techniqueLabel.split(' (')[0]} Reference and Units`,
+      [
+        `Provider: ${data.reference.provider}`,
+        `Version: ${data.reference.version}`,
+        `License: ${data.reference.license}`,
+        `Approval status: ${data.reference.approvalStatus}`,
+        ...(data.reference.importedFile ? [`Imported file: ${data.reference.importedFile.filename}`] : []),
+        ...data.reference.unitRows.map((row) => `${row.label}: ${row.value}${row.unit ? ` ${row.unit}` : ''}${row.status ? ` (${row.status})` : ''}`),
+        ...(data.reference.certificationRemark ? [`Validation remark: ${data.reference.certificationRemark}`] : []),
+      ].join('\n'),
+    );
+  }
+
+  if (data.enabledSections.interpretation) {
+    addSection('Interpretation', data.interpretation);
+  }
+
+  if (data.enabledSections.validationGap) {
+    addSection('Validation Gap', data.validationGap);
+  }
+
+  if (data.enabledSections.nextAction) {
+    addSection('Recommended Next Experiment', data.nextExperiment);
+  }
+
+  if (data.enabledSections.metadata) {
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: `${sectionNum}. Reproducibility Metadata`, bold: true, size: 24, font: 'Calibri' })],
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 240, after: 120 },
+      }),
+    );
+
+    const metaEntries = [
+      ['Source digest', data.sourceDigest],
+      ['Processing', data.processingVersion],
+      ['Analysis mode', data.modeLabel],
+      ['Data quality', data.quality],
+    ];
+    metaEntries.forEach(([k, v]) => {
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: `${k}: `, bold: true, size: 20, font: 'Calibri' }),
+            new TextRun({ text: v, size: 20, font: 'Calibri' }),
+          ],
+          spacing: { after: 60 },
+        }),
+      );
+    });
+
+    sectionNum++;
+  }
+
+  // Footer
+  children.push(new Paragraph({ spacing: { before: 400 }, border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' } } }));
+  children.push(
+    new Paragraph({
+      children: [new TextRun({ text: 'Generated by DIFARYX — Scientific Workflow Intelligence', italics: true, size: 18, color: '999999', font: 'Calibri' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 120 },
+    }),
+  );
+
+  const doc = new Document({
+    sections: [{ children }],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  downloadBlob(blob, `${cleanFilename(data.title)}.docx`);
+}
+
+// ---- Helpers ---------------------------------------------------------------
+
+function cleanFilename(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0E00-\u0E7F]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 80);
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 400);
+}

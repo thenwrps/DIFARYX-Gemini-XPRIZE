@@ -67,9 +67,6 @@ function useContainerSize(ref: React.RefObject<HTMLElement>): ContainerSize {
         return { width, height };
       });
     };
-
-    update();
-
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
       if (frame) cancelAnimationFrame(frame);
@@ -88,6 +85,13 @@ function useContainerSize(ref: React.RefObject<HTMLElement>): ContainerSize {
 
 // ── Component props ──────────────────────────────────────────────────
 
+export interface OverlaySeries {
+  id: string;
+  name: string;
+  color?: string;
+  data: ExternalPoint[];
+}
+
 interface GraphProps {
   type?: SpectrumType;
   height?: number | string;
@@ -97,6 +101,8 @@ interface GraphProps {
   showLegend?: boolean;
   /** When provided, renders this data instead of internally generated data */
   externalData?: ExternalPoint[];
+  /** Secondary overlay datasets for multi-sample comparison of the same technique */
+  overlaySeries?: OverlaySeries[];
   /** Baseline curve to overlay */
   baselineData?: ExternalPoint[];
   /** Peak position markers */
@@ -232,6 +238,23 @@ function xrdSignal(x: number, index: number) {
   };
 }
 
+interface SpectrumPoint {
+  x: number;
+  observed: number;
+  calculated: number;
+  background: number;
+  residual: number;
+  residualDisplay: number;
+}
+
+interface ExternalSpectrumPoint {
+  x: number;
+  observed: number;
+  baseline?: number;
+}
+
+
+
 function xpsSignal(x: number, index: number) {
   const background = 20 + 18 * Math.exp(-x / 520) + 10 * (1 - x / 1200);
   const peaks = [
@@ -309,6 +332,8 @@ function ramanSignal(x: number, index: number) {
   };
 }
 
+// ── Internal data types ──────────────────────────────────────────────
+
 function getSignal(type: SpectrumType, x: number, index: number) {
   if (type === 'xps') return xpsSignal(x, index);
   if (type === 'ftir') return ftirSignal(x, index);
@@ -365,10 +390,9 @@ const legendNames: Record<string, string> = {
   background: 'Background',
   baseline: 'Baseline',
   residualDisplay: 'Residual',
-  referencePeaks: 'Reference Peaks', // Default for XRD
+  referencePeaks: 'Reference Peaks',
 };
 
-// Technique-specific legend overrides
 const techniqueLegendOverrides: Record<SpectrumType, Partial<Record<string, string>>> = {
   xrd: {
     referencePeaks: 'Reference Peaks',
@@ -384,8 +408,6 @@ const techniqueLegendOverrides: Record<SpectrumType, Partial<Record<string, stri
   },
 };
 
-// ── Custom peak marker dot (reduced size + opacity) ─────────────────
-
 function PeakMarkerDot(props: {
   cx?: number;
   cy?: number;
@@ -396,7 +418,6 @@ function PeakMarkerDot(props: {
   const { cx, cy, payload, peakMarkers, type = 'xrd' } = props;
   if (cx == null || cy == null || !payload) return null;
 
-  // Technique-specific threshold for peak matching (in degrees 2-theta, eV, or cm-1)
   const threshold = type === 'xrd' ? 0.15 : type === 'xps' ? 0.5 : type === 'ftir' ? 5.0 : 2.0;
 
   const marker = peakMarkers.find(
@@ -404,13 +425,13 @@ function PeakMarkerDot(props: {
   );
   if (!marker) return null;
 
-  // Reduced size (40% smaller) and opacity (60%)
   return (
     <g opacity={0.6}>
       <circle cx={cx} cy={cy} r={2.5} fill="#f59e0b" stroke="#fbbf24" strokeWidth={0.8} />
     </g>
   );
 }
+
 
 // ── Shared onClick handler for LineChart ─────────────────────────────
 
@@ -453,6 +474,7 @@ export function Graph({
   showResidual = true,
   showLegend = true,
   externalData,
+  overlaySeries,
   baselineData,
   peakMarkers,
   xAxisLabel,
@@ -470,23 +492,25 @@ export function Graph({
   const useExternal = !!externalData && externalData.length > 0;
   const [viewDomain, setViewDomain] = useState<[number, number] | null>(null);
   const [referencePeaksVisible, setReferencePeaksVisible] = useState(showReferencePeaks);
-
-  // Set --graph-h CSS custom property imperatively so no style prop is needed in JSX
-  useEffect(() => {
-    const resolvedH = height !== undefined ? height : 400;
-    const hVal = typeof resolvedH === 'number' ? `${resolvedH}px` : resolvedH;
-    if (containerRef.current) containerRef.current.style.setProperty('--graph-h', hVal);
-    if (noDataRef.current) noDataRef.current.style.setProperty('--graph-h', hVal);
-  }, [height]);
-
-  // Internal data path (backward compat)
   const internalData = useMemo(() => generateData(type), [type]);
 
-  // External data path
-  const externalChartData = useMemo(
-    () => (useExternal ? convertExternalData(externalData!, baselineData) : []),
-    [useExternal, externalData, baselineData],
-  );
+  // External data path with multi-series overlay support
+  const externalChartData = useMemo(() => {
+    if (!useExternal) return [];
+    const base = convertExternalData(externalData!, baselineData);
+    if (!overlaySeries || overlaySeries.length === 0) return base;
+
+    return base.map((row) => {
+      const merged: Record<string, any> = { ...row };
+      overlaySeries.forEach((series) => {
+        const pt = series.data.find((p) => Math.abs(p.x - row.x) < 0.35);
+        if (pt) {
+          merged[series.id] = pt.y;
+        }
+      });
+      return merged;
+    });
+  }, [useExternal, externalData, baselineData, overlaySeries]);
 
   const settings = SETTINGS[type];
   const displayXLabel = xAxisLabel ?? settings.xLabel;
@@ -736,21 +760,6 @@ export function Graph({
               />
             )}
 
-            {/* Reference Peaks - dummy line for legend only (actual rendering via ReferenceLine above) */}
-            {markers.length > 0 && (
-              <Line
-                type="monotone"
-                dataKey="__referencePeaks"
-                name="referencePeaks"
-                stroke="#a78bca"
-                strokeOpacity={0.28}
-                dot={false}
-                strokeWidth={1}
-                isAnimationActive={false}
-                hide={true}
-              />
-            )}
-
             {/* Observed line - strong primary color */}
             <Line
               type="monotone"
@@ -772,6 +781,24 @@ export function Graph({
               }
               isAnimationActive={false}
             />
+
+            {/* Secondary multi-sample overlay lines */}
+            {overlaySeries?.map((series, idx) => {
+              const palette = ['#f97316', '#10b981', '#ec4899', '#eab308', '#06b6d4', '#8b5cf6'];
+              const strokeColor = series.color || palette[idx % palette.length];
+              return (
+                <Line
+                  key={series.id}
+                  type="monotone"
+                  dataKey={series.id}
+                  name={series.name}
+                  stroke={strokeColor}
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              );
+            })}
           </LineChart>
         </ResponsiveContainer>
         )}
@@ -855,7 +882,6 @@ export function Graph({
           {showLegend && (
             <Legend
               formatter={(value: string | number) => {
-                // Get technique-specific legend name or fall back to default
                 const overrides = techniqueLegendOverrides[type];
                 return (overrides && overrides[String(value)]) || legendNames[String(value)] || String(value);
               }}
