@@ -751,24 +751,40 @@ export function runXpsProcessing(
     processingSteps.push(`Region focus: ${region} (no canonical window; survey set retained)`);
   }
 
-  // Step 5: Peak Fitting
-  peaks = fitPeaks(peaks, peakModel);
-  processingSteps.push(`Peak fitting: ${peakModel} model`);
-  
-  // Step 6: Chemical State Assignment
-  const { 
-    peaks: assignedPeaks, 
-    matches,
-    stateAggregations,
-    confidence,
-    caveats,
-    scientificSummary,
-  } = assignChemicalStates(
-    peaks,
-    bindingEnergyTolerance,
-    useIntensity
-  );
-  processingSteps.push(`Chemical state assignment: ${matches.length}/${peaks.length} matched`);
+  let assignedPeaks = peaks;
+  let matches: XpsChemicalStateMatch[] = [];
+  let stateAggregations: StateAggregation[] = [];
+  let confidence: 'high' | 'medium' | 'low' = 'low';
+  let caveats: string[] = [];
+  let scientificSummary = '';
+
+  if (regionWindow) {
+    // Element-region spectra may proceed to peak fitting and bounded chemical-
+    // state assignment. A survey-derived crop remains explicitly identified by
+    // provenance in the Workspace and must not be presented as an independent
+    // high-resolution acquisition.
+    peaks = fitPeaks(peaks, peakModel);
+    processingSteps.push(`Peak fitting: ${peakModel} model`);
+    const assignment = assignChemicalStates(peaks, bindingEnergyTolerance, useIntensity);
+    assignedPeaks = assignment.peaks;
+    matches = assignment.matches;
+    stateAggregations = assignment.stateAggregations;
+    confidence = assignment.confidence;
+    caveats = assignment.caveats;
+    scientificSummary = assignment.scientificSummary;
+    processingSteps.push(`Chemical state assignment: ${matches.length}/${peaks.length} matched`);
+  } else {
+    // Full-range survey spectra support broad elemental screening. They do not
+    // carry the resolution needed for oxidation-state fitting or reference-peak
+    // calibration claims.
+    processingSteps.push('Peak fitting: not applied in Survey scope');
+    processingSteps.push('Chemical state assignment: not applied; select an element region');
+    caveats = [
+      'Survey spectrum supports broad elemental screening only.',
+      'Element-region or independent high-resolution acquisition is required for oxidation-state fitting.',
+    ];
+    scientificSummary = `${peaks.length} survey features detected; no chemical-state assignment was applied.`;
+  }
   
   return {
     signal: {
@@ -791,11 +807,13 @@ export function runXpsProcessing(
       smoothingWindowSize,
       peakProminence,
       peakMinDistance,
-      peakModel,
-      fittingTolerance,
-      fittingMaxIterations,
-      bindingEnergyTolerance,
-      useIntensity,
+      ...(regionWindow ? {
+        peakModel,
+        fittingTolerance,
+        fittingMaxIterations,
+        bindingEnergyTolerance,
+        useIntensity,
+      } : {}),
       region: region ?? 'Survey',
     },
   };
