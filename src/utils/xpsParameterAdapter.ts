@@ -35,6 +35,18 @@ export function convertToXpsProcessingParams(
     hasAnyParams = true;
   }
 
+  const surveyPeakProminence = effectiveValues['surveyPeakProminence'];
+  if (typeof surveyPeakProminence === 'number' && Number.isFinite(surveyPeakProminence)) {
+    params.peakProminence = surveyPeakProminence;
+    hasAnyParams = true;
+  }
+
+  const surveyPeakMinDistance = effectiveValues['surveyPeakMinDistance'];
+  if (typeof surveyPeakMinDistance === 'number' && Number.isFinite(surveyPeakMinDistance)) {
+    params.peakMinDistance = surveyPeakMinDistance;
+    hasAnyParams = true;
+  }
+
   // Background subtraction
   const backgroundMethod = effectiveValues['backgroundMethod'];
   if (backgroundMethod === 'Shirley' || backgroundMethod === 'Tougaard' || backgroundMethod === 'Linear') {

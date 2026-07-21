@@ -1,9 +1,13 @@
+import type { AnalysisModeId, CanonicalParameterContext } from './parameterDefinitions';
+
 export interface AgentRun {
   id: string;
   projectId: string;
   createdAt: string;
   mission: string;
   workspaceParameters?: Record<string, Record<string, string | number | boolean | string[]>>;
+  analysisMode?: AnalysisModeId;
+  parameterContext?: CanonicalParameterContext;
   outputs: {
     phase: string;
     claimStatus?: 'strongly_supported' | 'supported' | 'partial' | 'inconclusive' | 'contradicted';

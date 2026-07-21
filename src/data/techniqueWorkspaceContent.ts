@@ -1,20 +1,14 @@
 import type { TechniqueId } from './demoProjectRegistry';
-import { getCalibrationStandards, listReferenceRegions } from './xpsReferenceData';
+import {
+  getWorkspaceParameterControls,
+  type CanonicalParameterValue,
+  type CanonicalWorkspaceControl,
+} from './parameterDefinitions';
 
 export type TechniqueWorkspaceId = Exclude<TechniqueId, 'multi'>;
-
-// XPS dropdown options derived from the canonical reference module
-// (single source of truth — no hardcoded reference list in the UI config).
-const XPS_CALIBRATION_OPTIONS: string[] = [
-  ...getCalibrationStandards().map((s) => s.label),
-  'Custom',
-];
-const XPS_CALIBRATION_DEFAULT: string = getCalibrationStandards()[0]?.label ?? 'Custom';
-const XPS_REGION_OPTIONS: string[] = [
-  'Survey',
-  ...listReferenceRegions().map((r) => r.value),
-  'Custom',
-];
+export type TechniqueParameterValue = Exclude<CanonicalParameterValue, null>;
+export type TechniqueParameterControlType = CanonicalWorkspaceControl['type'];
+export type TechniqueParameterControl = CanonicalWorkspaceControl;
 
 export interface TechniqueWorkspaceTab {
   id: string;
@@ -25,22 +19,6 @@ export interface TechniquePipelineStep {
   id: string;
   label: string;
   summary: string;
-}
-
-export type TechniqueParameterValue = string | number | boolean | string[];
-export type TechniqueParameterControlType = 'select' | 'number' | 'range' | 'text' | 'toggle' | 'checkbox-group';
-
-export interface TechniqueParameterControl {
-  id: string;
-  label: string;
-  type: TechniqueParameterControlType;
-  defaultValue: TechniqueParameterValue;
-  options?: string[];
-  min?: number;
-  max?: number;
-  step?: number;
-  unit?: string;
-  affectedStepIds: string[];
 }
 
 export interface TechniqueWorkspaceConfig {
@@ -58,6 +36,10 @@ export interface TechniqueWorkspaceConfig {
   reprocessLabel: string;
 }
 
+/**
+ * UI labels, descriptions, tabs, and pipeline copy only.
+ * Parameter definitions/defaults are projected from parameterDefinitions.ts.
+ */
 export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueWorkspaceConfig> = {
   xrd: {
     id: 'xrd',
@@ -76,106 +58,15 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       { id: 'rietveld', label: 'Rietveld' },
     ],
     pipeline: [
-      { id: 'baseline', label: 'Baseline', summary: 'Baseline correction reviewed for phase assignment.' },
-      { id: 'smooth', label: 'Smooth', summary: 'Smoothing applied before peak detection.' },
-      { id: 'peaks', label: 'Peak Detect', summary: 'Diffraction peaks detected and indexed where possible.' },
-      { id: 'fit', label: 'Fit Peaks', summary: 'Peak fit state preserved for evidence review.' },
-      { id: 'match', label: 'Match Ref', summary: 'Reference matching contributes to the claim boundary.' },
-      { id: 'refinement', label: 'Boundary', summary: 'Optional refinement remains available for publication-level claims.' },
+      { id: 'calibration', label: 'Calibrate', summary: 'Radiation, zero shift, and source metadata are reviewed.' },
+      { id: 'baseline', label: 'Baseline', summary: 'Baseline correction is recorded for phase-evidence review.' },
+      { id: 'smooth', label: 'Smooth', summary: 'Smoothing is applied before peak detection.' },
+      { id: 'peaks', label: 'Peak Detect', summary: 'Diffraction peaks are detected and indexed where possible.' },
+      { id: 'fit', label: 'Fit Peaks', summary: 'Peak fitting state is preserved with parameter provenance.' },
+      { id: 'match', label: 'Match Ref', summary: 'Approved reference matching contributes to the claim boundary.' },
+      { id: 'refinement', label: 'Boundary', summary: 'Refinement remains required for stronger phase-purity claims.' },
     ],
-    parameters: [
-      {
-        id: 'baselineMethod',
-        label: 'Baseline method',
-        type: 'select',
-        defaultValue: 'Asymmetric LS',
-        options: ['Asymmetric LS', 'Polynomial', 'Rolling Ball', 'None'],
-        affectedStepIds: ['baseline'],
-      },
-      {
-        id: 'smoothingMethod',
-        label: 'Smoothing method',
-        type: 'select',
-        defaultValue: 'Savitzky-Golay',
-        options: ['Savitzky-Golay', 'Moving Average', 'None'],
-        affectedStepIds: ['smooth'],
-      },
-      {
-        id: 'smoothingWindow',
-        label: 'Smoothing window',
-        type: 'number',
-        defaultValue: 7,
-        min: 1,
-        max: 51,
-        step: 2,
-        affectedStepIds: ['smooth'],
-      },
-      {
-        id: 'peakThreshold',
-        label: 'Peak threshold',
-        type: 'range',
-        defaultValue: 0.12,
-        min: 0.01,
-        max: 1,
-        step: 0.01,
-        affectedStepIds: ['peaks'],
-      },
-      {
-        id: 'minimumProminence',
-        label: 'Minimum prominence',
-        type: 'number',
-        defaultValue: 0.08,
-        min: 0,
-        max: 1,
-        step: 0.01,
-        affectedStepIds: ['peaks'],
-      },
-      {
-        id: 'fitModel',
-        label: 'Fit model',
-        type: 'select',
-        defaultValue: 'Pseudo-Voigt',
-        options: ['Pseudo-Voigt', 'Gaussian', 'Lorentzian'],
-        affectedStepIds: ['fit'],
-      },
-      {
-        id: 'referenceDatabase',
-        label: 'Reference database',
-        type: 'select',
-        defaultValue: 'ICSD',
-        options: ['ICSD', 'PDF-4+', 'Local Reference'],
-        affectedStepIds: ['match'],
-      },
-      {
-        id: 'twoThetaMin',
-        label: '2theta min',
-        type: 'number',
-        defaultValue: 10,
-        min: 0,
-        max: 180,
-        step: 0.1,
-        unit: 'deg',
-        affectedStepIds: ['baseline', 'peaks', 'match'],
-      },
-      {
-        id: 'twoThetaMax',
-        label: '2theta max',
-        type: 'number',
-        defaultValue: 80,
-        min: 0,
-        max: 180,
-        step: 0.1,
-        unit: 'deg',
-        affectedStepIds: ['baseline', 'peaks', 'match'],
-      },
-      {
-        id: 'wavelength',
-        label: 'Wavelength',
-        type: 'text',
-        defaultValue: 'Cu Kα 1.5406 Å',
-        affectedStepIds: ['match', 'refinement'],
-      },
-    ],
+    parameters: getWorkspaceParameterControls('xrd'),
     reprocessLabel: 'Reprocess Peaks',
   },
   xps: {
@@ -196,70 +87,15 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       { id: 'element-analysis', label: 'Element Analysis' },
     ],
     pipeline: [
-      { id: 'background-subtraction', label: 'Baseline', summary: 'Background model prepared for core-level regions.' },
-      { id: 'smoothing', label: 'Smooth', summary: 'Signal smoothing applied before component review.' },
-      { id: 'peak-detection', label: 'Peak Detect', summary: 'Candidate photoelectron peaks detected.' },
-      { id: 'peak-fitting', label: 'Fit Peaks', summary: 'Component fit state recorded for review.' },
-      { id: 'chemical-state-assignment', label: 'Assign Peaks', summary: 'Oxidation-state assignment remains boundary-aware.' },
-      { id: 'review', label: 'Boundary', summary: 'Surface-state interpretation is reviewed against validation limits.' },
+      { id: 'calibration', label: 'Calibrate', summary: 'Binding-energy calibration is recorded before fitting.' },
+      { id: 'background-subtraction', label: 'Baseline', summary: 'Background model is prepared for core-level regions.' },
+      { id: 'display-preview', label: 'Preview', summary: 'Optional display smoothing never changes fitting evidence.' },
+      { id: 'peak-detection', label: 'Peak Detect', summary: 'Candidate photoelectron peaks are detected.' },
+      { id: 'peak-fitting', label: 'Fit Peaks', summary: 'Component fitting state is recorded for review.' },
+      { id: 'assignment', label: 'Assign Peaks', summary: 'Oxidation-state assignment remains surface-evidence bounded.' },
+      { id: 'claim-boundary', label: 'Boundary', summary: 'Surface interpretation is checked against validation limits.' },
     ],
-    parameters: [
-      {
-        id: 'energyCalibrationReference',
-        label: 'Energy calibration reference',
-        type: 'select',
-        defaultValue: XPS_CALIBRATION_DEFAULT,
-        options: XPS_CALIBRATION_OPTIONS,
-        affectedStepIds: ['background-subtraction', 'peak-fitting'],
-      },
-      {
-        id: 'backgroundMethod',
-        label: 'Background method',
-        type: 'select',
-        defaultValue: 'Shirley',
-        options: ['Shirley', 'Tougaard', 'Linear', 'None'],
-        affectedStepIds: ['background-subtraction'],
-      },
-      {
-        id: 'smoothingMethod',
-        label: 'Smoothing method',
-        type: 'select',
-        defaultValue: 'Savitzky-Golay',
-        options: ['Savitzky-Golay', 'Moving Average', 'None'],
-        affectedStepIds: ['smoothing'],
-      },
-      {
-        id: 'regionSelection',
-        label: 'Region selection',
-        type: 'select',
-        defaultValue: 'Survey',
-        options: XPS_REGION_OPTIONS,
-        affectedStepIds: ['peak-detection', 'peak-fitting'],
-      },
-      {
-        id: 'peakModel',
-        label: 'Peak model',
-        type: 'select',
-        defaultValue: 'Gaussian-Lorentzian',
-        options: ['Gaussian-Lorentzian', 'Voigt', 'Gaussian'],
-        affectedStepIds: ['peak-fitting'],
-      },
-      {
-        id: 'fittingConstraint',
-        label: 'Fitting constraint (Not active)',
-        type: 'checkbox-group',
-        defaultValue: ['FWHM linked', 'spin-orbit split'],
-        options: ['FWHM linked', 'spin-orbit split', 'area ratio lock'],
-        affectedStepIds: ['peak-fitting', 'chemical-state-assignment'],
-      },
-      {
-        id: 'chargeCorrection',
-        label: 'Charge correction (Not active)',
-        type: 'toggle',
-        defaultValue: true,
-        affectedStepIds: ['background-subtraction', 'chemical-state-assignment'],
-      },
-    ],
+    parameters: getWorkspaceParameterControls('xps'),
     reprocessLabel: 'Fit Region',
   },
   ftir: {
@@ -279,78 +115,14 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       { id: 'assignment', label: 'Assignment' },
     ],
     pipeline: [
-      { id: 'baseline-correction', label: 'Baseline', summary: 'Baseline correction prepared for band review.' },
-      { id: 'smoothing', label: 'Smooth', summary: 'Spectrum smoothing applied before band detection.' },
-      { id: 'band-detection', label: 'Band Detect', summary: 'Bands detected for functional evidence.' },
-      { id: 'band-assignment', label: 'Assign Bands', summary: 'Band assignments linked to project evidence.' },
-      { id: 'review', label: 'Boundary', summary: 'Functional-group interpretation is reviewed against project limits.' },
+      { id: 'calibration', label: 'Correct', summary: 'ATR and atmospheric corrections are tracked explicitly.' },
+      { id: 'baseline-correction', label: 'Baseline', summary: 'Baseline correction is prepared for band review.' },
+      { id: 'smoothing', label: 'Smooth', summary: 'Spectrum smoothing is applied before band detection.' },
+      { id: 'band-detection', label: 'Band Detect', summary: 'Bands are detected for functional evidence.' },
+      { id: 'band-assignment', label: 'Assign Bands', summary: 'Band assignments are linked to reference provenance.' },
+      { id: 'claim-boundary', label: 'Boundary', summary: 'Functional-group interpretation is checked against project limits.' },
     ],
-    parameters: [
-      {
-        id: 'baselineMethod',
-        label: 'Baseline method',
-        type: 'select',
-        defaultValue: 'Rubberband',
-        options: ['Rubberband', 'ALS', 'Polynomial', 'None'],
-        affectedStepIds: ['baseline-correction'],
-      },
-      {
-        id: 'smoothingMethod',
-        label: 'Smoothing method',
-        type: 'select',
-        defaultValue: 'Savitzky-Golay',
-        options: ['Savitzky-Golay', 'Moving Average', 'None'],
-        affectedStepIds: ['smoothing'],
-      },
-      {
-        id: 'bandThreshold',
-        label: 'Band threshold',
-        type: 'range',
-        defaultValue: 0.18,
-        min: 0.01,
-        max: 1,
-        step: 0.01,
-        affectedStepIds: ['band-detection'],
-      },
-      {
-        id: 'wavenumberMax',
-        label: 'Wavenumber max',
-        type: 'number',
-        defaultValue: 4000,
-        min: 400,
-        max: 4500,
-        step: 10,
-        unit: 'cm⁻¹',
-        affectedStepIds: ['baseline-correction', 'band-detection'],
-      },
-      {
-        id: 'wavenumberMin',
-        label: 'Wavenumber min',
-        type: 'number',
-        defaultValue: 400,
-        min: 100,
-        max: 4000,
-        step: 10,
-        unit: 'cm⁻¹',
-        affectedStepIds: ['baseline-correction', 'band-detection'],
-      },
-      {
-        id: 'assignmentLibrary',
-        label: 'Assignment library',
-        type: 'select',
-        defaultValue: 'Functional groups',
-        options: ['Functional groups', 'Surface hydroxyl', 'Metal-oxygen', 'Custom'],
-        affectedStepIds: ['band-assignment', 'review'],
-      },
-      {
-        id: 'normalization',
-        label: 'Normalization',
-        type: 'select',
-        defaultValue: 'None',
-        options: ['None', 'Min-max', 'Area', 'Vector'],
-        affectedStepIds: ['smoothing', 'band-detection'],
-      },
-    ],
+    parameters: getWorkspaceParameterControls('ftir'),
     reprocessLabel: 'Detect Bands',
   },
   raman: {
@@ -370,87 +142,15 @@ export const TECHNIQUE_WORKSPACE_CONFIG: Record<TechniqueWorkspaceId, TechniqueW
       { id: 'assignment', label: 'Assignment' },
     ],
     pipeline: [
-      { id: 'baseline-correction', label: 'Baseline', summary: 'Baseline correction prepared for mode review.' },
-      { id: 'smoothing', label: 'Smooth', summary: 'Signal smoothing applied before peak detection.' },
-      { id: 'peak-detection', label: 'Peak Detect', summary: 'Raman peaks detected for mode assignment.' },
-      { id: 'mode-assignment', label: 'Assign Modes', summary: 'Vibrational modes linked to project interpretation.' },
-      { id: 'review', label: 'Boundary', summary: 'Mode interpretation is reviewed against claim boundaries.' },
+      { id: 'calibration', label: 'Calibrate', summary: 'Raman-shift calibration is recorded with its reference.' },
+      { id: 'artifact-removal', label: 'Artifacts', summary: 'Cosmic-ray and fluorescence handling is explicit.' },
+      { id: 'baseline-correction', label: 'Baseline', summary: 'Baseline correction is prepared for mode review.' },
+      { id: 'smoothing', label: 'Smooth', summary: 'Signal smoothing is applied before peak detection.' },
+      { id: 'peak-detection', label: 'Peak Detect', summary: 'Raman peaks are detected for mode assignment.' },
+      { id: 'mode-assignment', label: 'Assign Modes', summary: 'Vibrational modes retain library and policy provenance.' },
+      { id: 'claim-boundary', label: 'Boundary', summary: 'Mode interpretation is checked against scientific boundaries.' },
     ],
-    parameters: [
-      {
-        id: 'baselineMethod',
-        label: 'Baseline method',
-        type: 'select',
-        defaultValue: 'Polynomial',
-        options: ['Polynomial', 'ALS', 'Rolling Ball', 'None'],
-        affectedStepIds: ['baseline-correction'],
-      },
-      {
-        id: 'polynomialOrder',
-        label: 'Polynomial order',
-        type: 'number',
-        defaultValue: 3,
-        min: 1,
-        max: 8,
-        step: 1,
-        affectedStepIds: ['baseline-correction'],
-      },
-      {
-        id: 'smoothingMethod',
-        label: 'Smoothing method',
-        type: 'select',
-        defaultValue: 'Moving Average',
-        options: ['Moving Average', 'Savitzky-Golay', 'None'],
-        affectedStepIds: ['smoothing'],
-      },
-      {
-        id: 'peakThreshold',
-        label: 'Peak threshold',
-        type: 'range',
-        defaultValue: 0.14,
-        min: 0.01,
-        max: 1,
-        step: 0.01,
-        affectedStepIds: ['peak-detection'],
-      },
-      {
-        id: 'ramanShiftMin',
-        label: 'Raman shift min (Not active)',
-        type: 'number',
-        defaultValue: 100,
-        min: 0,
-        max: 3200,
-        step: 10,
-        unit: 'cm⁻¹',
-        affectedStepIds: ['baseline-correction', 'peak-detection'],
-      },
-      {
-        id: 'ramanShiftMax',
-        label: 'Raman shift max (Not active)',
-        type: 'number',
-        defaultValue: 3200,
-        min: 100,
-        max: 4000,
-        step: 10,
-        unit: 'cm⁻¹',
-        affectedStepIds: ['baseline-correction', 'peak-detection'],
-      },
-      {
-        id: 'modeLibrary',
-        label: 'Mode library (Not active)',
-        type: 'select',
-        defaultValue: 'Ferrite modes',
-        options: ['Ferrite modes', 'Carbon bands', 'Oxide modes', 'Custom'],
-        affectedStepIds: ['mode-assignment', 'review'],
-      },
-      {
-        id: 'cosmicRayRemoval',
-        label: 'Cosmic ray removal (Not active)',
-        type: 'toggle',
-        defaultValue: true,
-        affectedStepIds: ['smoothing', 'peak-detection'],
-      },
-    ],
+    parameters: getWorkspaceParameterControls('raman'),
     reprocessLabel: 'Detect Modes',
   },
 };

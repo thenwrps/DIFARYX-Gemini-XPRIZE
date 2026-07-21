@@ -41,6 +41,7 @@ import {
   type TechniqueWorkspaceId,
   type TechniqueWorkspaceConfig,
 } from '../../data/techniqueWorkspaceContent';
+import { getWorkspaceParameterControls } from '../../data/parameterDefinitions';
 import { DEFAULT_XRD_PARAMETERS } from '../../config/xrdDefaults';
 import {
   XRD_BASELINE_METHOD_OPTIONS,
@@ -2010,12 +2011,23 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   }, [technique, mappedFeatureRows]);
 
   const handleElementSelect = (element: string) => {
+    const region = getElementRegionWindow(element)?.label ?? `${element} region`;
+    const regionControl = getWorkspaceParameterControls('xps', {
+      ...sessionState.parameters,
+      regionSelection: region,
+    }).find((control) => control.id === 'regionSelection');
+    if (regionControl) updateParameter(regionControl, region);
     setSelectedElement(element);
     setActiveCenterTab('element-analysis');
     setSessionState((prev) => addLog(prev, `[element] Focused ${element} core-level region from survey.`));
   };
 
   const handleBackToSurvey = () => {
+    const regionControl = getWorkspaceParameterControls('xps', {
+      ...sessionState.parameters,
+      regionSelection: 'Survey',
+    }).find((control) => control.id === 'regionSelection');
+    if (regionControl) updateParameter(regionControl, 'Survey');
     setSelectedElement(null);
     setActiveCenterTab(config.centerTabs[0].id);
   };
@@ -2075,6 +2087,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
         setParameterOverride(projectId, technique, control.id, value, 'workspace');
       }
 
+      const affectedStepIds = control.active ? control.affectedStepIds : [];
       const next = addLog(
         {
           ...prev,
@@ -2083,12 +2096,16 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
             [control.id]: value,
           },
           dirty: true,
-          pendingRecalculation: true,
+          pendingRecalculation: control.active ? true : prev.pendingRecalculation,
           autoMode: false,
-          lastAffectedStepIds: control.affectedStepIds,
-          pipelineStates: markAffectedSteps(prev.pipelineStates, control.affectedStepIds, 'active', 'pending'),
+          lastAffectedStepIds: affectedStepIds,
+          pipelineStates: control.active
+            ? markAffectedSteps(prev.pipelineStates, affectedStepIds, 'active', 'pending')
+            : prev.pipelineStates,
         },
-        `${control.label} changed; recalculation pending.`,
+        control.active
+          ? `${control.label} changed; recalculation pending.`
+          : `${control.label} stored with status stored_but_not_active; current results are unchanged.`,
       );
       return next;
     });
@@ -2126,9 +2143,12 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
   };
 
   const applyParameters = (overrideAffectedSteps?: string[]) => {
-    const stepsToMark = overrideAffectedSteps || (sessionState.lastAffectedStepIds.length > 0
-      ? sessionState.lastAffectedStepIds
-      : config.pipeline.slice(0, 3).map((step) => step.id));
+    const stepsToMark = overrideAffectedSteps ?? sessionState.lastAffectedStepIds;
+
+    if (stepsToMark.length === 0) {
+      setSessionState((prev) => addLog({ ...prev, dirty: false }, 'Stored inactive parameters; no processing step was affected.'));
+      return;
+    }
 
     setSessionState((prev) =>
       addLog(
@@ -3473,7 +3493,7 @@ export function TechniqueWorkspaceShell({ technique, mode = 'project', fileName,
                     showCalculated={false}
                     showResidual={false}
                     onChartClick={handleChartClick}
-                    isLoading={sessionState.pendingRecalculation}
+                    isLoading={technique === 'xrd' && xrdBackendLoading}
                   />
                 </div>
               </div>
@@ -4329,11 +4349,18 @@ function ParametersPanel({
     );
   }
 
+  const contextualParameters = React.useMemo(
+    () => config.id === 'xps'
+      ? getWorkspaceParameterControls('xps', sessionState.parameters)
+      : config.parameters,
+    [config.id, config.parameters, sessionState.parameters],
+  );
+
   // Sort parameters: if selectedStepId is active, put affected ones first
   const sortedParameters = React.useMemo(() => {
-    if (!selectedStepId) return config.parameters;
-    return config.parameters.filter((p) => p.affectedStepIds.includes(selectedStepId));
-  }, [config.parameters, selectedStepId]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!selectedStepId) return contextualParameters;
+    return contextualParameters.filter((p) => p.affectedStepIds.includes(selectedStepId));
+  }, [contextualParameters, selectedStepId]);
 
   return (
     <div className="space-y-2">
@@ -4346,6 +4373,7 @@ function ParametersPanel({
               value={sessionState.parameters[control.id] ?? control.defaultValue}
               onChange={onChange}
               onToggleCheckbox={onToggleCheckbox}
+              disabled={control.locked}
               highlighted={selectedStepId ? control.affectedStepIds.includes(selectedStepId) : false}
             />
           ))}

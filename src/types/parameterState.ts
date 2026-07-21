@@ -6,6 +6,7 @@
  */
 
 import type { TechniqueParameterValue } from '../data/techniqueWorkspaceContent';
+import type { CanonicalParameterContext } from '../data/parameterDefinitions';
 
 export type ParameterSource = 'workspace' | 'agent' | 'system';
 export type ParameterProvenanceSource = 'default' | 'user-adjusted' | 'agent-optimized' | 'locked';
@@ -49,6 +50,10 @@ export interface TechniqueParameterState {
   
   // Version tracking
   version: number;
+
+  /** Authoritative v3 context consumed by both Workspace and Agent. */
+  schemaVersion: string;
+  canonicalContext: CanonicalParameterContext;
 }
 
 /**

@@ -6,7 +6,16 @@
  */
 
 import type { TechniqueParameterValue, TechniqueWorkspaceId } from '../data/techniqueWorkspaceContent';
-import { getTechniqueWorkspaceConfig } from '../data/techniqueWorkspaceContent';
+import {
+  PARAMETER_SCHEMA_VERSION,
+  createCanonicalParameterContext,
+  getCanonicalDefaultValues,
+  getCanonicalParameterDefinitions,
+  getWorkspaceParameterControls,
+  migrateLegacyParameterValues,
+  type CanonicalParameterValue,
+  type ParameterSource as CanonicalParameterSource,
+} from '../data/parameterDefinitions';
 import type {
   TechniqueParameterState,
   ParameterSource,
@@ -14,6 +23,7 @@ import type {
   LegacyParameterOverrides,
 } from '../types/parameterState';
 
+const STORAGE_PREFIX_V3 = 'difaryx-canonical-parameter-context:v3';
 const STORAGE_PREFIX_V2 = 'difaryx-parameter-state:v2';
 const STORAGE_PREFIX_V1 = 'difaryx-workspace-parameter-overrides:v1';
 
@@ -33,7 +43,7 @@ export function getParameterStateStorageKey(
   datasetId?: string,
   sessionId?: string
 ): string {
-  const base = `${STORAGE_PREFIX_V2}:${projectId}:${technique}`;
+  const base = `${STORAGE_PREFIX_V3}:${projectId}:${technique}`;
   if (datasetId) return `${base}:${datasetId}`;
   if (sessionId) return `${base}:session:${sessionId}`;
   return base;
@@ -77,13 +87,74 @@ function getStorageKeyV1(projectId: string, technique: TechniqueWorkspaceId): st
  * Get default values for a technique from workspace config
  */
 function getDefaultValues(technique: TechniqueWorkspaceId): Record<string, TechniqueParameterValue> {
-  const config = getTechniqueWorkspaceConfig(technique);
-  if (!config) return {};
-  
-  return config.parameters.reduce<Record<string, TechniqueParameterValue>>((acc, control) => {
-    acc[control.id] = control.defaultValue;
-    return acc;
-  }, {});
+  const values = getCanonicalDefaultValues(technique, { workspaceOnly: true });
+  return Object.fromEntries(
+    Object.entries(values).filter((entry): entry is [string, TechniqueParameterValue] => entry[1] !== null),
+  );
+}
+
+function canonicalSource(source: ParameterSource): CanonicalParameterSource {
+  if (source === 'workspace') return 'user';
+  if (source === 'agent') return 'agent_inferred';
+  return 'system_default';
+}
+
+function coerceParameterValue(
+  technique: TechniqueWorkspaceId,
+  parameterId: string,
+  value: TechniqueParameterValue,
+): TechniqueParameterValue {
+  const definition = getCanonicalParameterDefinitions(technique).find((item) => item.id === parameterId);
+  if (!definition) return value;
+  if (definition.type === 'number' && typeof value === 'string' && value.trim() !== '') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : value;
+  }
+  if (definition.type === 'boolean' && typeof value === 'string') {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+  }
+  if (definition.type === 'multi_select' && typeof value === 'string') {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+  return value;
+}
+
+function buildCanonicalContext(
+  technique: TechniqueWorkspaceId,
+  datasetId: string | undefined,
+  values: Record<string, TechniqueParameterValue>,
+  source: ParameterSource,
+  migratedFrom?: string,
+) {
+  return createCanonicalParameterContext(technique, {
+    datasetId: datasetId ?? 'unscoped-dataset',
+    values: values as Record<string, CanonicalParameterValue>,
+    sources: Object.fromEntries(Object.keys(values).map((id) => [id, canonicalSource(source)])),
+    migratedFrom,
+  });
+}
+
+function synchronizeCanonicalContext(state: TechniqueParameterState) {
+  const sources = Object.fromEntries(
+    Object.keys(state.effectiveValues).map((id) => [
+      id,
+      Object.prototype.hasOwnProperty.call(state.overrides, id)
+        ? canonicalSource(state.parameterProvenance[id]?.updatedBy ?? state.lastUpdatedBy)
+        : 'system_default',
+    ]),
+  ) as Record<string, CanonicalParameterSource>;
+  return createCanonicalParameterContext(state.technique, {
+    datasetId: state.datasetId ?? state.canonicalContext?.datasetId ?? 'unscoped-dataset',
+    sourceFiles: state.canonicalContext?.sourceFiles ?? [],
+    values: state.effectiveValues as Record<string, CanonicalParameterValue>,
+    sources,
+    analysisMode: state.canonicalContext?.analysisMode.id ?? 'scientific-baseline',
+    now: state.updatedAt,
+    migratedFrom: state.canonicalContext?.provenance.migratedFrom,
+    processingProfileVersion: state.canonicalContext?.provenance.processingProfileVersion,
+    referenceSnapshotVersion: state.canonicalContext?.provenance.referenceSnapshotVersion,
+  });
 }
 
 /**
@@ -104,9 +175,7 @@ function migrateV1ToV2(
   try {
     const v1Overrides: LegacyParameterOverrides = JSON.parse(v1Data);
     const defaultValues = getDefaultValues(technique);
-    const config = getTechniqueWorkspaceConfig(technique);
-    
-    if (!config) return null;
+    const controls = getWorkspaceParameterControls(technique);
     
     // Map v1 label-based overrides to v2 id-based overrides
     const overrides: Record<string, TechniqueParameterValue> = {};
@@ -115,7 +184,7 @@ function migrateV1ToV2(
     
     Object.entries(v1Overrides).forEach(([label, value]) => {
       // Find control by label
-      const control = config.parameters.find(p => p.label === label);
+      const control = controls.find(p => p.label === label || p.label.replace(' (Not active)', '') === label);
       if (control) {
         overrides[control.id] = value;
         parameterProvenance[control.id] = {
@@ -142,6 +211,8 @@ function migrateV1ToV2(
       processingRequired: false,
       affectedStepIds: [],
       version: 1,
+      schemaVersion: PARAMETER_SCHEMA_VERSION,
+      canonicalContext: buildCanonicalContext(technique, datasetId, effectiveValues, 'workspace', 'workspace-overrides-v1'),
     };
     
     return state;
@@ -160,6 +231,7 @@ function createInitialState(
   datasetId?: string
 ): TechniqueParameterState {
   const defaultValues = getDefaultValues(technique);
+  const canonicalContext = buildCanonicalContext(technique, datasetId, defaultValues, 'system');
   
   return {
     projectId,
@@ -175,6 +247,51 @@ function createInitialState(
     processingRequired: false,
     affectedStepIds: [],
     version: 1,
+    schemaVersion: PARAMETER_SCHEMA_VERSION,
+    canonicalContext,
+  };
+}
+
+function getV2StorageKey(
+  projectId: string,
+  technique: TechniqueWorkspaceId,
+  datasetId?: string,
+  sessionId?: string,
+): string {
+  const base = `${STORAGE_PREFIX_V2}:${projectId}:${technique}`;
+  if (datasetId) return `${base}:${datasetId}`;
+  if (sessionId) return `${base}:session:${sessionId}`;
+  return base;
+}
+
+function migrateV2State(
+  state: Partial<TechniqueParameterState>,
+  projectId: string,
+  technique: TechniqueWorkspaceId,
+  datasetId?: string,
+  sessionId?: string,
+): TechniqueParameterState {
+  const defaultValues = getDefaultValues(technique);
+  const overrides = migrateLegacyParameterValues(technique, state.overrides ?? {}) as Record<string, TechniqueParameterValue>;
+  const effectiveValues = { ...defaultValues, ...overrides };
+  const updatedAt = state.updatedAt ?? new Date().toISOString();
+  return {
+    projectId,
+    technique,
+    datasetId,
+    sessionId,
+    defaultValues,
+    overrides,
+    effectiveValues,
+    lastUpdatedBy: state.lastUpdatedBy ?? 'system',
+    updatedAt,
+    parameterProvenance: state.parameterProvenance ?? {},
+    dirty: state.dirty ?? false,
+    processingRequired: state.processingRequired ?? false,
+    affectedStepIds: state.affectedStepIds ?? [],
+    version: (state.version ?? 0) + 1,
+    schemaVersion: PARAMETER_SCHEMA_VERSION,
+    canonicalContext: buildCanonicalContext(technique, datasetId, effectiveValues, state.lastUpdatedBy ?? 'system', 'parameter-state-v2'),
   };
 }
 
@@ -197,16 +314,31 @@ export function readParameterState(
   // Try to read v2 state
   if (data) {
     try {
-      const state: TechniqueParameterState = JSON.parse(data);
+      const parsed: Partial<TechniqueParameterState> = JSON.parse(data);
+      const state = parsed.schemaVersion === PARAMETER_SCHEMA_VERSION && parsed.canonicalContext
+        ? parsed as TechniqueParameterState
+        : migrateV2State(parsed, projectId, technique, datasetId, sessionId);
       
       // Ensure effectiveValues is up to date
       const defaultValues = getDefaultValues(technique);
       state.defaultValues = defaultValues;
       state.effectiveValues = { ...defaultValues, ...state.overrides };
+      state.canonicalContext = synchronizeCanonicalContext(state);
       
       return state;
     } catch (error) {
       console.warn(`Failed to parse v2 state for ${technique}:`, error);
+    }
+  }
+
+  const v2Data = window.localStorage.getItem(getV2StorageKey(projectId, technique, datasetId, sessionId));
+  if (v2Data) {
+    try {
+      const migrated = migrateV2State(JSON.parse(v2Data), projectId, technique, datasetId, sessionId);
+      writeParameterState(migrated);
+      return migrated;
+    } catch (error) {
+      console.warn(`Failed to migrate v2 parameter state for ${technique}:`, error);
     }
   }
   
@@ -231,6 +363,8 @@ export function writeParameterState(state: TechniqueParameterState): void {
   const key = getParameterStateStorageKey(state.projectId, state.technique, state.datasetId, state.sessionId);
   
   try {
+    state.schemaVersion = PARAMETER_SCHEMA_VERSION;
+    state.canonicalContext = synchronizeCanonicalContext(state);
     window.localStorage.setItem(key, JSON.stringify(state));
   } catch (error) {
     console.warn(`Failed to write parameter state for ${state.technique}:`, error);
@@ -328,9 +462,13 @@ export function setParameterOverride(
   scientificImpact?: string,
   datasetId?: string
 ): TechniqueParameterState {
+  value = coerceParameterValue(technique, parameterId, value);
   const state = readParameterState(projectId, technique, datasetId);
   const now = new Date().toISOString();
-  const config = getTechniqueWorkspaceConfig(technique);
+  const controls = getWorkspaceParameterControls(technique, {
+    ...state.effectiveValues,
+    [parameterId]: value,
+  });
   
   // Get previous value
   const previousValue = state.effectiveValues[parameterId];
@@ -362,14 +500,15 @@ export function setParameterOverride(
   state.lastUpdatedBy = source;
   state.updatedAt = now;
   state.dirty = true;
-  state.processingRequired = true;
+  state.processingRequired = false;
   
   // Get affected step IDs
-  if (config) {
-    const control = config.parameters.find(p => p.id === parameterId);
-    if (control) {
-      state.affectedStepIds = control.affectedStepIds;
-    }
+  const control = controls.find(p => p.id === parameterId);
+  if (control?.active) {
+    state.affectedStepIds = control.affectedStepIds;
+    state.processingRequired = true;
+  } else {
+    state.affectedStepIds = [];
   }
   
   state.version += 1;
@@ -390,10 +529,14 @@ export function setParameterOverrides(
 ): TechniqueParameterState {
   const state = readParameterState(projectId, technique, datasetId);
   const now = new Date().toISOString();
-  const config = getTechniqueWorkspaceConfig(technique);
+  const controls = getWorkspaceParameterControls(technique, {
+    ...state.effectiveValues,
+    ...overrides,
+  });
   const affectedStepIds = new Set<string>();
   
   Object.entries(overrides).forEach(([parameterId, value]) => {
+    value = coerceParameterValue(technique, parameterId, value);
     const previousValue = state.effectiveValues[parameterId];
     
     // Log change
@@ -413,11 +556,9 @@ export function setParameterOverrides(
     }
     
     // Collect affected step IDs
-    if (config) {
-      const control = config.parameters.find(p => p.id === parameterId);
-      if (control) {
-        control.affectedStepIds.forEach(id => affectedStepIds.add(id));
-      }
+    const control = controls.find(p => p.id === parameterId);
+    if (control?.active) {
+      control.affectedStepIds.forEach(id => affectedStepIds.add(id));
     }
   });
   
@@ -425,7 +566,7 @@ export function setParameterOverrides(
   state.lastUpdatedBy = source;
   state.updatedAt = now;
   state.dirty = true;
-  state.processingRequired = true;
+  state.processingRequired = affectedStepIds.size > 0;
   state.affectedStepIds = Array.from(affectedStepIds);
   state.version += 1;
   

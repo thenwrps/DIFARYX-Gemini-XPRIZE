@@ -31,8 +31,11 @@ export function ParameterControlField({
       }`}
     >
       <span className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide text-text-muted">
-        {control.label}
-        {control.unit && <span className="normal-case tracking-normal">{control.unit}</span>}
+        <span>{control.label}</span>
+        <span className="flex items-center gap-1 normal-case tracking-normal">
+          {!control.active && <span className="rounded bg-amber-50 px-1 py-0.5 text-[9px] text-amber-800">Stored only</span>}
+          {control.unit && <span>{control.unit}</span>}
+        </span>
       </span>
 
       {control.type === 'select' && (

@@ -1,4 +1,10 @@
 import { DEFAULT_PROJECT_ID, getLocalExperiments, type Technique } from './demoProjects';
+import {
+  PARAMETER_SCHEMA_VERSION,
+  lockCanonicalParameterContext,
+  type CanonicalParameterContext,
+  type CanonicalTechnique,
+} from './parameterDefinitions';
 
 export type ConditionCompletenessStatus =
   | 'missing'
@@ -55,6 +61,9 @@ export type ExperimentConditionLock = {
   userConfirmed: boolean;
   lockedAt?: string;
   completenessStatus: ConditionCompletenessStatus;
+  /** Reproducible per-technique snapshots shared by Workspace and Agent. */
+  parameterContexts?: Partial<Record<CanonicalTechnique, CanonicalParameterContext>>;
+  schemaVersion?: string;
 };
 
 export const PRIMARY_DEMO_CONDITION_LOCK: ExperimentConditionLock = {
@@ -87,6 +96,7 @@ export const PRIMARY_DEMO_CONDITION_LOCK: ExperimentConditionLock = {
   userConfirmed: true,
   lockedAt: '2026-04-29T17:30:00.000Z',
   completenessStatus: 'validation-limited',
+  schemaVersion: PARAMETER_SCHEMA_VERSION,
 };
 
 export const getPrimaryDemoConditionLock = (
@@ -134,6 +144,8 @@ export const createDraftExperimentConditionLock = (): ExperimentConditionLock =>
   },
   userConfirmed: false,
   completenessStatus: 'draft',
+  parameterContexts: {},
+  schemaVersion: PARAMETER_SCHEMA_VERSION,
 });
 
 export const evaluateExperimentConditionLock = (
@@ -180,6 +192,13 @@ export const lockExperimentConditions = (
     },
     userConfirmed: true,
     lockedAt,
+    schemaVersion: PARAMETER_SCHEMA_VERSION,
+    parameterContexts: Object.fromEntries(
+      Object.entries(lock.parameterContexts ?? {}).map(([technique, context]) => [
+        technique,
+        lockCanonicalParameterContext(context, lockedAt),
+      ]),
+    ),
   };
 
   return {
@@ -197,6 +216,23 @@ export const unlockExperimentConditions = (
     completenessStatus: 'draft',
   };
 };
+
+export const attachParameterContextToConditionLock = (
+  lock: ExperimentConditionLock,
+  context: CanonicalParameterContext,
+): ExperimentConditionLock => ({
+  ...lock,
+  schemaVersion: PARAMETER_SCHEMA_VERSION,
+  parameterContexts: {
+    ...(lock.parameterContexts ?? {}),
+    [context.technique]: context,
+  },
+});
+
+export const getConditionLockParameterContext = (
+  lock: ExperimentConditionLock | null | undefined,
+  technique: CanonicalTechnique,
+): CanonicalParameterContext | null => lock?.parameterContexts?.[technique] ?? null;
 
 export const getConditionLockStatusLabel = (
   lock?: ExperimentConditionLock | null,
@@ -337,11 +373,13 @@ export const getConditionLockSectionLines = (
   const required = validation.crossTechniqueRequired?.length
     ? validation.crossTechniqueRequired.join(', ')
     : 'not specified';
+  const snapshotTechniques = Object.keys(lock.parameterContexts ?? {});
 
   return [
     `Status: ${getConditionLockStatusLabel(lock)}`,
     'Locked by user',
     `Locked at: ${formatConditionLockTimestamp(lock)}`,
+    `Parameter schema: ${lock.schemaVersion ?? 'legacy'}; snapshots: ${snapshotTechniques.length ? snapshotTechniques.map((item) => item.toUpperCase()).join(', ') : 'legacy condition fields only'}.`,
     `Sample preparation: method ${synthesis.method ?? 'pending confirmation'}; calcination ${synthesis.calcinationTemperature ?? 'pending confirmation'}; atmosphere ${synthesis.atmosphere ?? 'pending confirmation'}.`,
     `Measurement: ${measurement.instrument ?? 'pending confirmation'}, ${measurement.radiationOrSource ?? 'pending confirmation'}, ${measurement.scanRange ?? 'pending confirmation'}; step size ${measurement.stepSize ?? 'pending confirmation'}.`,
     `Processing: baseline correction ${processing.baselineCorrection ?? 'pending confirmation'}; peak detection ${processing.peakDetection ?? 'pending confirmation'}; reference validation ${processing.referenceDatabase ?? 'pending'}.`,

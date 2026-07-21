@@ -633,6 +633,11 @@ export function Graph({
                 type="number"
                 domain={appliedXDomain}
                 reversed={settings.reversed}
+                tickFormatter={(value) => {
+                  const numeric = Number(value);
+                  if (!Number.isFinite(numeric)) return String(value);
+                  return Math.abs(numeric) >= 100 ? numeric.toFixed(0) : numeric.toFixed(1).replace(/\.0$/, '');
+                }}
               />
             )}
             {!hideAxes && (
@@ -771,8 +776,8 @@ export function Graph({
         </ResponsiveContainer>
         )}
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/65 text-[11px] font-semibold text-text-main" aria-live="polite">
-            Recalculating signal…
+          <div className="absolute right-3 top-3 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-800" aria-live="polite">
+            Processing signal…
           </div>
         )}
       </div>
@@ -812,6 +817,11 @@ export function Graph({
               type="number"
               domain={settings.range}
               reversed={settings.reversed}
+              tickFormatter={(value) => {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric)) return String(value);
+                return Math.abs(numeric) >= 100 ? numeric.toFixed(0) : numeric.toFixed(1).replace(/\.0$/, '');
+              }}
             />
           )}
           {!hideAxes && (
