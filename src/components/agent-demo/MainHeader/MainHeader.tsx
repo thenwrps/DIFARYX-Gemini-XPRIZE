@@ -1,7 +1,7 @@
 import React from 'react';
 import { Download, Plus } from 'lucide-react';
 
-type ModelMode = 'deterministic' | 'vertex-gemini' | 'gemma';
+type ModelMode = 'scientific-baseline' | 'gpt-5.6' | 'gemini-2.5-flash';
 type RunStatus = 'idle' | 'running' | 'complete';
 
 interface MainHeaderProps {

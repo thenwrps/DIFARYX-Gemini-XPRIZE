@@ -1,87 +1,74 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, CircleDot, Loader2 } from 'lucide-react';
+import {
+  BookOpen,
+  Brain,
+  CheckCircle2,
+  Database,
+  FlaskConical,
+  ShieldCheck,
+  Target,
+} from 'lucide-react';
 
-interface ExecutionStep {
-  number: number;
-  title: string;
-  status: 'pending' | 'running' | 'complete' | 'error';
-}
+export type ScientificStageId =
+  | 'objective'
+  | 'evidence'
+  | 'reasoning'
+  | 'validation'
+  | 'decision'
+  | 'memory';
+
+export const SCIENTIFIC_STAGES: Array<{
+  id: ScientificStageId;
+  label: string;
+  icon: React.ElementType;
+}> = [
+  { id: 'objective', label: 'Objective', icon: Target },
+  { id: 'evidence', label: 'Evidence', icon: Database },
+  { id: 'reasoning', label: 'Reasoning', icon: Brain },
+  { id: 'validation', label: 'Validation', icon: ShieldCheck },
+  { id: 'decision', label: 'Decision', icon: FlaskConical },
+  { id: 'memory', label: 'Memory', icon: BookOpen },
+];
 
 interface CompactWorkflowStepperProps {
-  steps: ExecutionStep[];
-  progressPercent: number;
+  activeStage: ScientificStageId;
+  onStageChange: (stage: ScientificStageId) => void;
+  completedThrough?: ScientificStageId;
 }
 
-const STEP_LABELS = [
-  'Dataset',
-  'Peaks',
-  'Candidates',
-  'Evaluation',
-  'Fusion',
-  'Interpretation',
-  'Discussion',
-] as const;
+export function CompactWorkflowStepper({
+  activeStage,
+  onStageChange,
+  completedThrough = 'objective',
+}: CompactWorkflowStepperProps) {
+  const completedIndex = SCIENTIFIC_STAGES.findIndex((stage) => stage.id === completedThrough);
 
-const STATUS_STYLES = {
-  complete: {
-    icon: CheckCircle2,
-    container: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    dot: 'bg-emerald-500',
-  },
-  running: {
-    icon: Loader2,
-    container: 'border-blue-300 bg-blue-50 text-blue-700',
-    dot: 'bg-blue-500',
-  },
-  error: {
-    icon: AlertTriangle,
-    container: 'border-amber-300 bg-amber-50 text-amber-700',
-    dot: 'bg-amber-500',
-  },
-  pending: {
-    icon: CircleDot,
-    container: 'border-slate-200 bg-white text-slate-500',
-    dot: 'bg-slate-400',
-  },
-};
-
-export function CompactWorkflowStepper({ steps, progressPercent }: CompactWorkflowStepperProps) {
   return (
-    <div className="relative rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-1">
-      <div className="flex flex-wrap gap-1 min-[1180px]:flex-nowrap">
-        {steps.map((step, index) => {
-          const style = STATUS_STYLES[step.status];
-          const Icon = style.icon;
-          const label = STEP_LABELS[index] ?? step.title;
-
+    <nav aria-label="Scientific review stages" className="border-b border-slate-200 bg-slate-50 px-3">
+      <ol className="grid grid-cols-6">
+        {SCIENTIFIC_STAGES.map((stage, index) => {
+          const Icon = stage.icon;
+          const isActive = stage.id === activeStage;
+          const isComplete = index < completedIndex;
           return (
-            <div
-              key={step.number}
-              className={`flex h-6 min-w-[72px] flex-1 items-center gap-1 rounded-full border px-1.5 text-[9px] transition-colors min-[1180px]:min-w-0 ${style.container}`}
-              title={step.title}
-            >
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} />
-              <span className="shrink-0 font-mono text-[8px] text-slate-500">
-                {String(step.number).padStart(2, '0')}
-              </span>
-              <span className="min-w-0 truncate font-semibold leading-none">
-                {label}
-              </span>
-              <Icon
-                size={10}
-                className={`ml-auto shrink-0 ${step.status === 'running' ? 'animate-spin' : ''}`}
-              />
-            </div>
+            <li key={stage.id}>
+              <button
+                type="button"
+                onClick={() => onStageChange(stage.id)}
+                aria-current={isActive ? 'step' : undefined}
+                className={`flex h-12 w-full items-center justify-center gap-1.5 border-b-2 px-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 ${
+                  isActive
+                    ? 'border-blue-600 bg-white text-blue-700'
+                    : 'border-transparent text-slate-600 hover:bg-white hover:text-slate-900'
+                }`}
+              >
+                {isComplete ? <CheckCircle2 size={14} className="text-emerald-600" /> : <Icon size={14} />}
+                <span>{stage.label}</span>
+              </button>
+            </li>
           );
         })}
-      </div>
-
-      <div className="absolute inset-x-2 bottom-0 h-px overflow-hidden rounded-full bg-slate-200">
-        <div
-          className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300"
-          style={{ width: `${progressPercent}%` }}
-        />
-      </div>
-    </div>
+      </ol>
+    </nav>
   );
 }

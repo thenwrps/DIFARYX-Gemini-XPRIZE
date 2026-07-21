@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Activity,
@@ -21,6 +21,7 @@ import {
   Play,
   Target,
   Terminal,
+  Upload,
 } from 'lucide-react';
 import { Graph } from '../components/ui/Graph';
 import { Card } from '../components/ui/Card';
@@ -71,8 +72,13 @@ import {
   selectXrdPhaseMatchSummary,
 } from '../data/xrdWorkflowHandoffSelectors';
 import { LeftSidebar } from '../components/agent-demo/LeftSidebar';
+import {
+  EvidenceIntakeDrawer,
+  StandaloneEvidenceEmptyState,
+} from '../components/agent-demo/EvidenceIntake/EvidenceIntake';
 import { MainHeader } from '../components/agent-demo/MainHeader';
 import { CenterColumn } from '../components/agent-demo/CenterColumn';
+import type { ScientificStageId } from '../components/agent-demo/CenterColumn/CompactWorkflowStepper';
 import { RightPanel } from '../components/agent-demo/RightPanel';
 import { MultiTechPopover } from '../components/agent-demo/MultiTechPopover';
 import { type EvidenceNode, type FusionResult, type PeakInput } from '../engines/fusionEngine';
@@ -84,8 +90,15 @@ import {
   getLatestExperimentConditionLock,
   unlockExperimentConditions,
   lockExperimentConditions,
+  attachParameterContextToConditionLock,
   type ExperimentConditionLock,
 } from '../data/experimentConditionLock';
+import {
+  createCanonicalParameterContext,
+  type AnalysisModeId,
+  type CanonicalTechnique,
+} from '../data/parameterDefinitions';
+import { readParameterState } from '../utils/parameterStateManager';
 import {
   type AgentEvidenceWorkspace,
   type TechniqueId,
@@ -115,6 +128,13 @@ import {
 } from '../runtime/difaryxRuntimeMode';
 import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
 import { createUploadedEvidenceRegistryProject } from '../utils/uploadedEvidenceProjectContext';
+import type { UploadedSignalRun } from '../data/uploadedSignalRuns';
+import {
+  buildAggregateUploadedSnapshot,
+  hasValidScientificObjective,
+  persistValidatedEvidenceRuns,
+  type StandaloneReviewMetadata,
+} from '../scientificReview/services/standaloneEvidenceIntakeService';
 import {
   getStoredWorkspaceMode,
   setWorkspaceMode,
@@ -138,7 +158,7 @@ import { sanitizeScientificWording } from '../utils/claimBoundaryPresentation';
 
 type TechniqueContext = Technique;
 type AgentMode = 'deterministic' | 'guided' | 'autonomous';
-type ModelMode = 'deterministic' | 'vertex-gemini' | 'gemma';
+type ModelMode = 'scientific-baseline' | 'gpt-5.6' | 'gemini-2.5-flash';
 type ExecutionMode = 'auto' | 'step';
 type ReasoningStepStatus = 'pending' | 'running' | 'complete';
 type RunStatus = 'idle' | 'running' | 'complete';
@@ -147,6 +167,15 @@ type GraphType = 'xrd' | 'xps' | 'ftir' | 'raman';
 type LogType = 'system' | 'tool' | 'success' | 'info';
 type ToolCallType = 'deterministic-tool' | 'approval-gate' | 'local-write';
 type ToolApprovalStatus = 'not-required' | 'approved' | 'gated' | 'pending';
+
+function scientificStageFromRun(status: RunStatus, currentStepIndex: number): ScientificStageId {
+  if (status === 'complete') return 'decision';
+  if (currentStepIndex < 0) return 'objective';
+  if (currentStepIndex <= 1) return 'evidence';
+  if (currentStepIndex <= 4) return 'reasoning';
+  if (currentStepIndex <= 5) return 'validation';
+  return 'decision';
+}
 
 type ExecutionLogEntry = {
   stamp: string;
@@ -161,7 +190,7 @@ type ToolTraceEntry = {
   toolName: string;
   displayName: string;
   callType: ToolCallType;
-  provider?: ModelMode;
+  provider?: ModelMode | 'deterministic';
   status: ToolStatus;
   argsSummary: string;
   resultSummary: string;
@@ -281,10 +310,18 @@ const normalizeAgentMode = (value: string | null): AgentMode => {
 };
 
 const MODEL_MODE_LABELS: Record<ModelMode, string> = {
-  deterministic: 'Deterministic Workflow',
-  'vertex-gemini': 'Model Layer Pending',
-  gemma: 'Open Model Pending',
+  'scientific-baseline': 'Scientific Baseline Mode',
+  'gpt-5.6': 'GPT-5.6 Scientific Reasoning',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
 };
+
+const toCanonicalAnalysisMode = (mode: ModelMode): AnalysisModeId => (
+  mode === 'gpt-5.6'
+    ? 'gpt-5.6-scientific'
+    : mode === 'gemini-2.5-flash'
+      ? 'gemini-2.5-flash'
+      : 'scientific-baseline'
+);
 
 const CONTEXT_ORDER: TechniqueContext[] = ['XRD', 'XPS', 'FTIR', 'Raman'];
 
@@ -824,7 +861,7 @@ function makeInitialState(
     mode,
     context,
     datasetId,
-    modelMode: 'deterministic',
+    modelMode: 'scientific-baseline',
     graphState: {
       showMarkers: false,
     },
@@ -1169,6 +1206,7 @@ import {
   createEvidenceBundleFromSnapshot,
   getEvidenceBundleBadgeLabel,
   getTechniqueCoverageFromBundle,
+  mergeEvidenceFilesIntoBundle,
 } from '../runtime/evidenceBundle';
 import {
   clearTechniqueParameterOverrides,
@@ -1431,7 +1469,11 @@ export function createDecisionResult(
   if (llmOutput) {
     const confidencePercent = Math.round(llmOutput.confidence * 100);
     metrics.push({ label: 'AI Confidence', value: `${confidencePercent}%`, tone: 'emerald' });
-    const providerName = llmOutput.metadata?.provider === 'vertex-gemini' ? 'Gemini' : llmOutput.metadata?.provider === 'gemma' ? 'Gemma' : 'Deterministic';
+    const providerName = llmOutput.metadata?.provider === 'gpt-5.6'
+      ? 'GPT-5.6'
+      : (llmOutput.metadata?.provider === 'gemini-2.5-flash' || llmOutput.metadata?.provider === 'vertex-gemini')
+        ? 'Gemini 2.5 Flash'
+        : 'Scientific Baseline Mode';
     metrics.push({ label: 'Provider', value: providerName, tone: 'violet' });
   } else {
     const dominantClaim = fusionResult.reasoningTrace.find(t => t.isDominant);
@@ -1631,8 +1673,9 @@ function UploadedAgentContext({ routeContext }: { routeContext: EvidenceRouteCon
 function withUploadedEvidenceContext(
   context: AgentContext,
   snapshot: ProjectEvidenceSnapshot,
+  runs: UploadedSignalRun[] = [],
 ): AgentContext {
-  if (snapshot.sourceMode !== 'user_uploaded' || !snapshot.activeDataset) return context;
+  if (!snapshot.activeDataset) return context;
 
   const dataset = snapshot.activeDataset;
   const technique = dataset.technique;
@@ -1657,9 +1700,29 @@ function withUploadedEvidenceContext(
     baselineData: undefined,
     peakMarkers,
   };
+  const runLayers = runs.map((run) => ({
+    technique: run.technique as Technique,
+    role: 'User-uploaded evidence',
+    status: run.evidenceQuality.canInterpret ? 'available' as const : 'pending' as const,
+    summary: `${run.fileName}: ${run.extractedFeatures.length} bounded features passed parser validation.`,
+    limitation: run.claimBoundary.join(' ') || 'Complementary validation remains required.',
+    claimContribution: `Provides uploaded ${run.technique} signal evidence for bounded review.`,
+    parameters: {},
+    hasGraphData: run.points.length > 0,
+    graphData: run.points,
+    graphType: run.technique.toLowerCase() as GraphType,
+    baselineData: undefined,
+    peakMarkers: run.extractedFeatures.map((feature) => ({
+      position: feature.position,
+      intensity: feature.intensity,
+      label: feature.label,
+    })),
+  }));
+  const activeUploadedLayers = runLayers.length > 0 ? runLayers : [uploadedLayer];
+  const uploadedTechniques = new Set(activeUploadedLayers.map((layer) => layer.technique));
   const evidenceLayers = [
-    uploadedLayer,
-    ...context.evidenceLayers.filter((layer) => layer.technique !== technique),
+    ...activeUploadedLayers,
+    ...context.evidenceLayers.filter((layer) => !uploadedTechniques.has(layer.technique)),
   ];
   const metricCards = [
     { label: 'Uploaded file', value: dataset.fileName, sublabel: snapshot.sampleIdentity },
@@ -1706,19 +1769,12 @@ export default function AgentDemo() {
     searchParams,
     storedMode: getStoredWorkspaceMode(),
   });
-  const hasExplicitDemoProject = Boolean(searchParams.get('project'));
-  const effectiveWorkspaceMode = routeContext.effectiveWorkspaceMode;
+  const standaloneStart = !searchParams.get('project') && !routeContext.hasEvidenceContext;
 
-  // Show empty state only if user mode with no uploaded evidence and no explicit demo project
-  if (effectiveWorkspaceMode === 'user' && !hasExplicitDemoProject && !routeContext.isUploadedContext) {
-    return <AgentUserWorkspaceEmptyState email={user?.email} />;
-  }
-
-  // Pass routeContext to AgentDemoContent for uploaded evidence integration
-  return <AgentDemoContent routeContext={routeContext} />;
+  return <AgentDemoContent routeContext={routeContext} standaloneStart={standaloneStart} />;
 }
 
-function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext }) {
+function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: EvidenceRouteContext; standaloneStart: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -1750,6 +1806,17 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
   const [approvalAction, setApprovalAction] = useState<ApprovalActionPreview | null>(null);
   const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false);
   const [moreDetailsOpen, setMoreDetailsOpen] = useState(false);
+  const [activeScientificStage, setActiveScientificStage] = useState<ScientificStageId>('objective');
+  const [intakeOpen, setIntakeOpen] = useState(false);
+  const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
+  const [queueVersion, setQueueVersion] = useState(0);
+  const [intakeRuns, setIntakeRuns] = useState<UploadedSignalRun[]>([]);
+  const [intakeBundle, setIntakeBundle] = useState<ReturnType<typeof createEvidenceBundleFromSnapshot> | null>(null);
+  const [standaloneMetadata, setStandaloneMetadata] = useState<StandaloneReviewMetadata>({
+    objective: '',
+    materialSystem: '',
+    decisionRequired: '',
+  });
   const runningGuardRef = useRef(false);
   const runTokenRef = useRef(0);
 
@@ -1828,21 +1895,27 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
 
   // For uploaded evidence, getProjectEvidenceSnapshot handles it directly
   const initialEvidenceSnapshot = useMemo(
-    () => getProjectEvidenceSnapshot(isUploadedContext ? null : agentState.projectId, {
-      source: routeContext.source,
-      analysisSessionId: routeContext.sessionId,
-      uploadedRunId: routeContext.uploadedRunId,
-      driveFileId: routeContext.driveFileId,
-      runtimeMode,
-      deferStoredContext: !isUploadedContext,
-    }),
-    [isUploadedContext, agentState.projectId, runtimeMode, routeContext],
+    () => intakeRuns.length > 0
+      ? buildAggregateUploadedSnapshot(
+          intakeRuns,
+          standaloneMetadata,
+          standaloneStart || isUploadedContext ? null : getProject(agentState.projectId),
+        )
+      : getProjectEvidenceSnapshot(isUploadedContext ? null : agentState.projectId, {
+          source: routeContext.source,
+          analysisSessionId: routeContext.sessionId,
+          uploadedRunId: routeContext.uploadedRunId,
+          driveFileId: routeContext.driveFileId,
+          runtimeMode,
+          deferStoredContext: !isUploadedContext,
+        }),
+    [intakeRuns, standaloneMetadata, standaloneStart, isUploadedContext, agentState.projectId, runtimeMode, routeContext],
   );
   const [evidenceSnapshot, setEvidenceSnapshot] = useState(initialEvidenceSnapshot);
 
   React.useEffect(() => {
     setEvidenceSnapshot(initialEvidenceSnapshot);
-    if (isUploadedContext) return;
+    if (isUploadedContext || intakeRuns.length > 0) return;
 
     return runWhenIdle(() => {
       setEvidenceSnapshot(getProjectEvidenceSnapshot(agentState.projectId, {
@@ -1853,11 +1926,16 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         runtimeMode,
       }));
     });
-  }, [initialEvidenceSnapshot, isUploadedContext, agentState.projectId, runtimeMode, routeContext]);
+  }, [initialEvidenceSnapshot, isUploadedContext, intakeRuns.length, agentState.projectId, runtimeMode, routeContext]);
 
-  // For uploaded context, create safe registry project from evidence snapshot
-  const registryProject = isUploadedContext
-    ? createUploadedEvidenceRegistryProject(evidenceSnapshot)
+  const hasUploadedReview = isUploadedContext || intakeRuns.length > 0;
+  const baseRegistryProject = standaloneStart || isUploadedContext ? null : getRegistryProject(agentState.projectId);
+  const registryProject = hasUploadedReview
+    ? createUploadedEvidenceRegistryProject(evidenceSnapshot, {
+        runs: intakeRuns,
+        metadata: standaloneMetadata,
+        baseProject: baseRegistryProject,
+      })
     : getRegistryProject(agentState.projectId);
 
   const currentProject = registryProject._raw;
@@ -1874,12 +1952,8 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     ? getGoogleConnectedShellState()
     : getDefaultConnectedAccountState();
 
-  // Bundle gating: only create bundle when appropriate (not for uploaded evidence)
   const evidenceBundle = useMemo(() => {
-    // Don't create bundle for uploaded evidence context
-    if (isUploadedContext) {
-      return null;
-    }
+    if (intakeBundle) return intakeBundle;
 
     const availableTechniques = evidenceSnapshot.availableTechniques ?? [];
     const techniqueCount = availableTechniques.length;
@@ -1892,7 +1966,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     };
 
     // Only create bundle if gating logic approves
-    const shouldCreate = techniqueCount >= 2 || context.hasDemoPreloadedBundle;
+    const shouldCreate = hasUploadedReview ? techniqueCount >= 1 : techniqueCount >= 2 || context.hasDemoPreloadedBundle;
     if (!shouldCreate) {
       return null;
     }
@@ -1902,7 +1976,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       lifecycleState: 'created',
       creationReason: context.hasDemoPreloadedBundle ? 'demo_preloaded' : 'agent_requested_evidence_package',
     });
-  }, [isUploadedContext, evidenceSnapshot, searchParams, currentProject.id]);
+  }, [intakeBundle, evidenceSnapshot, searchParams, currentProject.id, hasUploadedReview]);
 
   const bundleTechniqueCoverage = useMemo(
     () => evidenceBundle ? getTechniqueCoverageFromBundle(evidenceBundle) : [],
@@ -1913,10 +1987,10 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     [agentState.context, agentState.projectId],
   );
   const selectedOption = useMemo(
-    () => isUploadedContext && evidenceSnapshot.activeDataset
+    () => hasUploadedReview && evidenceSnapshot.activeDataset
       ? { project: currentProject, dataset: evidenceSnapshot.activeDataset }
       : getDatasetOption(agentState.context, agentState.datasetId, agentState.projectId),
-    [isUploadedContext, evidenceSnapshot.activeDataset, currentProject, agentState.context, agentState.datasetId, agentState.projectId],
+    [hasUploadedReview, evidenceSnapshot.activeDataset, currentProject, agentState.context, agentState.datasetId, agentState.projectId],
   );
   const selectedDataset = selectedOption.dataset;
   const selectedProject = currentProject;
@@ -2117,6 +2191,19 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     agentState.reasoningState.currentStepIndex < 0
       ? 0
       : Math.min(100, ((agentState.reasoningState.currentStepIndex + 1) / stages.length) * 100);
+  const completedScientificStage: ScientificStageId =
+    activeScientificStage === 'memory' && agentState.reasoningState.status === 'complete'
+      ? 'memory'
+      : scientificStageFromRun(agentState.reasoningState.status, agentState.reasoningState.currentStepIndex);
+  useEffect(() => {
+    if (agentState.reasoningState.status === 'running') {
+      setActiveScientificStage(scientificStageFromRun(agentState.reasoningState.status, agentState.reasoningState.currentStepIndex));
+    } else if (agentState.reasoningState.status === 'complete') {
+      setActiveScientificStage('decision');
+    } else if (agentState.reasoningState.currentStepIndex < 0) {
+      setActiveScientificStage('objective');
+    }
+  }, [agentState.reasoningState.status, agentState.reasoningState.currentStepIndex]);
   const templateMode = normalizeNotebookTemplateMode(searchParams.get('template'));
   const evidenceRouteSearch = isUploadedContext ? buildEvidenceRouteSearch(routeContext) : '';
   const evidenceRouteSuffix = evidenceRouteSearch ? `&${evidenceRouteSearch}` : '';
@@ -2221,7 +2308,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     xrdAnalysis: ReturnType<typeof runXrdPhaseIdentificationAgent> | null,
     toolTrace: ToolTraceEntry[],
   ): Promise<{ output: ReasoningOutput | null; fallbackUsed: boolean }> {
-    if (modelMode === 'deterministic') {
+    if (modelMode === 'scientific-baseline') {
       return { output: null, fallbackUsed: false };
     }
 
@@ -2266,6 +2353,18 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         mcpToolTrace,
         xpsElementEvidence,
       );
+      const canonicalTechnique = context.toLowerCase() as CanonicalTechnique;
+      const sharedParameterState = readParameterState(project.id, canonicalTechnique);
+      packet.analysisMode = toCanonicalAnalysisMode(modelMode);
+      packet.parameterContext = createCanonicalParameterContext(canonicalTechnique, {
+        datasetId: dataset.id,
+        sourceFiles: [{ filename: dataset.fileName, sha256: null, role: 'primary' }],
+        values: sharedParameterState.effectiveValues,
+        analysisMode: packet.analysisMode,
+        migratedFrom: sharedParameterState.schemaVersion,
+        processingProfileVersion: sharedParameterState.canonicalContext.provenance.processingProfileVersion,
+        referenceSnapshotVersion: sharedParameterState.canonicalContext.provenance.referenceSnapshotVersion,
+      });
 
       const response = await callReasoningAPI({
         packet,
@@ -2527,6 +2626,13 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       createdAt: new Date().toISOString(),
       mission: missionText.trim() || DEFAULT_MISSION,
       workspaceParameters: workspaceParameters,
+      analysisMode: toCanonicalAnalysisMode(agentState.modelMode),
+      parameterContext: createCanonicalParameterContext(context.toLowerCase() as CanonicalTechnique, {
+        datasetId: option.dataset.id,
+        sourceFiles: [{ filename: option.dataset.fileName, sha256: null, role: 'primary' }],
+        values: readParameterState(option.project.id, context.toLowerCase() as CanonicalTechnique).effectiveValues,
+        analysisMode: toCanonicalAnalysisMode(agentState.modelMode),
+      }),
       outputs: {
         phase: decision.primaryResult,
         confidence: llmOutput ? Math.round(llmOutput.confidence * 100) : 85, // Placeholder - fusionEngine doesn't use numeric confidence
@@ -2547,7 +2653,10 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     // final user-facing wording. Validation gaps = deterministic âˆª Vertex.
     const reasoningProvider: ReasoningProvider =
       llmOutput &&
-      (llmOutput.metadata?.provider === 'vertex-gemini' || llmOutput.metadata?.provider === 'gemma')
+      (llmOutput.metadata?.provider === 'gpt-5.6'
+        || llmOutput.metadata?.provider === 'gemini-2.5-flash'
+        || llmOutput.metadata?.provider === 'vertex-gemini'
+        || llmOutput.metadata?.provider === 'gemma')
         ? 'vertex'
         : 'deterministic';
     const missingValidation = Array.from(
@@ -2592,7 +2701,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     });
     appendLog({
       stamp: '[decision]',
-      message: `${CONTEXT_CONFIG[context].decisionKind} prepared: ${decision.conclusion}${llmOutput ? ` [AI-Assisted: ${llmOutput.metadata?.provider === 'vertex-gemini' ? 'Gemini' : llmOutput.metadata?.provider === 'gemma' ? 'Gemma' : 'Deterministic'}]` : ''}`,
+      message: `${CONTEXT_CONFIG[context].decisionKind} prepared: ${decision.conclusion}${llmOutput ? ` [AI-Assisted: ${llmOutput.metadata?.model ?? llmOutput.metadata?.provider}]` : ''}`,
       type: 'success',
     });
   };
@@ -2822,7 +2931,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       let llmOutput: ReasoningOutput | null = null;
       let fallbackUsed = false;
 
-      if (agentState.modelMode !== 'deterministic') {
+      if (agentState.modelMode !== 'scientific-baseline') {
         appendLog({
           stamp: `[${formatStamp(config.stages.length)}]`,
           message: `LLM Reasoning (${MODEL_MODE_LABELS[agentState.modelMode]}): Analyzing evidence packet...`,
@@ -2985,7 +3094,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         let llmOutput: ReasoningOutput | null = null;
         let fallbackUsed = false;
 
-        if (agentState.modelMode !== 'deterministic') {
+        if (agentState.modelMode !== 'scientific-baseline') {
           appendLog({
             stamp: `[${formatStamp(stages.length)}]`,
             message: `LLM Reasoning (${MODEL_MODE_LABELS[agentState.modelMode]}): Analyzing evidence packet...`,
@@ -3308,7 +3417,21 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
 
   const handleLockConditions = () => {
     if (!experimentConditionLock) return;
-    const locked = lockExperimentConditions(experimentConditionLock);
+    const withCanonicalSnapshots = getProjectTechniques(currentProject).reduce((lock, technique) => {
+      const techniqueId = technique.toLowerCase() as CanonicalTechnique;
+      const dataset = getProjectDatasets(currentProject.id).find((item) => item.technique === technique);
+      const sharedState = readParameterState(currentProject.id, techniqueId);
+      const context = createCanonicalParameterContext(techniqueId, {
+        datasetId: dataset?.id ?? sharedState.canonicalContext.datasetId,
+        sourceFiles: dataset ? [{ filename: dataset.fileName, sha256: null, role: 'primary' }] : [],
+        values: sharedState.effectiveValues,
+        analysisMode: toCanonicalAnalysisMode(agentState.modelMode),
+        processingProfileVersion: sharedState.canonicalContext.provenance.processingProfileVersion,
+        referenceSnapshotVersion: sharedState.canonicalContext.provenance.referenceSnapshotVersion,
+      });
+      return attachParameterContextToConditionLock(lock, context);
+    }, experimentConditionLock);
+    const locked = lockExperimentConditions(withCanonicalSnapshots);
     setExperimentConditionLock(locked);
   };
 
@@ -3353,7 +3476,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         workspaceParameters,
         isLocked: isConditionLocked,
       });
-      return isUploadedContext ? withUploadedEvidenceContext(baseContext, evidenceSnapshot) : baseContext;
+      return hasUploadedReview ? withUploadedEvidenceContext(baseContext, evidenceSnapshot, intakeRuns) : baseContext;
     },
     [
       currentProject,
@@ -3362,8 +3485,9 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       includedTechniques,
       workspaceParameters,
       isConditionLocked,
-      isUploadedContext,
+      hasUploadedReview,
       evidenceSnapshot,
+      intakeRuns,
     ],
   );
   const focusedEvidenceSource = useMemo(
@@ -3486,6 +3610,67 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     }
   };
 
+  const openEvidenceIntake = (files: File[] = []) => {
+    setQueuedFiles(files);
+    setQueueVersion((version) => version + 1);
+    setIntakeOpen(true);
+  };
+
+  const handleAddValidatedEvidence = (newRuns: UploadedSignalRun[]) => {
+    if (newRuns.length === 0) return;
+    const baseProject = standaloneStart || isUploadedContext ? null : getProject(agentState.projectId);
+    const effectiveMetadata: StandaloneReviewMetadata = {
+      objective: standaloneMetadata.objective.trim() || baseProject?.objective || currentProject.objective,
+      materialSystem: standaloneMetadata.materialSystem.trim() || baseProject?.material || currentProject.material,
+      decisionRequired: standaloneMetadata.decisionRequired.trim()
+        || baseProject?.nextDecisions[0]?.description
+        || currentProject.nextDecisions[0]?.description
+        || 'Determine the next validation experiment',
+    };
+    const allRuns = [...intakeRuns, ...newRuns].filter((run, index, runs) =>
+      runs.findIndex((candidate) => candidate.id === run.id) === index,
+    );
+    persistValidatedEvidenceRuns(newRuns, {
+      projectId: baseProject?.id,
+      projectName: baseProject?.name,
+    });
+    const nextSnapshot = buildAggregateUploadedSnapshot(allRuns, effectiveMetadata, baseProject);
+    const nextBundle = createEvidenceBundleFromSnapshot(nextSnapshot, {
+      lifecycleState: 'created',
+      creationReason: baseProject ? 'agent_requested_evidence_package' : 'user_selected_multiple_files',
+    });
+    setStandaloneMetadata(effectiveMetadata);
+    setEvidenceSnapshot(nextSnapshot);
+    setIntakeBundle((current) => current
+      ? mergeEvidenceFilesIntoBundle(nextBundle, current.files.filter((file) => file.status !== 'missing_required'))
+      : nextBundle,
+    );
+    setIntakeRuns(allRuns);
+    const latest = newRuns[newRuns.length - 1];
+    if (latest) {
+      setAgentState((current) => ({
+        ...resetRunState(current, latest.technique as TechniqueContext, latest.id),
+        selectedTechnique: latest.technique as Technique,
+      }));
+    }
+    setActiveScientificStage('objective');
+  };
+
+  const usePreparedSample = () => {
+    setWorkspaceMode('demo');
+    navigate('/demo/agent?project=cu-fe2o4-spinel&mode=demo');
+  };
+
+  const hasValidatedEvidence = evidenceSnapshot.availableTechniques.length > 0
+    && evidenceSnapshot.evidenceEntries.length > 0
+    && (!standaloneStart || intakeRuns.some((run) => run.evidenceQuality.canInterpret));
+  const reviewObjective = standaloneStart ? standaloneMetadata.objective : currentProject.objective;
+  const canRunScientificReview = hasValidScientificObjective(reviewObjective) && hasValidatedEvidence;
+  const showStandaloneSetup = standaloneStart && (!hasValidScientificObjective(standaloneMetadata.objective) || intakeRuns.length === 0);
+  const bundleDisplayLabel = intakeRuns.length > 0 || isUploadedContext
+    ? 'Active evidence bundle'
+    : evidenceBundle ? 'Prepared evidence bundle' : 'Selected evidence';
+
   const runtimeGovernance = runtimeContext;
 
   return (
@@ -3528,7 +3713,102 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       })()}
 
       {/* COMPACT SINGLE-ROW HEADER */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-2.5">
+      <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4">
+        <div className="relative">
+          <select
+            aria-label="Project"
+            value={standaloneStart ? 'standalone-review' : isUploadedContext ? (routeContext.sessionId || 'uploaded-evidence-temp') : agentState.projectId}
+            disabled={runningGuardRef.current}
+            onChange={(event) => isUploadedContext ? handleUploadedSessionChange(event.target.value) : handleProjectChange(event.target.value)}
+            className="h-8 max-w-[220px] appearance-none rounded-md border border-slate-300 bg-white py-1 pl-2.5 pr-7 text-xs font-semibold text-slate-800 hover:border-slate-400 disabled:opacity-50"
+          >
+            {standaloneStart ? (
+              <option value="standalone-review">Standalone scientific review</option>
+            ) : isUploadedContext ? (
+              <option value={routeContext.sessionId || 'uploaded-evidence-temp'}>{currentProject.name}</option>
+            ) : demoProjectRegistry.map((project) => (
+              <option key={project.id} value={project.id}>{project.title}</option>
+            ))}
+          </select>
+          <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+        </div>
+
+        {agentContext.evidenceMode === 'multi-tech' ? (
+          <MultiTechPopover
+            evidenceLayers={agentContext.evidenceLayers}
+            includedTechniques={includedTechniques}
+            selectedTechnique={agentContext.selectedTechnique}
+            onToggleIncluded={handleToggleIncluded}
+            onSelectTechnique={handleTechniqueSelect}
+            isOpen={multiTechOpen}
+            onToggleOpen={() => setMultiTechOpen((open) => !open)}
+            disabled={runningGuardRef.current}
+          />
+        ) : (
+          <div className="flex h-8 max-w-[190px] items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700">
+            <Microscope size={12} className="text-blue-600" />
+            <span className="truncate">{agentContext.workspaceTitle}</span>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => openEvidenceIntake()}
+          disabled={runningGuardRef.current}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 text-[11px] font-semibold text-blue-800 hover:border-blue-500 hover:bg-blue-100 disabled:opacity-50"
+        >
+          <Upload size={13} />
+          Add files
+        </button>
+
+        <div className="flex h-8 items-center gap-2 rounded-md bg-slate-950 px-3 text-[11px] font-semibold text-white">
+          <Brain size={13} className="text-blue-300" />
+          GPT-5.6 Scientific Reasoning
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setActiveScientificStage('evidence'); handlePrimaryRun(); }}
+            disabled={runningGuardRef.current || !canRunScientificReview}
+            title={!canRunScientificReview ? 'Add a valid research objective and at least one validated evidence source.' : undefined}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-blue-600 px-3 text-[11px] font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {agentState.reasoningState.status === 'running' ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} fill="currentColor" />}
+            Run Scientific Review
+          </button>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setActionsDropdownOpen((open) => !open)}
+              aria-expanded={actionsDropdownOpen}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <span className={`h-2 w-2 rounded-full ${agentState.llmState.fallbackUsed ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+              Status
+              <ChevronDown size={12} />
+            </button>
+            {actionsDropdownOpen && (
+              <div className="absolute right-0 top-full mt-1 w-64 rounded-lg border border-slate-200 bg-white p-2 text-[11px] shadow-lg">
+                <div className="space-y-1 border-b border-slate-200 px-2 pb-2 text-slate-600">
+                  <div className="flex justify-between gap-3"><span>Evidence</span><span className="font-semibold text-slate-900">{bundleDisplayLabel}</span></div>
+                  <div className="flex justify-between gap-3"><span>Fallback</span><span className={`font-semibold ${agentState.llmState.fallbackUsed ? 'text-amber-700' : 'text-emerald-700'}`}>{agentState.llmState.fallbackUsed ? 'Active' : 'Not used'}</span></div>
+                  <div className="flex justify-between gap-3"><span>Review</span><span className="font-semibold text-slate-900">{agentState.reasoningState.status}</span></div>
+                </div>
+                <div className="pt-1">
+                  <button type="button" onClick={() => { resetExecution(); setActionsDropdownOpen(false); }} className="w-full rounded px-2 py-1.5 text-left text-slate-700 hover:bg-slate-50">Reset scientific review</button>
+                  <button type="button" onClick={() => { handleRefineInterpretation(); setActionsDropdownOpen(false); }} className="w-full rounded px-2 py-1.5 text-left text-slate-700 hover:bg-slate-50">Refine interpretation</button>
+                  <button type="button" onClick={() => { handleOpenSourceProcessing(); setActionsDropdownOpen(false); }} className="w-full rounded px-2 py-1.5 text-left text-slate-700 hover:bg-slate-50">View source evidence</button>
+                  <button type="button" onClick={() => { setActiveScientificStage('validation'); setActionsDropdownOpen(false); }} className="w-full rounded px-2 py-1.5 text-left text-slate-700 hover:bg-slate-50">View validation boundary</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="hidden">
         <div className="flex items-center gap-2">
           {/* Project Selector */}
           <div className="relative">
@@ -3691,9 +3971,9 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
               className="h-7 px-2 pr-6 text-xs font-semibold bg-white border border-slate-300 rounded text-slate-700 appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:border-slate-400"
               title="Reasoning Engine"
             >
-              <option value="deterministic">Deterministic</option>
-              <option value="vertex-gemini">Gemini 2.5 Flash</option>
-              <option value="gemma">Gemma</option>
+              <option value="gpt-5.6">GPT-5.6 Scientific Reasoning</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="scientific-baseline">Scientific Baseline Mode</option>
             </select>
             <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
@@ -3913,29 +4193,49 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       </div>
 
       {/* Three-Column Layout */}
+      {showStandaloneSetup ? (
+        <StandaloneEvidenceEmptyState
+          metadata={standaloneMetadata}
+          readyEvidenceCount={intakeRuns.length}
+          onMetadataChange={setStandaloneMetadata}
+          onFilesSelected={openEvidenceIntake}
+          onUsePreparedSample={usePreparedSample}
+        />
+      ) : (
       <div className="flex flex-1 min-h-0">
         {/* Left Sidebar */}
         <LeftSidebar
           currentDataset={selectedDataset}
           currentProject={selectedProject}
-          uploadedEvidenceSearch={evidenceRouteSearch || undefined}
-          uploadedTechnique={evidenceSnapshot.primaryTechnique.toLowerCase()}
+          bundleLabel={bundleDisplayLabel}
+          missingTechniques={evidenceBundle?.missingRequiredTechniques ?? evidenceSnapshot.pendingTechniques}
+          onAddEvidence={() => openEvidenceIntake()}
         />
 
         {/* Center Column */}
         <CenterColumn
           agentContext={agentContext}
-          executionSteps={executionSteps}
-          progressPercent={progressPercent}
+          activeStage={activeScientificStage}
+          completedThrough={completedScientificStage}
+          onStageChange={setActiveScientificStage}
           evidenceWorkspace={evidenceWorkspace}
           focusedEvidenceSource={focusedEvidenceSource}
           onFocusedTechniqueChange={handleFocusedTechniqueChange}
+          registryProject={registryProject}
+          bundleCoverage={evidenceBundle?.evidenceCompletenessScore}
+          bundleLabel={bundleDisplayLabel}
+          fallbackUsed={agentState.llmState.fallbackUsed}
+          reasoningProvenance={agentState.provenance}
+          claimBoundary={agentState.claimBoundary}
+          onSaveToNotebook={() => { setActiveScientificStage('memory'); handleSaveToNotebook(); }}
+          onExportReport={() => { setActiveScientificStage('memory'); handleExportReport(); }}
         />
 
         {/* Right Panel */}
         <RightPanel
           agentContext={agentContext}
           mode={agentState.mode}
+          activeStage={activeScientificStage}
           onSaveToNotebook={handleSaveToNotebook}
           onExportReport={handleExportReport}
           draftParameters={draftParameters}
@@ -3956,8 +4256,17 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
           researchEvidence={agentState.researchEvidence}
           reasoningProvenance={agentState.provenance}
           claimBoundary={agentState.claimBoundary}
+          bundleLabel={bundleDisplayLabel}
         />
       </div>
+      )}
+      <EvidenceIntakeDrawer
+        open={intakeOpen}
+        queuedFiles={queuedFiles}
+        queueVersion={queueVersion}
+        onClose={() => setIntakeOpen(false)}
+        onAddEvidence={handleAddValidatedEvidence}
+      />
       <ApprovalActionDialog
         action={approvalAction}
         onClose={() => setApprovalAction(null)}

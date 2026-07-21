@@ -1,76 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { AlertTriangle, BookOpen, CheckCircle2, FileText, Target, Settings, Database, Brain, ListChecks, TrendingUp, Shield, Search, Lock, Unlock, Edit3, ExternalLink } from 'lucide-react';
-import type { AgentContext, EvidenceLayer, WorkflowStep, ParameterGroup, BoundaryContext, TraceContext, WorkspaceParameters } from '../../../utils/agentContext';
-import type { ValidationGap, NextDecision } from '../../../data/demoProjects';
+import React, { useEffect, useState } from 'react';
+import {
+  Brain,
+  CheckCircle2,
+  Database,
+  FileText,
+  Lock,
+  ShieldAlert,
+  Target,
+  Terminal,
+  Unlock,
+} from 'lucide-react';
+import type { AgentContext, WorkspaceParameters } from '../../../utils/agentContext';
 import type { ParameterGroupId } from '../../../utils/projectEvidence';
-import { getProvenanceLabel, getProvenanceStyle } from '../../../utils/projectEvidence';
 import type { AgentEvidenceWorkspace } from '../../../utils/agentEvidenceModel';
 import type { RegistryProject } from '../../../data/demoProjectRegistry';
 import type { RuntimeMode } from '../../../runtime/difaryxRuntimeMode';
-import { ApprovalLedgerPanel } from '../../runtime/ApprovalLedgerPanel';
-import { ScientificConfidenceSummary } from '../../ui/ScientificConfidenceSummary';
-import type {
-  ResearchEvidenceItem,
-  ReasoningProvenance,
-  ClaimBoundaryArtifact,
-} from '../../../types/researchEvidence';
-import {
-  literatureSourceLabel,
-  reasoningProviderLabel,
-} from '../../../types/researchEvidence';
-import { getTechniqueWorkspaceConfig, type TechniqueWorkspaceId, type TechniqueParameterControl, type TechniqueParameterValue } from '../../../data/techniqueWorkspaceContent';
-import { ParameterControlField } from '../../workspace/ParameterControlField';
-import {
-  readParameterState,
-  setParameterOverride,
-  resetParameters as resetParameterState,
-  getParameterStateStorageKey,
-} from '../../../utils/parameterStateManager';
+import type { ClaimBoundaryArtifact, ReasoningProvenance, ResearchEvidenceItem } from '../../../types/researchEvidence';
+import type { ScientificStageId } from '../CenterColumn/CompactWorkflowStepper';
+import { ANALYSIS_MODE_REGISTRY, PARAMETER_SCHEMA_VERSION } from '../../../data/parameterDefinitions';
 
-// Mode configuration with tab IDs
-const AGENT_MODES = {
-  deterministic: {
-    label: 'Deterministic',
-    purpose: 'Controlled reproducible workflow',
-    tabs: [
-      { id: 'goal', label: 'Goal' },
-      { id: 'parameters', label: 'Parameters' },
-      { id: 'evidence', label: 'Evidence' },
-      { id: 'trace', label: 'Trace' },
-      { id: 'boundary', label: 'Boundary' },
-    ],
-    inputLabel: 'Goal',
-    inputPlaceholder: 'Set a controlled goal for this project, such as checking secondary phases, reviewing peak evidence, or validating the claim boundary.',
-  },
-  guided: {
-    label: 'Guided',
-    purpose: 'Researcher-agent interpretation',
-    tabs: [
-      { id: 'question', label: 'Question' },
-      { id: 'evidence', label: 'Evidence' },
-      { id: 'discussion', label: 'Discussion' },
-      { id: 'compare', label: 'Compare' },
-      { id: 'notebook', label: 'Notebook' },
-    ],
-    inputLabel: 'Researcher Question',
-    inputPlaceholder: 'Ask the agent to interpret the selected evidence, compare techniques, or refine the scientific claim.',
-  },
-  autonomous: {
-    label: 'Autonomous',
-    purpose: 'Agent-led evidence review',
-    tabs: [
-      { id: 'objective', label: 'Objective' },
-      { id: 'plan', label: 'Plan' },
-      { id: 'findings', label: 'Findings' },
-      { id: 'gaps', label: 'Gaps' },
-      { id: 'decision', label: 'Decision' },
-    ],
-    inputLabel: 'Review Objective',
-    inputPlaceholder: 'Define the review objective. The agent will inspect evidence, identify validation gaps, and recommend the next scientific action.',
-  },
-} as const;
-
-type AgentMode = keyof typeof AGENT_MODES;
+type InspectorTab = 'context' | 'evidence' | 'reasoning' | 'validation' | 'trace';
 
 interface NormalizedToolTraceEntry {
   id: string;
@@ -86,7 +35,8 @@ interface NormalizedToolTraceEntry {
 
 interface RightPanelProps {
   agentContext: AgentContext;
-  mode: AgentMode;
+  mode: 'deterministic' | 'guided' | 'autonomous';
+  activeStage?: ScientificStageId;
   onSaveToNotebook?: () => void;
   onExportReport?: () => void;
   draftParameters?: WorkspaceParameters;
@@ -102,73 +52,80 @@ interface RightPanelProps {
   runtimeMode?: RuntimeMode;
   approvalLedgerProjectId?: string;
   approvalLedgerBundleId?: string;
-  modelMode?: 'deterministic' | 'vertex-gemini' | 'gemma';
-  llmState?: {
-    output: any;
-    usedLlm: boolean;
-    fallbackUsed: boolean;
-  };
+  modelMode?: 'scientific-baseline' | 'gpt-5.6' | 'gemini-2.5-flash';
+  llmState?: { output: unknown; usedLlm: boolean; fallbackUsed: boolean };
   researchEvidence?: ResearchEvidenceItem[];
   reasoningProvenance?: ReasoningProvenance | null;
   claimBoundary?: ClaimBoundaryArtifact | null;
+  bundleLabel?: string;
 }
 
-export function RightPanel({
-  agentContext,
-  mode,
-  onSaveToNotebook,
-  onExportReport,
-  draftParameters,
-  onDraftParameterChange,
-  onApplyParameters,
-  onResetParameters,
-  isConditionLocked,
-  onUnlockConditions,
-  onLockConditions,
-  evidenceWorkspace,
-  registryProject,
-  toolTrace,
-  runtimeMode = 'demo',
-  approvalLedgerProjectId,
-  approvalLedgerBundleId,
-  modelMode = 'deterministic',
-  llmState,
-  researchEvidence = [],
-  reasoningProvenance = null,
-  claimBoundary = null,
-}: RightPanelProps) {
-  const modeConfig = AGENT_MODES[mode];
-  const [activeTab, setActiveTab] = useState<string>(modeConfig.tabs[0].id);
+const TABS: Array<{ id: InspectorTab; label: string }> = [
+  { id: 'context', label: 'Context' },
+  { id: 'evidence', label: 'Evidence' },
+  { id: 'reasoning', label: 'Reasoning' },
+  { id: 'validation', label: 'Validation' },
+  { id: 'trace', label: 'Trace' },
+];
 
+const STAGE_TO_TAB: Record<ScientificStageId, InspectorTab> = {
+  objective: 'context',
+  evidence: 'evidence',
+  reasoning: 'reasoning',
+  validation: 'validation',
+  decision: 'validation',
+  memory: 'trace',
+};
+
+function InspectorCard({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-900"><Icon size={14} className="text-blue-600" />{title}</div>
+      {children}
+    </section>
+  );
+}
+
+function CompactRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return <div className="grid grid-cols-[104px_1fr] gap-2 border-t border-slate-100 py-1.5 first:border-t-0"><span className="text-[10px] text-slate-500">{label}</span><span className="text-[11px] font-medium leading-4 text-slate-800">{value}</span></div>;
+}
+
+function BoundaryList({ title, items, tone }: { title: string; items: string[]; tone: 'emerald' | 'amber' | 'rose' }) {
+  const styles = { emerald: 'bg-emerald-50 text-emerald-900', amber: 'bg-amber-50 text-amber-950', rose: 'bg-rose-50 text-rose-950' };
+  return (
+    <div className={`rounded-md p-2 ${styles[tone]}`}>
+      <div className="text-[10px] font-semibold">{title}</div>
+      <ul className="mt-1 space-y-1 text-[10px] leading-4">{(items.length ? items : ['None recorded']).slice(0, 3).map((item, index) => <li key={index}>• {item}</li>)}</ul>
+    </div>
+  );
+}
+
+export function RightPanel(props: RightPanelProps) {
+  const [activeTab, setActiveTab] = useState<InspectorTab>('context');
   useEffect(() => {
-    const tabs = AGENT_MODES[mode].tabs;
-    if (!tabs.some(tab => tab.id === activeTab)) {
-      setActiveTab(tabs[0].id);
-    }
-  }, [mode, activeTab]);
+    if (props.activeStage) setActiveTab(STAGE_TO_TAB[props.activeStage]);
+  }, [props.activeStage]);
 
-    return (
-    <aside className="flex w-[380px] shrink-0 flex-col border-l border-slate-200 bg-white">
-      <div className="border-b border-slate-200 p-3">
-        <div className="mb-2 flex items-start justify-between gap-2">
-          <div>
-            <div className="text-xs font-bold text-slate-900">{modeConfig.label}</div>
-            <div className="text-[11px] text-slate-500">{modeConfig.purpose}</div>
-          </div>
-          {isConditionLocked ? <Lock size={14} className="text-amber-600" /> : <Unlock size={14} className="text-slate-400" />}
+  const boundary = props.registryProject?.agentWorkflow.claimBoundary ?? props.agentContext.boundaryContext;
+  const fallbackUsed = props.llmState?.fallbackUsed ?? props.reasoningProvenance?.fallbackUsed ?? false;
+  const selectedMode = props.modelMode === 'gpt-5.6'
+    ? ANALYSIS_MODE_REGISTRY['gpt-5.6-scientific']
+    : props.modelMode === 'gemini-2.5-flash'
+      ? ANALYSIS_MODE_REGISTRY['gemini-2.5-flash']
+      : ANALYSIS_MODE_REGISTRY['scientific-baseline'];
+  const availableLayers = props.agentContext.evidenceLayers.filter((layer) => layer.status === 'available');
+  const missingLayers = props.agentContext.evidenceLayers.filter((layer) => layer.status !== 'available');
+
+  return (
+    <aside className="flex w-[348px] shrink-0 flex-col border-l border-slate-200 bg-slate-50">
+      <div className="border-b border-slate-200 bg-white px-3 pt-3">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-xs font-semibold text-slate-950">Inspector</div>
+          <div className="text-[10px] text-slate-500">Structured review record</div>
         </div>
-        <div className="grid grid-cols-5 gap-1">
-          {modeConfig.tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`rounded px-1.5 py-1.5 text-[10px] font-semibold transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-              }`}
-            >
+        <div className="grid grid-cols-5">
+          {TABS.map((tab) => (
+            <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`border-b-2 px-1 py-2 text-[10px] font-semibold transition-colors ${activeTab === tab.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-900'}`}>
               {tab.label}
             </button>
           ))}
@@ -176,1218 +133,78 @@ export function RightPanel({
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        <ScientificConfidenceSummary
-          claimStatus={registryProject?.claimStatus || 'partial'}
-          readinessPercent={registryProject?.reportReadiness || 30}
-          validationGaps={registryProject?._raw.validationGaps || []}
-          availableTechniques={registryProject?.techniques.filter(t => t.available).map(t => t.label) || []}
-          pendingTechniques={registryProject?.techniques.filter(t => !t.available).map(t => t.label) || []}
-          projectId={registryProject?.id}
-        />
-        {llmState?.fallbackUsed && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold">Simulated Fallback Active</span>
-              <p className="mt-1 text-[11px] text-amber-800 leading-normal">
-                LLM request failed ({llmState.output?.metadata?.fallbackReason || 'API Key validation error'}). Reasoning is generated from a simulated backend response rather than a live model.
-              </p>
+        {activeTab === 'context' && (
+          <>
+            <InspectorCard title="Review context" icon={Target}>
+              <CompactRow label="Objective" value={props.agentContext.objective} />
+              <CompactRow label="Material" value={props.agentContext.materialSystem} />
+              <CompactRow label="Job type" value={props.agentContext.jobType === 'rnd' ? 'R&D' : props.agentContext.jobType} />
+              <CompactRow label="Condition lock" value={props.isConditionLocked ? 'Locked' : 'Not locked'} />
+              <CompactRow label="Overrides" value={`${props.agentContext.parameterOverrides.length} parameter changes`} />
+            </InspectorCard>
+            <button type="button" onClick={props.isConditionLocked ? props.onUnlockConditions : props.onLockConditions} className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-100">
+              {props.isConditionLocked ? <Unlock size={13} /> : <Lock size={13} />}{props.isConditionLocked ? 'Unlock conditions' : 'Lock conditions'}
+            </button>
+          </>
+        )}
+
+        {activeTab === 'evidence' && (
+          <>
+            <InspectorCard title="Evidence bundle" icon={Database}>
+              <CompactRow label="Bundle" value={props.bundleLabel ?? 'Prepared evidence bundle'} />
+              <CompactRow label="Available" value={availableLayers.map((layer) => layer.technique).join(', ') || 'None'} />
+              <CompactRow label="Missing" value={missingLayers.map((layer) => layer.technique).join(', ') || 'None required'} />
+              <CompactRow label="Primary" value={props.agentContext.primaryTechnique} />
+            </InspectorCard>
+            <InspectorCard title="Extracted observations" icon={CheckCircle2}>
+              <div className="space-y-2">{availableLayers.slice(0, 4).map((layer) => <div key={layer.technique} className="text-[10px] leading-4 text-slate-700"><span className="font-semibold text-slate-900">{layer.technique}:</span> {layer.summary}</div>)}</div>
+            </InspectorCard>
+          </>
+        )}
+
+        {activeTab === 'reasoning' && (
+          <>
+            <InspectorCard title="Model provenance" icon={Brain}>
+              <CompactRow label="Active mode" value={selectedMode.label} />
+              <CompactRow label="Model" value={selectedMode.model ?? 'No LLM'} />
+              <CompactRow label="Execution" value={selectedMode.usesLlm ? (fallbackUsed ? 'Scientific Baseline fallback active' : 'Model reasoning active') : 'Rule-based analysis, limited interpretation'} />
+              <CompactRow label="Generated" value={props.reasoningProvenance?.generatedAt ? new Date(props.reasoningProvenance.generatedAt).toLocaleString() : 'Prepared demo record'} />
+              <CompactRow label="Schema" value={PARAMETER_SCHEMA_VERSION} />
+              <CompactRow label="Literature" value={`${props.reasoningProvenance?.literatureCount ?? props.researchEvidence?.length ?? 0} linked references`} />
+            </InspectorCard>
+            <InspectorCard title="Scientific rationale" icon={FileText}>
+              <p className="text-[11px] leading-5 text-slate-700">{props.registryProject?.notebook.interpretation ?? props.agentContext.discussionContext.interpretation}</p>
+            </InspectorCard>
+          </>
+        )}
+
+        {activeTab === 'validation' && (
+          <>
+            <BoundaryList title="Supported" items={boundary.supported} tone="emerald" />
+            <BoundaryList title="Validation-limited" items={boundary.validationLimited} tone="amber" />
+            <BoundaryList title="Cannot conclude" items={boundary.cannotConclude} tone="rose" />
+            <InspectorCard title="Critical boundary" icon={ShieldAlert}>
+              <CompactRow label="Gap" value={props.registryProject?.crossTechniqueComparison.validationGap ?? props.agentContext.validationGaps[0]?.description ?? 'No critical gap recorded'} />
+              <CompactRow label="Required next" value={boundary.requiredNext[0] ?? props.registryProject?.crossTechniqueComparison.recommendedNextAction ?? 'Independent validation'} />
+              <CompactRow label="Readiness" value={`${props.registryProject?.reportReadiness ?? 30}% publication readiness`} />
+            </InspectorCard>
+          </>
+        )}
+
+        {activeTab === 'trace' && (
+          <InspectorCard title="Internal technical trace" icon={Terminal}>
+            <div className="space-y-3">
+              {(props.toolTrace?.length ? props.toolTrace.map((entry) => ({ id: entry.id, label: entry.toolName, detail: entry.resultSummary || entry.argsSummary, status: entry.status })) : props.agentContext.traceContext.steps.map((step, index) => ({ id: String(index), label: step.label, detail: step.detail, status: 'pending' as const }))).map((entry, index) => (
+                <div key={entry.id} className="grid grid-cols-[20px_1fr] gap-2">
+                  <div className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold ${entry.status === 'complete' ? 'bg-emerald-100 text-emerald-800' : entry.status === 'running' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}`}>{index + 1}</div>
+                  <div><div className="text-[11px] font-semibold text-slate-900">{entry.label}</div><div className="mt-0.5 text-[10px] leading-4 text-slate-600">{entry.detail}</div></div>
+                </div>
+              ))}
             </div>
-          </div>
+            <div className="mt-3 border-t border-slate-200 pt-2 text-[10px] text-slate-500">Runtime: {props.runtimeMode ?? 'demo'} · Technical stages are audit detail, not the user-facing workflow.</div>
+          </InspectorCard>
         )}
-        <EvidenceUsedCard
-          modelMode={modelMode}
-          llmState={llmState}
-          registryProject={registryProject}
-          evidenceWorkspace={evidenceWorkspace}
-          agentContext={agentContext}
-        />
-        {mode === 'deterministic' && activeTab === 'goal' && (
-          <>
-            <InputCard label={modeConfig.inputLabel} placeholder={modeConfig.inputPlaceholder} />
-            <ProjectContextCard context={agentContext} registryProject={registryProject} />
-          </>
-        )}
-        {mode === 'deterministic' && activeTab === 'parameters' && (
-          <ParametersTabContent
-            groups={agentContext.parameterGroups}
-            draftParameters={draftParameters}
-            onDraftParameterChange={onDraftParameterChange}
-            onApplyParameters={onApplyParameters}
-            onResetParameters={onResetParameters}
-            isConditionLocked={isConditionLocked}
-            onUnlockConditions={onUnlockConditions}
-            onLockConditions={onLockConditions}
-            hasOverrides={agentContext.hasParameterOverrides}
-            registryProject={registryProject}
-          />
-        )}
-        {mode === 'deterministic' && activeTab === 'evidence' && (
-          evidenceWorkspace
-            ? <EvidenceWorkspaceTabContent workspace={evidenceWorkspace} researchEvidence={researchEvidence} reasoningProvenance={reasoningProvenance} claimBoundary={claimBoundary} />
-            : <EvidenceByTechniqueCard context={agentContext} researchEvidence={researchEvidence} reasoningProvenance={reasoningProvenance} claimBoundary={claimBoundary} />
-        )}
-        {mode === 'deterministic' && activeTab === 'trace' && (
-          <>
-            <ToolTraceCompact trace={toolTrace ?? []} runtimeMode={runtimeMode} />
-            {evidenceWorkspace ? <TraceWorkspaceTabContent workspace={evidenceWorkspace} /> : <TraceTabContent trace={agentContext.traceContext} />}
-          </>
-        )}
-        {mode === 'deterministic' && activeTab === 'boundary' && (
-          evidenceWorkspace
-            ? <BoundaryWorkspaceTabContent workspace={evidenceWorkspace} claimBoundary={claimBoundary} />
-            : <BoundaryTabContent boundary={agentContext.boundaryContext} claimBoundary={claimBoundary} />
-        )}
-
-        {mode === 'guided' && activeTab === 'question' && (
-          <>
-            <InputCard label={modeConfig.inputLabel} placeholder={modeConfig.inputPlaceholder} />
-            <ProjectContextCard context={agentContext} registryProject={registryProject} />
-          </>
-        )}
-        {mode === 'guided' && activeTab === 'evidence' && (
-          <EvidenceByTechniqueCard context={agentContext} researchEvidence={researchEvidence} reasoningProvenance={reasoningProvenance} claimBoundary={claimBoundary} />
-        )}
-        {mode === 'guided' && activeTab === 'discussion' && <DiscussionCard context={agentContext} />}
-        {mode === 'guided' && activeTab === 'compare' && <AgentComparePlaceholder />}
-        {mode === 'guided' && activeTab === 'notebook' && <NotebookPreviewCard context={agentContext} onSave={onSaveToNotebook} onExport={onExportReport} />}
-
-        {mode === 'autonomous' && activeTab === 'objective' && (
-          <>
-            <InputCard label={modeConfig.inputLabel} placeholder={modeConfig.inputPlaceholder} />
-            <ProjectContextCard context={agentContext} registryProject={registryProject} />
-          </>
-        )}
-        {mode === 'autonomous' && activeTab === 'plan' && <PlanCard steps={agentContext.workflowSteps} />}
-        {mode === 'autonomous' && activeTab === 'findings' && (
-          <>
-            <EvidenceByTechniqueCard context={agentContext} researchEvidence={researchEvidence} reasoningProvenance={reasoningProvenance} claimBoundary={claimBoundary} />
-            <ClaimBoundaryCard context={agentContext} />
-          </>
-        )}
-        {mode === 'autonomous' && activeTab === 'gaps' && (
-          <>
-            <ValidationGapsCard context={agentContext} />
-            <RecommendedActionsCard context={agentContext} />
-          </>
-        )}
-        {mode === 'autonomous' && activeTab === 'decision' && (
-          <>
-            <RecommendedActionsCard context={agentContext} />
-            <BoundaryTabContent boundary={agentContext.boundaryContext} claimBoundary={claimBoundary} />
-          </>
-        )}
-        <ApprovalLedgerPanel
-          projectId={approvalLedgerProjectId}
-          bundleId={approvalLedgerBundleId}
-          limit={3}
-          compact
-        />
       </div>
     </aside>
-  );
-}
-
-// Shared Cards
-
-function InputCard({ label, placeholder }: { label: string; placeholder: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <label className="block text-xs font-semibold text-slate-700 mb-2">{label}</label>
-      <textarea
-        className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 placeholder-slate-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
-        rows={3}
-        placeholder={placeholder}
-      />
-    </div>
-  );
-}
-
-function ProjectContextCard({
-  context,
-  registryProject,
-}: {
-  context: AgentContext;
-  registryProject?: RegistryProject;
-}) {
-  const workflowPath = registryProject?.workflowPath.map((step) => step.replace('-', ' ')).join(' -> ');
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-        <Target size={14} className="text-blue-600" />
-        Project Context
-      </h3>
-      <div className="space-y-1.5 text-xs">
-        <Row label="Project" value={registryProject?.title || context.projectTitle} />
-        <Row label="Material" value={registryProject?.materialSystem || context.materialSystem} />
-        <Row label="Job type" value={registryProject?.jobType || context.jobType} />
-        {registryProject && <Row label="Claim status" value={registryProject.statusLabel} />}
-        {context.evidenceMode === 'multi-tech' ? (
-          <div className="mt-2 pt-2 border-t border-slate-200">
-            <span className="font-semibold text-slate-600 block mb-1.5">Evidence Layers:</span>
-            <div className="space-y-1.5">
-              {context.evidenceLayers.map((layer: EvidenceLayer) => (
-                <div key={layer.technique} className="flex items-start gap-2">
-                  <span className="text-slate-500">-</span>
-                  <div className="flex-1">
-                    <span className="font-semibold text-slate-900">{layer.technique}</span>
-                    <span className="text-slate-600"> - {layer.role}</span>
-                    <StatusBadge status={layer.status} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <Row label="Technique" value={context.primaryTechnique} />
-        )}
-        {context.objective && (
-          <div className="mt-2 pt-2 border-t border-slate-200">
-            <span className="font-semibold text-slate-600">Objective:</span>
-            <p className="mt-1 text-slate-700">{context.objective}</p>
-          </div>
-        )}
-        {registryProject && (
-          <div className="mt-2 pt-2 border-t border-slate-200">
-            <span className="font-semibold text-slate-600">Context:</span>
-            <p className="mt-1 text-slate-700">{registryProject.context.experimentalSetup}</p>
-            {workflowPath && <p className="mt-1 text-slate-500">{workflowPath}</p>}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface ParametersTabContentProps {
-  groups: ParameterGroup[];
-  draftParameters?: WorkspaceParameters;
-  onDraftParameterChange?: (groupId: ParameterGroupId, key: string, value: string) => void;
-  onApplyParameters?: () => void;
-  onResetParameters?: () => void;
-  isConditionLocked?: boolean;
-  onUnlockConditions?: () => void;
-  onLockConditions?: () => void;
-  hasOverrides?: boolean;
-  registryProject?: RegistryProject;
-}
-
-function ParametersTabContent({
-  groups,
-  draftParameters,
-  onDraftParameterChange,
-  onApplyParameters,
-  onResetParameters,
-  isConditionLocked,
-  onUnlockConditions,
-  onLockConditions,
-  hasOverrides,
-  registryProject,
-}: ParametersTabContentProps) {
-  const hasDraft = draftParameters && Object.keys(draftParameters).length > 0;
-  const canEdit = !isConditionLocked && !!onDraftParameterChange;
-
-  // Determine technique from registry project
-  const projectTechnique = registryProject?.techniques.find(t => t.available)?.id as TechniqueWorkspaceId | undefined;
-
-  // Get workspace config if technique is available
-  const workspaceConfig = projectTechnique ? getTechniqueWorkspaceConfig(projectTechnique) : null;
-
-  // Read current parameter state from localStorage
-  const projectId = registryProject?.id;
-  const [workspaceParameters, setWorkspaceParameters] = useState<Record<string, TechniqueParameterValue>>(() => {
-    if (!projectId || !projectTechnique) return {};
-    const paramState = readParameterState(projectId, projectTechnique);
-    return paramState.effectiveValues;
-  });
-
-  // Update workspace parameters when they change
-  const handleWorkspaceParameterChange = (control: TechniqueParameterControl, value: TechniqueParameterValue) => {
-    if (!projectId || !projectTechnique) return;
-
-    setWorkspaceParameters(prev => ({ ...prev, [control.id]: value }));
-
-    // Write to parameter state
-    setParameterOverride(projectId, projectTechnique, control.id, value, 'agent');
-  };
-
-  const handleToggleCheckbox = (control: TechniqueParameterControl, option: string) => {
-    const current = workspaceParameters[control.id];
-    const values = Array.isArray(current) ? current : [];
-    const next = values.includes(option)
-      ? values.filter((item) => item !== option)
-      : [...values, option];
-    handleWorkspaceParameterChange(control, next);
-  };
-
-  const handleResetWorkspaceParameters = () => {
-    if (!projectId || !projectTechnique || !workspaceConfig) return;
-
-    const paramState = resetParameterState(projectId, projectTechnique);
-    setWorkspaceParameters(paramState.effectiveValues);
-  };
-
-  const workspaceOverrideCount = projectId && projectTechnique
-    ? Object.keys(readParameterState(projectId, projectTechnique).overrides).length
-    : 0;
-
-  // Cross-tab sync: Listen for parameter changes from Workspace
-  useEffect(() => {
-    if (!projectId || !projectTechnique || typeof window === 'undefined') return;
-
-    const handleStorageChange = (event: StorageEvent) => {
-      const paramStateKey = getParameterStateStorageKey(projectId, projectTechnique);
-      if (event.key !== paramStateKey) return;
-
-      // Re-read parameters from localStorage
-      const paramState = readParameterState(projectId, projectTechnique);
-      setWorkspaceParameters(paramState.effectiveValues);
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [projectId, projectTechnique, workspaceConfig]);
-
-  return (
-    <>
-      {/* Lock status banner */}
-      {isConditionLocked && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2">
-          <Lock size={14} className="text-amber-700 mt-0.5 shrink-0" />
-          <div className="text-xs flex-1">
-            <p className="font-semibold text-amber-900">Conditions Locked</p>
-            <p className="text-amber-700 mt-0.5">Parameters are read-only. Unlock experiment conditions to edit.</p>
-          </div>
-          {onUnlockConditions && (
-            <button
-              onClick={onUnlockConditions}
-              className="shrink-0 rounded bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 transition-colors flex items-center gap-1"
-            >
-              <Unlock size={12} />
-              Unlock
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Unlocked status banner */}
-      {!isConditionLocked && onLockConditions && (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 flex items-start gap-2">
-          <Unlock size={14} className="text-slate-600 mt-0.5 shrink-0" />
-          <div className="text-xs flex-1">
-            <p className="font-semibold text-slate-900">Conditions Unlocked</p>
-            <p className="text-slate-600 mt-0.5">Parameters are editable. Lock conditions to preserve scientific integrity.</p>
-          </div>
-          <button
-            onClick={onLockConditions}
-            className="shrink-0 rounded bg-slate-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-slate-700 transition-colors flex items-center gap-1"
-          >
-            <Lock size={12} />
-            Lock
-          </button>
-        </div>
-      )}
-
-      {/* Override status banner */}
-      {workspaceOverrideCount > 0 && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-start gap-2">
-          <Edit3 size={14} className="text-blue-700 mt-0.5 shrink-0" />
-          <div className="text-xs">
-            <p className="font-semibold text-blue-900">Parameters Modified</p>
-            <p className="text-blue-700 mt-0.5">{workspaceOverrideCount} parameter{workspaceOverrideCount !== 1 ? 's' : ''} adjusted. Changes sync with Workspace.</p>
-          </div>
-        </div>
-      )}
-
-      {/* Workspace Parameters - using same controls as Workspace */}
-      {workspaceConfig && projectTechnique && (
-        <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-3">
-            <Settings size={14} className="text-blue-600" />
-            {workspaceConfig.label} Parameters
-          </h3>
-          <div className="space-y-2">
-            {workspaceConfig.parameters.map((control) => (
-              <ParameterControlField
-                key={control.id}
-                control={control}
-                value={workspaceParameters[control.id] ?? control.defaultValue}
-                onChange={handleWorkspaceParameterChange}
-                onToggleCheckbox={handleToggleCheckbox}
-                disabled={isConditionLocked}
-              />
-            ))}
-          </div>
-          {!isConditionLocked && (
-            <div className="mt-3 pt-3 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={handleResetWorkspaceParameters}
-                disabled={workspaceOverrideCount === 0}
-                className="w-full h-8 px-3 text-xs font-semibold rounded border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Reset to Defaults
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Project Parameters (non-technique parameters) */}
-      {groups.map((group) => {
-        // Skip technique groups if we're showing workspace controls
-        if (workspaceConfig && (group.id === 'XRD' || group.id === 'XPS' || group.id === 'FTIR' || group.id === 'Raman')) {
-          return null;
-        }
-
-        const groupDraft = draftParameters?.[group.id] || {};
-        return (
-          <div key={group.id} className="rounded-lg border border-slate-200 bg-white p-3">
-            <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-              <Settings size={14} className="text-blue-600" />
-              {group.title}
-            </h3>
-            <div className="space-y-2 text-xs">
-              {group.params.map((p) => {
-                const draftValue = groupDraft[p.key];
-                const displayValue = draftValue !== undefined ? draftValue : p.value;
-                const isDrafted = draftValue !== undefined;
-                const isEditable = canEdit && p.editable;
-                return (
-                  <div key={p.key} className="space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="text-slate-600 font-medium">{p.key}</label>
-                      <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded border font-semibold ${getProvenanceStyle(
-                          isDrafted ? 'user-adjusted' : p.provenance,
-                        )}`}
-                      >
-                        {getProvenanceLabel(isDrafted ? 'user-adjusted' : p.provenance)}
-                      </span>
-                    </div>
-                    {isEditable ? (
-                      <input
-                        type="text"
-                        value={displayValue}
-                        onChange={(e) => onDraftParameterChange!(group.id, p.key, e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder={p.value}
-                      />
-                    ) : (
-                      <div className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded text-slate-900 font-semibold">
-                        {displayValue}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </>
-  );
-}
-
-// â”€â”€ Inner render helpers for structured research data â”€â”€
-// Borderless fragments so they can be merged INTO the existing Research
-// References / Validation Gap / Claim Boundary boxes (no duplicate boxes).
-
-function RetrievedReferencesList({
-  items,
-  provenance,
-}: {
-  items: ResearchEvidenceItem[];
-  provenance: ReasoningProvenance | null;
-}) {
-  if (items.length === 0 && !provenance) return null;
-  return (
-    <div className="mt-2 pt-2 border-t border-slate-100">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-          Retrieved literature
-        </span>
-        {provenance && (
-          <span className="rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-700">
-            {literatureSourceLabel(provenance.literatureSource)}
-            {provenance.fallbackUsed ? ' Â· fallback' : ''} Â· {provenance.literatureCount}
-          </span>
-        )}
-      </div>
-      {items.length > 0 ? (
-        <ul className="mt-1 space-y-1.5">
-          {items.slice(0, 6).map((item, i) => (
-            <li key={`${item.doi || item.title}-${i}`} className="text-xs border-l-2 border-blue-100 pl-2">
-              <div className="flex items-start justify-between gap-2">
-                <span className="font-semibold text-slate-800">{item.title}</span>
-                <span className="shrink-0 text-[9px] px-1 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-600 font-semibold">
-                  {item.source === 'brightdata' ? 'Scholar' : 'Local'}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                {item.authors.join(', ')}
-                {item.year ? ` Â· ${item.year}` : ''}
-                {item.journal ? ` Â· ${item.journal}` : ''}
-              </p>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-1 text-[11px] text-slate-500">No literature references retrieved yet.</p>
-      )}
-    </div>
-  );
-}
-
-function ResearchGapsList({ claimBoundary }: { claimBoundary: ClaimBoundaryArtifact | null }) {
-  if (!claimBoundary) return null;
-  const { missingValidation, contradictions } = claimBoundary.signals;
-  if (missingValidation.length === 0 && contradictions.length === 0) return null;
-  return (
-    <div className="pt-2 border-t border-amber-200">
-      <span className="font-semibold text-amber-900">
-        Research validation gaps (deterministic âˆª {reasoningProviderLabel(claimBoundary.provider)}):
-      </span>
-      {missingValidation.length > 0 && (
-        <ul className="mt-1 space-y-0.5 text-amber-700">
-          {missingValidation.map((gap, i) => (
-            <li key={`mv-${i}`}>- {gap}</li>
-          ))}
-        </ul>
-      )}
-      {contradictions.length > 0 && (
-        <ul className="mt-1 space-y-0.5 text-amber-700">
-          {contradictions.map((c, i) => (
-            <li key={`ct-${i}`}>! {c}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function RenderedClaimBoundaryList({ claimBoundary }: { claimBoundary: ClaimBoundaryArtifact | null }) {
-  if (!claimBoundary || claimBoundary.renderedClaimBoundary.length === 0) return null;
-  return (
-    <div className="pt-2 border-t border-blue-200">
-      <span className="font-semibold text-blue-900">
-        Research claim boundary (via {reasoningProviderLabel(claimBoundary.provider)} signals Â· deterministic):
-      </span>
-      <ul className="mt-1 space-y-0.5 text-blue-700">
-        {claimBoundary.renderedClaimBoundary.map((line, i) => (
-          <li key={i}>- {line}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function EvidenceWorkspaceTabContent({
-  workspace,
-  researchEvidence = [],
-  reasoningProvenance = null,
-  claimBoundary = null,
-}: {
-  workspace: AgentEvidenceWorkspace;
-  researchEvidence?: ResearchEvidenceItem[];
-  reasoningProvenance?: ReasoningProvenance | null;
-  claimBoundary?: ClaimBoundaryArtifact | null;
-}) {
-  const selectedTechniques = workspace.techniques.filter((t) => t.selected);
-  const allReferences = workspace.techniques.flatMap((t) => t.requiredReferences);
-  const uniqueReferences = allReferences.filter(
-    (ref, index, self) => index === self.findIndex((r) => r.type === ref.type && r.label === ref.label)
-  );
-
-  return (
-    <>
-      {/* Evidence Results */}
-      <div className="rounded-lg border border-slate-200 bg-white p-3">
-        <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-          <Database size={14} className="text-blue-600" />
-          Evidence Results
-        </h3>
-        <div className="space-y-2">
-          {selectedTechniques.map((tech) => (
-            <div key={tech.techniqueId} className="text-xs border-l-2 border-blue-200 pl-2">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-slate-900">{tech.displayName}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">
-                  {tech.availability}
-                </span>
-              </div>
-              <p className="text-slate-700 mt-0.5 leading-relaxed">{tech.evidenceResult.summary}</p>
-              {tech.evidenceResult.extractedFindings.length > 0 && (
-                <ul className="mt-1 space-y-0.5 text-slate-600">
-                  {tech.evidenceResult.extractedFindings.slice(0, 2).map((finding, i) => (
-                    <li key={i}>- {finding}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </div>
-        {selectedTechniques.length > 1 && (
-          <div className="mt-3 pt-2 border-t border-slate-100 text-xs text-slate-600">
-            <span className="font-semibold">Cross-tech:</span> {selectedTechniques.length} techniques selected for validation
-          </div>
-        )}
-      </div>
-
-      {/* Research References */}
-      {(workspace.jobType === 'research' || researchEvidence.length > 0) && (
-        <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-            <BookOpen size={14} className="text-blue-600" />
-            Research References
-          </h3>
-          <div className="space-y-2">
-            {uniqueReferences.map((ref, i) => (
-              <div key={i} className="text-xs border-l-2 border-slate-200 pl-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-semibold text-slate-900">{ref.label}</span>
-                  <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded border font-semibold ${
-                      ref.status === 'available'
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                        : ref.status === 'missing' || ref.status === 'required'
-                          ? 'bg-amber-50 border-amber-200 text-amber-700'
-                          : 'bg-slate-50 border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    {ref.status}
-                  </span>
-                </div>
-                <p className="text-slate-600 mt-0.5">{ref.whyItMatters}</p>
-                <p className="text-slate-500 mt-0.5 italic">{ref.boundaryImpact}</p>
-              </div>
-            ))}
-          </div>
-          <RetrievedReferencesList items={researchEvidence} provenance={reasoningProvenance} />
-        </div>
-      )}
-
-      {/* Validation Gap */}
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-        <h3 className="flex items-center gap-2 text-xs font-bold text-amber-900 mb-2">
-          <AlertTriangle size={14} className="text-amber-600" />
-          Validation Gap
-        </h3>
-        <div className="space-y-2 text-xs">
-          <div>
-            <span className="font-semibold text-amber-900">Cannot conclude:</span>
-            <ul className="mt-1 space-y-0.5 text-amber-700">
-              {workspace.claimBoundary.cannotConclude.slice(0, 3).map((item, i) => (
-                <li key={i}>- {item}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="pt-2 border-t border-amber-200">
-            <span className="font-semibold text-amber-900">Next action:</span>
-            <p className="mt-1 text-amber-700">{workspace.claimBoundary.requiredNext[0]}</p>
-          </div>
-          <ResearchGapsList claimBoundary={claimBoundary} />
-        </div>
-      </div>
-    </>
-  );
-}
-
-function ToolTraceCompact({
-  trace,
-  runtimeMode,
-}: {
-  trace: NormalizedToolTraceEntry[];
-  runtimeMode: RuntimeMode;
-}) {
-  if (trace.length === 0) return null;
-  const sourceMode = runtimeMode === 'demo' ? 'demo_preloaded' : 'google_drive_connected';
-  const permissionMode = runtimeMode === 'demo' ? 'read_only' : 'approval_required';
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-        <Database size={14} className="text-blue-600" />
-        Tool Calls
-      </h3>
-      <div className="mb-2 flex items-center justify-between text-[10px]">
-        <span className="font-semibold text-slate-500">Runtime</span>
-        <span className={`rounded border px-1.5 py-0.5 font-semibold ${
-          runtimeMode === 'demo'
-            ? 'border-slate-200 bg-slate-50 text-slate-600'
-            : 'border-amber-200 bg-amber-50 text-amber-700'
-        }`}>
-          {runtimeMode === 'demo' ? 'Demo deterministic' : 'Connected gated'}
-        </span>
-      </div>
-      <div className="mb-2 grid grid-cols-2 gap-1 text-[10px] text-slate-500">
-        <span>Source: {sourceMode}</span>
-        <span>Permission: {permissionMode}</span>
-      </div>
-      <div className="space-y-2">
-        {trace.map((entry) => (
-          <div key={entry.id} className="rounded border border-slate-100 bg-slate-50 p-2 text-[10px]">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-bold text-slate-900">{entry.toolName}</span>
-              <span className="font-mono text-slate-500">{entry.timestamp}</span>
-            </div>
-            <div className="mt-1 grid grid-cols-2 gap-1 text-slate-600">
-              <span>Call: {entry.callType}</span>
-              <span>Approval: {entry.approvalStatus}</span>
-              <span>Args: {entry.argsSummary}</span>
-              <span>Result: {entry.resultSummary}</span>
-            </div>
-            <p className="mt-1 border-t border-slate-200 pt-1 text-slate-500">
-              {entry.evidenceImpact}
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TraceWorkspaceTabContent({ workspace }: { workspace: AgentEvidenceWorkspace }) {
-  return (
-    <>
-      <div className="rounded-lg border border-slate-200 bg-white p-3">
-        <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-          <ListChecks size={14} className="text-blue-600" />
-          Reasoning Trace
-        </h3>
-        <div className="space-y-2">
-          {workspace.trace.map((event) => (
-            <div key={event.stepNumber} className="text-xs border-l-2 border-blue-200 pl-2">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-slate-900">
-                  Step {String(event.stepNumber).padStart(2, '0')} - {event.eventLabel}
-                </span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 font-semibold">
-                  {event.eventType.replace('_', ' ')}
-                </span>
-              </div>
-              <div className="mt-1 space-y-1">
-                <div>
-                  <span className="font-semibold text-slate-700">Input:</span>{' '}
-                  <span className="text-slate-600">{event.input}</span>
-                </div>
-                <div>
-                  <span className="font-semibold text-slate-700">Reasoning:</span>{' '}
-                  <span className="text-slate-600">{event.reasoning}</span>
-                </div>
-                <div>
-                  <span className="font-semibold text-slate-700">Output:</span>{' '}
-                  <span className="text-slate-600">{event.output}</span>
-                </div>
-                <div className="pt-1 border-t border-slate-100">
-                  <span className="font-semibold text-blue-700">Boundary impact:</span>{' '}
-                  <span className="text-blue-600 italic">{event.boundaryImpact}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </>
-  );
-}
-
-function BoundaryWorkspaceTabContent({
-  workspace,
-  claimBoundary = null,
-}: {
-  workspace: AgentEvidenceWorkspace;
-  claimBoundary?: ClaimBoundaryArtifact | null;
-}) {
-  const jobLabel = workspace.jobType === 'rnd' ? 'R&D' : workspace.jobType === 'analytical' ? 'Analytical' : 'Research';
-  return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-blue-900">
-        <Shield size={14} className="text-blue-600" />
-        Claim Boundary ({jobLabel})
-      </h3>
-
-      <div className="space-y-2 text-xs">
-        <div>
-          <span className="font-semibold text-emerald-900">Supported:</span>
-          <ul className="mt-1 space-y-0.5 text-emerald-700">
-            {workspace.claimBoundary.supported.map((item, i) => (
-              <li key={i}>- {item}</li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="pt-2 border-t border-blue-200">
-          <span className="font-semibold text-amber-900">Validation-limited:</span>
-          <ul className="mt-1 space-y-0.5 text-amber-700">
-            {workspace.claimBoundary.validationLimited.map((item, i) => (
-              <li key={i}>- {item}</li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="pt-2 border-t border-blue-200">
-          <span className="font-semibold text-red-900">Cannot conclude:</span>
-          <ul className="mt-1 space-y-0.5 text-red-700">
-            {workspace.claimBoundary.cannotConclude.map((item, i) => (
-              <li key={i}>- {item}</li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="pt-2 border-t border-blue-200">
-          <span className="font-semibold text-blue-900">Required next:</span>
-          <ul className="mt-1 space-y-0.5 text-blue-700">
-            {workspace.claimBoundary.requiredNext.map((item, i) => (
-              <li key={i}>- {item}</li>
-            ))}
-          </ul>
-        </div>
-
-        <RenderedClaimBoundaryList claimBoundary={claimBoundary} />
-      </div>
-    </div>
-  );
-}
-
-function EvidenceByTechniqueCard({
-  context,
-  researchEvidence = [],
-  reasoningProvenance = null,
-  claimBoundary = null,
-}: {
-  context: AgentContext;
-  researchEvidence?: ResearchEvidenceItem[];
-  reasoningProvenance?: ReasoningProvenance | null;
-  claimBoundary?: ClaimBoundaryArtifact | null;
-}) {
-  const hasResearchRefs = researchEvidence.length > 0 || !!reasoningProvenance;
-  const hasResearchGaps =
-    !!claimBoundary &&
-    (claimBoundary.signals.missingValidation.length > 0 || claimBoundary.signals.contradictions.length > 0);
-  return (
-    <>
-      <div className="rounded-lg border border-slate-200 bg-white p-3">
-        <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-          <Database size={14} className="text-blue-600" />
-          Evidence Results
-        </h3>
-        <div className="space-y-2">
-          {context.evidenceLayers.map((layer: EvidenceLayer) => (
-            <div key={layer.technique} className="text-xs border-l-2 border-slate-200 pl-2">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-slate-900">{layer.technique}</span>
-                <StatusBadge status={layer.status} />
-              </div>
-              <p className="text-slate-600 mt-0.5 leading-relaxed">{layer.summary}</p>
-            </div>
-          ))}
-        </div>
-        {context.evidenceMode === 'multi-tech' && (
-          <div className="mt-3 pt-2 border-t border-slate-100 text-xs text-slate-600">
-            <span className="font-semibold">Cross-tech:</span> {context.discussionContext.agreement}
-          </div>
-        )}
-      </div>
-
-      {/* Research References (structured) â€” only when no workspace box exists */}
-      {hasResearchRefs && (
-        <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-1">
-            <BookOpen size={14} className="text-blue-600" />
-            Research References
-          </h3>
-          <RetrievedReferencesList items={researchEvidence} provenance={reasoningProvenance} />
-        </div>
-      )}
-
-      {/* Validation Gap (structured) */}
-      {hasResearchGaps && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <h3 className="flex items-center gap-2 text-xs font-bold text-amber-900 mb-1">
-            <AlertTriangle size={14} className="text-amber-600" />
-            Validation Gap
-          </h3>
-          <div className="text-xs">
-            <ResearchGapsList claimBoundary={claimBoundary} />
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function DiscussionCard({ context }: { context: AgentContext }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-        <Brain size={14} className="text-blue-600" />
-        Interpretation
-      </h3>
-      <p className="text-xs text-slate-700 leading-relaxed">{context.discussionContext.interpretation}</p>
-      <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-500">
-        <span className="font-semibold">Uncertainty:</span> {context.discussionContext.uncertainty}
-      </div>
-    </div>
-  );
-}
-
-function TraceTabContent({ trace }: { trace: TraceContext }) {
-  return (
-    <>
-      <div className="rounded-lg border border-slate-200 bg-white p-3">
-        <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-          <Database size={14} className="text-blue-600" />
-          Reasoning Trace
-        </h3>
-        <div className="space-y-1.5 text-xs mb-3">
-          <Row label="Mode" value={trace.mode} />
-          <Row label="Job type" value={trace.jobType} />
-          <Row label="Output" value={trace.outputLabel} />
-        </div>
-        <div className="space-y-2">
-          {trace.steps.map((step, i) => (
-            <div key={i} className="text-xs border-l-2 border-slate-200 pl-2">
-              <div className="font-semibold text-slate-900">{step.label}</div>
-              <div className="text-slate-600">{step.detail}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </>
-  );
-}
-
-function BoundaryTabContent({
-  boundary,
-  claimBoundary = null,
-}: {
-  boundary: BoundaryContext;
-  claimBoundary?: ClaimBoundaryArtifact | null;
-}) {
-  const jobLabel = boundary.jobType === 'rnd' ? 'R&D' : boundary.jobType === 'analytical' ? 'Analytical' : 'Research';
-  return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-blue-900">
-        <Shield size={14} className="text-blue-600" />
-        Claim Boundary ({jobLabel})
-      </h3>
-      {boundary.supported.length > 0 && (
-        <Section title="Supported" items={boundary.supported} color="emerald" />
-      )}
-      {boundary.validationLimited.length > 0 && (
-        <Section title="Validation-limited" items={boundary.validationLimited} color="amber" />
-      )}
-      {boundary.cannotConclude.length > 0 && (
-        <Section title="Cannot conclude" items={boundary.cannotConclude} color="rose" />
-      )}
-      {boundary.requiredNext.length > 0 && (
-        <Section title="Required next" items={boundary.requiredNext} color="blue" />
-      )}
-      <RenderedClaimBoundaryList claimBoundary={claimBoundary} />
-    </div>
-  );
-}
-
-function PlanCard({ steps }: { steps: WorkflowStep[] }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-        <ListChecks size={14} className="text-blue-600" />
-        Agent Review Plan
-      </h3>
-      <ol className="space-y-2 text-xs">
-        {steps.map((step, i) => (
-          <li key={i} className="flex gap-2">
-            <span className="font-semibold text-blue-600">{step.number}.</span>
-            <div>
-              <div className="font-semibold text-slate-900">{step.title}</div>
-              <div className="text-slate-600">{step.description}</div>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
-
-function NotebookPreviewCard({ context, onSave, onExport }: { context: AgentContext; onSave?: () => void; onExport?: () => void }) {
-  return (
-    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 space-y-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-emerald-900">
-        <FileText size={14} className="text-emerald-600" />
-        Notebook Preview
-      </h3>
-      <div className="text-xs text-emerald-800 space-y-1">
-        <Row label="Project" value={context.notebookPayload.projectTitle} />
-        <Row label="Mode" value={context.notebookPayload.mode} />
-        <Row label="Job type" value={context.notebookPayload.jobType} />
-        <Row label="Techniques" value={context.notebookPayload.activeTechniques.join(', ')} />
-        <Row label="Gaps" value={String(context.notebookPayload.validationGaps.length)} />
-      </div>
-      <div className="flex gap-2">
-        {onSave && (
-          <button type="button" onClick={onSave} className="flex-1 px-3 py-2 bg-emerald-600 text-white rounded text-xs font-semibold hover:bg-emerald-700 transition-colors">
-            Save to Notebook
-          </button>
-        )}
-        {onExport && (
-          <button type="button" onClick={onExport} className="flex-1 px-3 py-2 bg-white border border-emerald-300 text-emerald-700 rounded text-xs font-semibold hover:bg-emerald-50 transition-colors">
-            Export
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function PaperScholarPlaceholder() {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-2">
-        <BookOpen size={14} className="text-slate-500" />
-        Paper / Scholar
-      </h3>
-      <p className="text-xs text-slate-500 leading-relaxed">
-        External literature comparison is not connected in this demo. Use this section to document manual reference checks.
-      </p>
-    </div>
-  );
-}
-
-function AgentComparePlaceholder() {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-2">
-        <Search size={14} className="text-slate-500" />
-        Agent Compare
-      </h3>
-      <p className="text-xs text-slate-500 leading-relaxed">
-        External agent comparison is not connected in this demo. Agent comparison currently reflects deterministic demo reasoning.
-      </p>
-    </div>
-  );
-}
-
-function ClaimBoundaryCard({ context }: { context: AgentContext }) {
-  return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-blue-900 mb-2">
-        <CheckCircle2 size={14} className="text-blue-600" />
-        Claim Boundary
-      </h3>
-      <p className="text-xs text-blue-800 leading-relaxed">{context.claimBoundary}</p>
-    </div>
-  );
-}
-
-function ValidationGapsCard({ context }: { context: AgentContext }) {
-  if (context.validationGaps.length === 0) {
-    return (
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <h3 className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-2">
-          <AlertTriangle size={14} className="text-slate-500" />
-          Validation Gaps
-        </h3>
-        <p className="text-xs text-slate-600">No validation gaps identified for this project.</p>
-      </div>
-    );
-  }
-
-  const criticalCount = context.validationGaps.filter(g => g.severity?.toLowerCase() === 'critical').length;
-  const highCount = context.validationGaps.filter(g => {
-    const s = g.severity?.toLowerCase();
-    return s === 'high' || s === 'moderate' || s === 'major';
-  }).length;
-  const mediumCount = context.validationGaps.filter(g => {
-    const s = g.severity?.toLowerCase();
-    return s === 'medium' || s === 'minor';
-  }).length;
-  const lowCount = context.validationGaps.filter(g => g.severity?.toLowerCase() === 'low').length;
-
-  return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-amber-900 mb-2">
-        <AlertTriangle size={14} className="text-amber-600" />
-        Validation Gaps ({context.validationGaps.length})
-      </h3>
-
-      <div className="flex flex-wrap items-center gap-1 mb-3 text-[9px] font-bold">
-        <span className="rounded bg-red-100 px-1.5 py-0.5 text-red-800">Critical: {criticalCount}</span>
-        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 font-bold">High: {highCount}</span>
-        <span className="rounded bg-blue-100 px-1.5 py-0.5 text-blue-800 font-bold">Medium: {mediumCount}</span>
-        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-800 font-bold">Low: {lowCount}</span>
-      </div>
-
-      <ul className="space-y-2 text-xs text-amber-800">
-        {context.validationGaps.map((gap: ValidationGap, i: number) => {
-          const s = gap.severity?.toLowerCase();
-          const badgeStyle = s === 'critical' ? 'bg-red-100 text-red-800' :
-                             (s === 'high' || s === 'moderate' || s === 'major') ? 'bg-amber-100 text-amber-800' :
-                             (s === 'medium' || s === 'minor') ? 'bg-blue-100 text-blue-800' :
-                             'bg-emerald-100 text-emerald-800';
-          return (
-            <li key={i} className="flex gap-2 items-start">
-              <span className="text-amber-600 mt-0.5 shrink-0">-</span>
-              <span className="flex-1">
-                <span className={`inline-block mr-1.5 rounded px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide leading-none ${badgeStyle}`}>
-                  {gap.severity}
-                </span>
-                {gap.description}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-function RecommendedActionsCard({ context }: { context: AgentContext }) {
-  if (context.recommendedActions.length === 0) {
-    return (
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <h3 className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-2">
-          <TrendingUp size={14} className="text-slate-500" />
-          Recommended Actions
-        </h3>
-        <p className="text-xs text-slate-600">Recommended next action will appear after evidence review.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-emerald-900 mb-2">
-        <TrendingUp size={14} className="text-emerald-600" />
-        Recommended Actions
-      </h3>
-      <ol className="space-y-1.5 text-xs text-emerald-800">
-        {context.recommendedActions.map((d: NextDecision, i: number) => (
-          <li key={i} className="flex gap-2">
-            <span className="font-semibold text-emerald-600">{i + 1}.</span>
-            <span className="flex-1">{d.label}: {d.description}</span>
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
-
-// Small Helpers
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex gap-2">
-      <span className="w-28 shrink-0 font-semibold text-slate-600">{label}:</span>
-      <span className="flex-1 text-slate-900">{value}</span>
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  if (status === 'available') return null;
-  const style = status === 'required'
-    ? 'bg-amber-50 border-amber-200 text-amber-700'
-    : 'bg-slate-100 border-slate-200 text-slate-600';
-  return <span className={`ml-1 text-[10px] px-1 py-0.5 rounded border ${style}`}>{status}</span>;
-}
-
-function Section({ title, items, color }: { title: string; items: string[]; color: string }) {
-  const textColor = `text-${color}-800`;
-  const bulletColor = `text-${color}-500`;
-  return (
-    <div>
-      <span className={`text-[10px] font-bold uppercase tracking-wide ${textColor}`}>{title}</span>
-      <ul className="mt-1 space-y-1 text-xs">
-        {items.map((item, i) => (
-          <li key={i} className={`flex gap-1.5 ${textColor}`}>
-            <span className={bulletColor}>-</span>
-            <span className="flex-1">{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function EvidenceUsedCard({
-  modelMode = 'deterministic',
-  llmState,
-  registryProject,
-  evidenceWorkspace,
-  agentContext,
-}: {
-  modelMode?: 'deterministic' | 'vertex-gemini' | 'gemma';
-  llmState?: { output: any; usedLlm: boolean; fallbackUsed: boolean; };
-  registryProject?: RegistryProject;
-  evidenceWorkspace?: AgentEvidenceWorkspace;
-  agentContext: AgentContext;
-}) {
-  const engineMap = {
-    deterministic: 'Deterministic',
-    'vertex-gemini': 'Gemini 2.5 Flash',
-    gemma: 'Gemma',
-  };
-
-  const reasoningEngine = engineMap[modelMode] || 'Deterministic';
-  const fallbackUsed = llmState?.fallbackUsed ? 'Yes' : 'No';
-  const fallbackReason = llmState?.fallbackUsed && llmState.output?.metadata?.fallbackReason
-    ? ` (${llmState.output.metadata.fallbackReason})`
-    : '';
-
-  const evidenceSources: string[] = [];
-
-  // Collect active techniques
-  if (registryProject) {
-    registryProject.techniques.forEach(t => {
-      if (t.available) {
-        evidenceSources.push(t.id.toUpperCase());
-      }
-    });
-  } else if (evidenceWorkspace) {
-    evidenceSources.push(evidenceWorkspace.focusedTechnique.toUpperCase());
-  } else if (agentContext.primaryTechnique) {
-    evidenceSources.push(agentContext.primaryTechnique.toUpperCase());
-  }
-
-  // If multi-tech is active, include "Fusion"
-  if (agentContext.evidenceMode === 'multi-tech') {
-    evidenceSources.push('Fusion');
-  }
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-      <h3 className="flex items-center gap-2 text-xs font-bold text-slate-900 mb-2">
-        <Database size={14} className="text-blue-600" />
-        Evidence Used & Provenance
-      </h3>
-      <div className="space-y-2 text-xs">
-        <div className="flex justify-between border-b border-slate-100 pb-1.5">
-          <span className="font-semibold text-slate-600">Reasoning Engine:</span>
-          <span className="text-slate-900 font-medium">{reasoningEngine}</span>
-        </div>
-        <div className="flex justify-between border-b border-slate-100 pb-1.5">
-          <span className="font-semibold text-slate-600">Fallback Used:</span>
-          <span className={`font-semibold ${llmState?.fallbackUsed ? 'text-amber-600' : 'text-slate-900'}`}>
-            {fallbackUsed}{fallbackReason}
-          </span>
-        </div>
-        <div>
-          <span className="font-semibold text-slate-600 block mb-1">Evidence Sources:</span>
-          <ul className="space-y-1 pl-1">
-            {evidenceSources.length > 0 ? (
-              evidenceSources.map((source) => (
-                <li key={source} className="flex items-center gap-1.5 text-slate-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
-                  <span>{source}</span>
-                </li>
-              ))
-            ) : (
-              <li className="text-slate-400 italic">No evidence loaded</li>
-            )}
-          </ul>
-        </div>
-      </div>
-    </div>
   );
 }
