@@ -46,7 +46,6 @@ import type {
   ValidationState,
 } from '../data/demoProjects';
 import { generateRunId, saveRun, type AgentRun } from '../data/runModel';
-import { buildEvidencePacket } from '../agent/mcp/evidencePacket';
 import type { XpsElementEvidence } from '../agent/mcp/types';
 import { readLatestXpsElementEvidence } from '../data/xpsElementEvidence';
 import {
@@ -57,15 +56,10 @@ import { callReasoningAPI } from '../server/api/reasoning';
 import { getProviderStatus } from '../server/llm/router';
 import type { ReasoningOutput, ToolResult } from '../agent/mcp/types';
 import {
-  createNotebookEntryFromRefinement,
   createProcessingResultFromXrdDemo,
   getLatestProcessingResult,
   getProcessingResult,
   normalizeNotebookTemplateMode,
-  refineDiscussionFromProcessing,
-  saveAgentDiscussionRefinement,
-  saveNotebookEntry,
-  saveProcessingResult,
   type NotebookEntry,
 } from '../data/workflowPipeline';
 import {
@@ -81,7 +75,11 @@ import { MainHeader } from '../components/agent-demo/MainHeader';
 import { CenterColumn } from '../components/agent-demo/CenterColumn';
 import { RightPanel } from '../components/agent-demo/RightPanel';
 import { MultiTechPopover } from '../components/agent-demo/MultiTechPopover';
-import { evaluate as evaluateFusionEngine, createEvidenceNodes, type EvidenceNode, type FusionResult, type PeakInput } from '../engines/fusionEngine';
+import { type EvidenceNode, type FusionResult, type PeakInput } from '../engines/fusionEngine';
+import { ClaimBoundaryService } from '../scientificReview/services/claimBoundaryService';
+import { EvidenceBundleService } from '../scientificReview/services/evidenceBundleService';
+import { FusionService } from '../scientificReview/services/fusionService';
+import { NotebookHandoffService } from '../scientificReview/services/notebookHandoffService';
 import {
   getLatestExperimentConditionLock,
   unlockExperimentConditions,
@@ -136,7 +134,6 @@ import {
   type LiteratureSearchTrace,
   formatLiteratureSearchTrace,
 } from '../types/researchEvidence';
-import { buildClaimBoundaryArtifact } from '../utils/claimBoundaryArtifact';
 import { sanitizeScientificWording } from '../utils/claimBoundaryPresentation';
 
 type TechniqueContext = Technique;
@@ -1197,6 +1194,11 @@ import {
   demoDatasetToFtirDataset,
 } from '../utils/techniqueDatasetAdapters';
 
+const compatibilityEvidenceBundleService = new EvidenceBundleService();
+const compatibilityFusionService = new FusionService();
+const compatibilityClaimBoundaryService = new ClaimBoundaryService();
+const compatibilityNotebookHandoffService = new NotebookHandoffService();
+
 function FormulaText({
   children,
   className = '',
@@ -1330,7 +1332,7 @@ function techniqueIdToContext(techniqueId: TechniqueId): TechniqueContext | null
  * Create decision result using fusionEngine as the single reasoning authority
  * No local numeric review math - fusionEngine controls interpretation output
  */
-function createDecisionResult(
+export function createDecisionResult(
   context: TechniqueContext,
   option: DatasetOption,
   xrdAnalysis: ReturnType<typeof runXrdPhaseIdentificationAgent> | null,
@@ -1391,7 +1393,7 @@ function createDecisionResult(
 
   // Create evidence nodes using central fusionEngine function
   const evidenceNodes = peakInputs.length > 0
-    ? createEvidenceNodes({ technique: context, peaks: peakInputs })
+    ? compatibilityFusionService.createEvidenceNodes({ technique: context, peaks: peakInputs })
     : [{
         id: 'fallback-evidence',
         technique: context,
@@ -1401,7 +1403,7 @@ function createDecisionResult(
       }];
 
   // Call fusionEngine as the single reasoning authority
-  const fusionResult: FusionResult = evaluateFusionEngine({ evidence: evidenceNodes });
+  const fusionResult: FusionResult = compatibilityFusionService.evaluate({ evidence: evidenceNodes });
 
   // Extract feature count for metrics
   const featureCount = context === 'XRD' && xrdAnalysis
@@ -1469,7 +1471,7 @@ function createDecisionResult(
   };
 }
 
-function toAgentRunResult(
+export function toAgentRunResult(
   result: DecisionResult,
   context: TechniqueContext,
   option: DatasetOption,
@@ -2254,7 +2256,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       const xpsElementEvidence =
         context === 'XPS' ? readLatestXpsElementEvidence(project.id)?.evidence ?? undefined : undefined;
 
-      const packet = buildEvidencePacket(
+      const packet = compatibilityEvidenceBundleService.buildActiveModelInput(
         context,
         dataset,
         project,
@@ -2551,7 +2553,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     const missingValidation = Array.from(
       new Set([...(decision.limitations ?? []), ...((llmOutput?.uncertainty ?? []))].filter(Boolean)),
     );
-    const claimBoundary = buildClaimBoundaryArtifact({
+    const claimBoundary = compatibilityClaimBoundaryService.build({
       technique: context,
       provider: reasoningProvider,
       confidence: llmOutput ? llmOutput.confidence : 0.6,
@@ -3129,9 +3131,9 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
 
   const handleRefineInterpretation = () => {
     if (guardConnectedRuntime('Interpretation refinement', 'interpretation_refinement', 'Local interpretation refinement preview', 'medium')) return;
-    saveProcessingResult(workflowProcessingResult);
-    const refinement = refineDiscussionFromProcessing(workflowProcessingResult, templateMode);
-    saveAgentDiscussionRefinement(refinement);
+    compatibilityNotebookHandoffService.saveProcessing(workflowProcessingResult);
+    const refinement = compatibilityNotebookHandoffService.refine(workflowProcessingResult, templateMode);
+    compatibilityNotebookHandoffService.saveRefinement(refinement);
     appendLog({
       stamp: '[refine]',
       message: `Refined discussion prepared from ${workflowProcessingResult.technique} processing output using ${templateMode} notebook template.`,
@@ -3154,10 +3156,10 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       saveAgentRunResult(runResult);
     }
 
-    saveProcessingResult(workflowProcessingResult);
-    const refinement = refineDiscussionFromProcessing(workflowProcessingResult, templateMode);
-    saveAgentDiscussionRefinement(refinement);
-    const notebookEntry = createNotebookEntryFromRefinement(refinement, templateMode);
+    compatibilityNotebookHandoffService.saveProcessing(workflowProcessingResult);
+    const refinement = compatibilityNotebookHandoffService.refine(workflowProcessingResult, templateMode);
+    compatibilityNotebookHandoffService.saveRefinement(refinement);
+    const notebookEntry = compatibilityNotebookHandoffService.createEntry(refinement, templateMode);
     // Phase X5C: Use selector + extractor, no inline adapter
     const refEvidenceSelected = selectXrdWorkflowReferenceMatchEvidence(xrdBackendEvidence);
     const refEvidenceFields = extractReferenceMatchFields(refEvidenceSelected);
@@ -3204,7 +3206,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
         })()
       : notebookEntry;
 
-    saveNotebookEntry(entryToSave as NotebookEntry);
+    compatibilityNotebookHandoffService.saveEntry(entryToSave as NotebookEntry);
     logLocalAction('Notebook handoff', 'notebook_commit', 'Notebook memory handoff preview', 'low');
     appendLog({
       stamp: '[notebook]',
