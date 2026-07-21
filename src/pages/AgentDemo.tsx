@@ -3117,7 +3117,7 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
     void runStep();
   };
 
-  const handleExportReport = () => {
+  const handleExportReport = (format: 'md' | 'txt' = 'md') => {
     if (guardConnectedRuntime('Report export', 'report_export', 'Local report export preview', 'medium')) return;
     if (!currentResult) return;
     appendLog({
@@ -3126,7 +3126,40 @@ function AgentDemoContent({ routeContext }: { routeContext: EvidenceRouteContext
       type: 'success',
     });
     logLocalAction('Report export', 'report_export', 'Local report export preview', 'medium');
-    showFeedback('Export report preview prepared.');
+
+    import('../utils/agentReportBuilder').then(({ exportAgentReport }) => {
+      exportAgentReport({
+        projectId: selectedProject?.id || 'unknown',
+        projectTitle: selectedProject?.name || registryProject?.title || currentProject?.name,
+        materialSystem: selectedProject?.material || registryProject?.materialSystem,
+        objective: registryProject?.objective || agentContext.objective,
+        jobType: registryProject?.jobType || 'rd',
+        claimStatus: registryProject?.claimStatus,
+        mode: agentState.mode,
+        agentContext,
+        registryProject,
+        evidenceWorkspace: evidenceWorkspace ?? undefined,
+        toolTrace: agentState.toolTrace.map(t => ({
+          id: t.id,
+          toolName: t.toolName,
+          callType: t.callType,
+          argsSummary: t.argsSummary,
+          resultSummary: t.resultSummary,
+          evidenceImpact: t.evidenceImpact,
+          approvalStatus: t.approvalStatus,
+          timestamp: t.timestamp,
+          status: t.status === 'error' ? 'error' : t.status === 'running' ? 'running' : t.status === 'pending' ? 'pending' : 'complete',
+        })),
+        researchEvidence: agentState.researchEvidence,
+        reasoningProvenance: agentState.provenance,
+        claimBoundary: agentState.claimBoundary,
+        isConditionLocked,
+      }, format);
+    }).catch(err => {
+      console.warn('Agent report export failed:', err);
+    });
+
+    showFeedback(`Export report prepared (${format.toUpperCase()}).`);
   };
 
   const handleRefineInterpretation = () => {
