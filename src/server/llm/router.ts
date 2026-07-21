@@ -19,6 +19,7 @@ import type {
 } from '../../agent/mcp/types';
 import { callVertexGemini, isVertexAIConfigured } from './vertexGemini';
 import { callGemma, isGemmaConfigured } from './gemmaProvider';
+import { buildScientificBaselineResult } from '../../agent/prompt/canonicalAgentPrompt';
 
 /**
  * Generate deterministic reasoning output from evidence packet.
@@ -26,6 +27,7 @@ import { callGemma, isGemmaConfigured } from './gemmaProvider';
  */
 function generateDeterministicReasoning(packet: AgentEvidencePacket): ReasoningOutput {
   const startTime = Date.now();
+  const analysisResult = buildScientificBaselineResult(packet);
   const topCandidate = packet.candidates[0];
 
   if (!topCandidate) {
@@ -86,11 +88,13 @@ function generateDeterministicReasoning(packet: AgentEvidencePacket): ReasoningO
     decisionLogic,
     uncertainty,
     recommendedNextStep,
+    analysisResult,
     metadata: {
       provider: 'deterministic',
-      model: 'deterministic-reasoning-v1',
+      model: 'rule-based-analysis-v3',
       durationMs,
       timestamp: new Date().toISOString(),
+      parameterSchemaVersion: analysisResult.provenance.parameterSchemaVersion,
     },
   };
 }
@@ -105,7 +109,7 @@ export async function routeReasoning(
 ): Promise<ReasoningResponse> {
   try {
     // Deterministic mode
-    if (provider === 'deterministic') {
+    if (provider === 'deterministic' || provider === 'scientific-baseline') {
       const output = generateDeterministicReasoning(packet);
       return {
         success: true,
@@ -115,7 +119,7 @@ export async function routeReasoning(
     }
 
     // Vertex AI Gemini mode
-    if (provider === 'vertex-gemini') {
+    if (provider === 'vertex-gemini' || provider === 'gemini-2.5-flash') {
       if (!isVertexAIConfigured()) {
         console.warn('Vertex AI not configured, falling back to deterministic reasoning');
         const output = generateDeterministicReasoning(packet);
@@ -127,7 +131,7 @@ export async function routeReasoning(
       }
 
       try {
-        const output = await callVertexGemini(packet, model);
+        const output = await callVertexGemini(packet, model ?? 'gemini-2.5-flash');
         return {
           success: true,
           output,
@@ -142,6 +146,14 @@ export async function routeReasoning(
           fallbackUsed: true,
         };
       }
+    }
+
+    // GPT-5.6 request contract is available through the scientificReview
+    // adapter. Until a server transport is configured, fail closed to the
+    // baseline result and preserve fallback provenance.
+    if (provider === 'gpt-5.6') {
+      const output = generateDeterministicReasoning(packet);
+      return { success: true, output, fallbackUsed: true };
     }
 
     // Gemma mode
@@ -196,19 +208,19 @@ export function getProviderStatus(provider: ModelProvider): {
   configured: boolean;
   displayName: string;
 } {
-  if (provider === 'deterministic') {
+  if (provider === 'deterministic' || provider === 'scientific-baseline') {
     return {
-      provider: 'deterministic',
+      provider,
       configured: true,
-      displayName: 'Deterministic',
+      displayName: 'Scientific Baseline Mode',
     };
   }
 
-  if (provider === 'vertex-gemini') {
+  if (provider === 'vertex-gemini' || provider === 'gemini-2.5-flash') {
     return {
-      provider: 'vertex-gemini',
+      provider,
       configured: isVertexAIConfigured(),
-      displayName: 'Vertex AI Gemini',
+      displayName: 'Gemini 2.5 Flash',
     };
   }
 
@@ -217,6 +229,14 @@ export function getProviderStatus(provider: ModelProvider): {
       provider: 'gemma',
       configured: isGemmaConfigured(),
       displayName: 'Gemma',
+    };
+  }
+
+  if (provider === 'gpt-5.6') {
+    return {
+      provider,
+      configured: false,
+      displayName: 'GPT-5.6 Scientific Reasoning',
     };
   }
 

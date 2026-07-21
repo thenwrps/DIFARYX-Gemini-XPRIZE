@@ -8,6 +8,8 @@
  */
 
 import type { AgentEvidencePacket } from '../types/llm';
+import type { AnalysisModeId } from '../data/parameterDefinitions';
+import { buildCanonicalAgentPrompt } from '../agent/prompt/canonicalAgentPrompt';
 
 /**
  * Build the system prompt for DIFARYX LLM reasoning.
@@ -92,9 +94,12 @@ Based on this evidence ONLY, provide your reasoning in the required JSON format.
  * Build the complete prompt for LLM reasoning.
  */
 export function buildLLMPrompt(packet: AgentEvidencePacket): string {
-  return `${buildSystemPrompt()}
-
-${buildEvidencePrompt(packet)}`;
+  const canonicalPacket = packet as unknown as import('../agent/mcp/types').AgentEvidencePacket;
+  const requestedMode = canonicalPacket.analysisMode;
+  const mode: AnalysisModeId = requestedMode === 'gpt-5.6-scientific' || requestedMode === 'gemini-2.5-flash'
+    ? requestedMode
+    : 'gemini-2.5-flash';
+  return buildCanonicalAgentPrompt(canonicalPacket, mode);
 }
 
 /**

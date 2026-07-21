@@ -8,28 +8,57 @@ import {
   ScientificModelConfigurationError,
   type ScientificModelConfiguration,
 } from './modelConfig';
+import { buildCanonicalAgentPrompt } from '../../agent/prompt/canonicalAgentPrompt';
 
 /** Strict output contract reserved for the future Responses API adapter. */
 export const SCIENTIFIC_REVIEW_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
-    'primaryResult',
+    'mode',
+    'model',
+    'technique',
+    'datasetId',
+    'sourceFiles',
+    'evidence',
+    'claims',
+    'supportingEvidence',
+    'contradictingEvidence',
+    'interpretation',
+    'validationStatus',
+    'validationGap',
     'confidence',
-    'evidenceSummary',
-    'rejectedAlternatives',
-    'decisionLogic',
-    'uncertainty',
-    'recommendedNextStep',
+    'missingInformation',
+    'requiredNextAction',
+    'provenance',
+    'parameterSnapshot',
   ],
   properties: {
-    primaryResult: { type: 'string' },
-    confidence: { type: 'number', minimum: 0, maximum: 1 },
-    evidenceSummary: { type: 'array', items: { type: 'string' } },
-    rejectedAlternatives: { type: 'array', items: { type: 'string' } },
-    decisionLogic: { type: 'string' },
-    uncertainty: { type: 'array', items: { type: 'string' } },
-    recommendedNextStep: { type: 'string' },
+    mode: { type: 'string', enum: ['gpt-5.6-scientific'] },
+    model: { type: ['string', 'null'] },
+    technique: { type: 'string', enum: ['xrd', 'xps', 'ftir', 'raman'] },
+    datasetId: { type: 'string' },
+    sourceFiles: { type: 'array', items: { type: 'string' } },
+    evidence: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    claims: { type: 'array', items: { type: 'string' } },
+    supportingEvidence: { type: 'array', items: { type: 'string' } },
+    contradictingEvidence: { type: 'array', items: { type: 'string' } },
+    interpretation: { type: ['string', 'null'] },
+    validationStatus: { type: 'string', enum: ['blocked', 'limited_confidence', 'validation_limited', 'validated'] },
+    validationGap: { type: 'array', items: { type: 'string' } },
+    confidence: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['measurementQuality', 'interpretation'],
+      properties: {
+        measurementQuality: { type: 'number', minimum: 0, maximum: 1 },
+        interpretation: { type: 'number', minimum: 0, maximum: 1 },
+      },
+    },
+    missingInformation: { type: 'array', items: { type: 'string' } },
+    requiredNextAction: { type: 'array', items: { type: 'string' } },
+    provenance: { type: 'object', additionalProperties: true },
+    parameterSnapshot: { type: 'object', additionalProperties: true },
   },
 } as const;
 
@@ -38,6 +67,7 @@ export interface OpenAIResponsesRequestContract {
   store: false;
   reasoning: { effort: string };
   input: CanonicalScientificEvidencePacket;
+  instructions: string;
   metadata: {
     promptVersion: string;
     evidenceSnapshotId?: string;
@@ -89,6 +119,7 @@ export class OpenAIResponsesScientificReasoningAdapter implements ScientificReas
       store: false,
       reasoning: { effort: this.configuration.reasoningEffort },
       input: request.packet,
+      instructions: buildCanonicalAgentPrompt(request.packet, 'gpt-5.6-scientific'),
       metadata: {
         promptVersion: this.configuration.promptVersion,
         evidenceSnapshotId: request.evidenceSnapshotId,
