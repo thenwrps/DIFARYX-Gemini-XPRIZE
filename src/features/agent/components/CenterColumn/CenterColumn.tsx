@@ -12,7 +12,7 @@ import {
   ShieldAlert,
   Target,
 } from 'lucide-react';
-import { Graph } from '../../../../components/ui/Graph';
+import { Graph } from '../../../../shared/ui/Graph';
 import { DemoProjectGraph } from '../../../../components/graphs/DemoProjectGraph';
 import { CompactWorkflowStepper, type ScientificStageId } from './CompactWorkflowStepper';
 import { EvidenceWorkspaceCard } from './EvidenceWorkspaceCard';

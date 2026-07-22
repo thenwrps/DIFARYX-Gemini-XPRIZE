@@ -1,6 +1,6 @@
 import React, { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronRight, FilePlus2, LockKeyhole, Upload, X } from 'lucide-react';
-import { Button } from '../../../components/ui/Button';
+import { Button } from '../../../shared/ui/Button';
 import {
   DEFAULT_PROJECT_ID,
   DemoDataset,

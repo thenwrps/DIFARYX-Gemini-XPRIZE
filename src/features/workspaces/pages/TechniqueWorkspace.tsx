@@ -20,10 +20,10 @@ import {
   Upload,
 } from 'lucide-react';
 import { DashboardLayout } from '../../../components/layout/DashboardLayout';
-import { Button } from '../../../components/ui/Button';
-import { Card } from '../../../components/ui/Card';
-import { Graph } from '../../../components/ui/Graph';
-import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import { Button } from '../../../shared/ui/Button';
+import { Card } from '../../../shared/ui/Card';
+import { Graph } from '../../../shared/ui/Graph';
+import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
 import XRDWorkspace from './XRDWorkspace';
 import {
   DEFAULT_PROJECT_ID,

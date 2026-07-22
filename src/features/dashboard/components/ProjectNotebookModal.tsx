@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, FileText, Beaker, ClipboardCheck } from 'lucide-react';
-import { Button } from '../../../components/ui/Button';
+import { Button } from '../../../shared/ui/Button';
 
 export type NotebookMode = 'research' | 'rd' | 'analytical';
 

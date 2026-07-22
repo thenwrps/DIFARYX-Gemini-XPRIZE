@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { ArrowLeft, Atom, AlertTriangle, BookOpen, Layers, Shield } from 'lucide-react';
-import { Graph } from '../../../../components/ui/Graph';
+import { Graph } from '../../../../shared/ui/Graph';
 import { sanitizeScientificWording } from '../../../../utils/claimBoundaryPresentation';
 import {
   getElementRegionWindow,

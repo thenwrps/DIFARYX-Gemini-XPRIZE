@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Zap, Link2, FileText } from 'lucide-react';
-import { Button } from '../../../components/ui/Button';
+import { Button } from '../../../shared/ui/Button';
 
 export type ExperimentType = 'research' | 'rd' | 'analytical';
 export type ExperimentAttachment = 'standalone' | 'attach';

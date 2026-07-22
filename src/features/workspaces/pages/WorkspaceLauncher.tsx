@@ -2,7 +2,7 @@ import React from 'react';
 import { resolveRuntimeConfig } from '../../../config/runtimeConfig';
 import { DemoWorkspaceLauncher } from '../components/DemoWorkspaceLauncher';
 import { ServerWorkspaceLauncher } from '../components/ServerWorkspaceLauncher';
-import { ConfigurationErrorScreen } from '../../../components/ui/ConfigurationErrorScreen';
+import { ConfigurationErrorScreen } from '../../../shared/ui/ConfigurationErrorScreen';
 
 export default function WorkspaceLauncher() {
   const { config, error } = resolveRuntimeConfig();

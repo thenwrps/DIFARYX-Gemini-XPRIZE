@@ -4,9 +4,9 @@ import { ArrowRight, Clipboard, Download, FileText, Save, ShieldCheck, Sparkles,
 import { reproduceAnalysis } from '../../../utils/reproduceAnalysis';
 import { DashboardLayout } from '../../../components/layout/DashboardLayout';
 
-import { Button } from '../../../components/ui/Button';
-import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
-import { Card } from '../../../components/ui/Card';
+import { Button } from '../../../shared/ui/Button';
+import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
+import { Card } from '../../../shared/ui/Card';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useXrdWorkflowRuntime } from '../../../context/XrdWorkflowRuntimeContext';
 import { useX7UniversalHook } from '../../../hooks/useX7UniversalHook';
@@ -44,7 +44,7 @@ import {
 import { exportDemoArtifact, type DemoExportFormat, type DemoExportSection } from '../../../utils/demoExport';
 import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
 import { createUploadedEvidenceRegistryProject } from '../../../utils/uploadedEvidenceProjectContext';
-import { ScientificConfidenceSummary } from '../../../components/ui/ScientificConfidenceSummary';
+import { ScientificConfidenceSummary } from '../../../shared/ui/ScientificConfidenceSummary';
 import {
   getRuntimeBadgeClass,
   getRuntimeBadgeLabel,

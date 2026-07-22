@@ -11,7 +11,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { DashboardLayout } from '../../../components/layout/DashboardLayout';
-import { Card } from '../../../components/ui/Card';
+import { Card } from '../../../shared/ui/Card';
 import { useAuth } from '../../../contexts/AuthContext';
 import { formatChemicalFormula } from '../../../utils';
 import {

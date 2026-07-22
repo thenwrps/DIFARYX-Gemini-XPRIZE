@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, ChevronRight, CheckCircle2, FileText, Beaker, ClipboardCheck, Upload, ChevronDown } from 'lucide-react';
-import { Button } from '../../../components/ui/Button';
+import { Button } from '../../../shared/ui/Button';
 import { NotebookMode, saveProjectNotebook, saveWizardHistoryEntry, getLocalProjectNotebooks } from '../../../data/demoProjects';
 
 interface ProjectNotebookWizardProps {

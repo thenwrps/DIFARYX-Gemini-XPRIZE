@@ -84,7 +84,7 @@ function PageLoadingIndicator({ message }: { message: string }) {
 }
 
 import { resolveRuntimeConfig } from "../config/runtimeConfig";
-import { ConfigurationErrorScreen } from "../components/ui/ConfigurationErrorScreen";
+import { ConfigurationErrorScreen } from "../shared/ui/ConfigurationErrorScreen";
 import { OrganizationProvider } from "../contexts/OrganizationContext";
 
 function App() {

@@ -17,7 +17,7 @@ import {
   Shield,
   Upload,
 } from 'lucide-react';
-import { Button, cn } from '../../../components/ui/Button';
+import { Button, cn } from '../../../shared/ui/Button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ExperimentModal } from '../../workspaces/components/ExperimentModal';
 import { CreateMenu } from '../components/CreateMenu';
@@ -29,7 +29,7 @@ import { formatChemicalFormula } from '../../../utils';
 import {
   getEvidenceStrengthQualifier,
   getConfidenceLevel,
-} from '../../../components/ui/ScientificConfidenceSummary';
+} from '../../../shared/ui/ScientificConfidenceSummary';
 import {
   claimStatusLabel,
   demoProjectRegistry,

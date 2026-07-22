@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, Mail, UserRound } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { Button } from "../../../components/ui/Button";
-import { Card, CardContent } from "../../../components/ui/Card";
+import { Button } from "../../../shared/ui/Button";
+import { Card, CardContent } from "../../../shared/ui/Card";
 import { useAuth, type AuthUser } from "../../../contexts/AuthContext";
 import {
   getGoogleOAuthClientId,

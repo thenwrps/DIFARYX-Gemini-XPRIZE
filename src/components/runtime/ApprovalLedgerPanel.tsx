@@ -1,6 +1,6 @@
 import React from 'react';
 import { Clock3, ShieldCheck, Trash2 } from 'lucide-react';
-import { Button } from '../ui/Button';
+import { Button } from '../../shared/ui/Button';
 import {
   clearApprovalLedger,
   getApprovalLedgerEntries,

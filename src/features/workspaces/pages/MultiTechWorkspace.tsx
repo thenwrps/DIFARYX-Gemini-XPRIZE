@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, BookOpen, CheckCircle2, FileText, LockKeyhole, Play, Save, Upload, X } from 'lucide-react';
 import { DashboardLayout } from '../../../components/layout/DashboardLayout';
-import { Button } from '../../../components/ui/Button';
-import { Card } from '../../../components/ui/Card';
-import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
-import { Graph } from '../../../components/ui/Graph';
+import { Button } from '../../../shared/ui/Button';
+import { Card } from '../../../shared/ui/Card';
+import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
+import { Graph } from '../../../shared/ui/Graph';
 import { useAuth } from '../../../contexts/AuthContext';
 import { LockedScientificContext } from '../../../components/locked-context/LockedScientificContext';
 import {

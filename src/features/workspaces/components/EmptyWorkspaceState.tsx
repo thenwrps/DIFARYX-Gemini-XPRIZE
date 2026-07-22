@@ -1,7 +1,7 @@
 import React from 'react';
 import { Database, Upload } from 'lucide-react';
-import { Button } from '../../../components/ui/Button';
-import { Card } from '../../../components/ui/Card';
+import { Button } from '../../../shared/ui/Button';
+import { Card } from '../../../shared/ui/Card';
 import { Technique } from '../../../data/demoProjects';
 
 interface EmptyWorkspaceStateProps {

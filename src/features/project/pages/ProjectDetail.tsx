@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DashboardLayout } from '../../../components/layout/DashboardLayout';
-import { Card } from '../../../components/ui/Card';
-import { Graph } from '../../../components/ui/Graph';
+import { Card } from '../../../shared/ui/Card';
+import { Graph } from '../../../shared/ui/Graph';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -41,7 +41,7 @@ import {
 } from '../../../utils/projectEvidence';
 import { ActivityTimelineWidget } from '../../dashboard/components/ActivityTimelineWidget';
 import { formatClaimStatus as formatSharedClaimStatus, sanitizeScientificWording } from '../../../utils/claimBoundaryPresentation';
-import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
 
 /* ---------- helpers ---------- */
 

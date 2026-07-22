@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, BarChart3, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, FlaskConical, MoreHorizontal, Plus, Printer, Save, Share2, Target, X, RotateCcw } from 'lucide-react';
 import { DashboardLayout } from '../../../components/layout/DashboardLayout';
-import { Button } from '../../../components/ui/Button';
-import { Card } from '../../../components/ui/Card';
-import { AIInsightPanel } from '../../../components/ui/AIInsightPanel';
+import { Button } from '../../../shared/ui/Button';
+import { Card } from '../../../shared/ui/Card';
+import { AIInsightPanel } from '../../../shared/ui/AIInsightPanel';
 import { ExperimentModal } from '../../workspaces/components/ExperimentModal';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useXrdWorkflowRuntime } from '../../../context/XrdWorkflowRuntimeContext';
@@ -46,7 +46,7 @@ import { DemoExportFormat, exportDemoArtifact } from '../../../utils/demoExport'
 import { reproduceAnalysis } from '../../../utils/reproduceAnalysis';
 import { getRun, type AgentRun } from '../../../data/runModel';
 import { formatClaimStatus as formatSharedClaimStatus } from '../../../utils/claimBoundaryPresentation';
-import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
 import {
   NOTEBOOK_TEMPLATES,
   createNotebookEntryFromRefinement,
@@ -86,7 +86,7 @@ import {
 } from '../../../data/experimentConditionLock';
 import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
 import { createUploadedEvidenceRegistryProject } from '../../../utils/uploadedEvidenceProjectContext';
-import { ScientificConfidenceSummary } from '../../../components/ui/ScientificConfidenceSummary';
+import { ScientificConfidenceSummary } from '../../../shared/ui/ScientificConfidenceSummary';
 import { ConnectedAccountStatus } from '../../../components/runtime/ConnectedAccountStatus';
 import { getRuntimeBadgeClass, getRuntimeBadgeLabel, requiresApproval } from '../../../runtime/difaryxRuntimeMode';
 import {

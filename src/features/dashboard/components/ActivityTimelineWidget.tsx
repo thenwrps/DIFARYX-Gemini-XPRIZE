@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card } from '../../../components/ui/Card';
+import { Card } from '../../../shared/ui/Card';
 import {
   Activity,
   Layers,

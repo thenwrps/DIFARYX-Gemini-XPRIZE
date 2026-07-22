@@ -7,7 +7,7 @@ import type {
 } from '../../data/demoProjectRegistry';
 
 const Graph = React.lazy(() =>
-  import('../ui/Graph').then((module) => ({ default: module.Graph }))
+  import('../../shared/ui/Graph').then((module) => ({ default: module.Graph }))
 );
 
 /**

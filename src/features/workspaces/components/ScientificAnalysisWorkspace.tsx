@@ -38,7 +38,7 @@ import {
   X,
   ZoomIn,
 } from 'lucide-react';
-import { Graph } from '../../../components/ui/Graph';
+import { Graph } from '../../../shared/ui/Graph';
 import { RawFileUploadModal } from './RawFileUploadModal';
 import { ReportPreviewPanel } from './ReportPreviewPanel';
 import { processWorkspaceSignal } from '../../../utils/workspaceSignalProcessor';

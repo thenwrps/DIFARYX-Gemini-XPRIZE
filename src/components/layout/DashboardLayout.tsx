@@ -15,7 +15,7 @@ import {
   ChevronDown,
   LogOut,
 } from 'lucide-react';
-import { cn } from '../ui/Button';
+import { cn } from '../../shared/ui/Button';
 import { DEFAULT_PROJECT_ID } from '../../data/demoProjects';
 import { useAuth } from '../../contexts/AuthContext';
 import {

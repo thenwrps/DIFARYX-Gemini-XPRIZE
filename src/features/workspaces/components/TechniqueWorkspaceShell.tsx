@@ -25,7 +25,7 @@ import {
   Upload,
   ZoomIn,
 } from 'lucide-react';
-import { Graph } from '../../../components/ui/Graph';
+import { Graph } from '../../../shared/ui/Graph';
 import {
   getFocusedEvidenceSource,
   getRegistryProject,
@@ -98,7 +98,7 @@ import {
   getRuntimeContextForEvidenceSource,
 } from '../../../runtime/difaryxRuntimeMode';
 import { sanitizeScientificWording } from '../../../utils/claimBoundaryPresentation';
-import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
 import {
   readUploadedSignalRuns,
   updateUploadedRunProcessingResults,

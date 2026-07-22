@@ -23,8 +23,8 @@ import {
   Terminal,
   Upload,
 } from 'lucide-react';
-import { Graph } from '../../../components/ui/Graph';
-import { Card } from '../../../components/ui/Card';
+import { Graph } from '../../../shared/ui/Graph';
+import { Card } from '../../../shared/ui/Card';
 import { DashboardLayout } from '../../../components/layout/DashboardLayout';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useXrdWorkflowRuntime, getStageLabel, isXrdBackendEvidenceRecord } from '../../../context/XrdWorkflowRuntimeContext';

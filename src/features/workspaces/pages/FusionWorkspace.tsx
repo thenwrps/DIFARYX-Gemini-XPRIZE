@@ -7,7 +7,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { DashboardLayout } from '../../../components/layout/DashboardLayout';
-import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
 import { runUniversalFusionAgent } from '../../../agents/fusionAgent/runner';
 import type { FusedFinding, FusionTier } from '../../../agents/fusionAgent/types';
 import { getRegistryProject, normalizeRegistryProjectId } from '../../../data/demoProjectRegistry';
