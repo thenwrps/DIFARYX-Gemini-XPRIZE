@@ -1,7 +1,7 @@
 import { useSearchParams } from 'react-router-dom';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { ScientificAnalysisWorkspace } from '../components/workspace/ScientificAnalysisWorkspace';
-import AgentDemo from './AgentDemo';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { ScientificAnalysisWorkspace } from '../../../components/workspace/ScientificAnalysisWorkspace';
+import AgentDemo from '../../../pages/AgentDemo';
 
 export default function AgentWorkspace() {
   const [searchParams] = useSearchParams();
