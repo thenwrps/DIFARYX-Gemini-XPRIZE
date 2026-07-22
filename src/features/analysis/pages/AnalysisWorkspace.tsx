@@ -27,10 +27,10 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { Card } from '../components/ui/Card';
-import { EmptyStateCard } from '../components/ui/EmptyStateCard';
-import { Graph } from '../components/ui/Graph';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { Card } from '../../../components/ui/Card';
+import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import { Graph } from '../../../components/ui/Graph';
 import {
   AnalysisFeature,
   AnalysisSession,
@@ -53,7 +53,7 @@ import {
   saveAnalysisSession,
   saveCurrentAnalysisVersion,
   updateSessionProject,
-} from '../data/analysisSessions';
+} from '../../../data/analysisSessions';
 import {
   AXIS_DEFAULTS_BY_TECHNIQUE,
   createUploadedSignalRun,
@@ -63,11 +63,11 @@ import {
   saveUploadedSignalRun,
   type ParsedUploadedSignalSuccess,
   type Technique as UploadedTechnique,
-} from '../data/uploadedSignalRuns';
-import { getRegistryProject, normalizeRegistryProjectId } from '../data/demoProjectRegistry';
-import { cn } from '../components/ui/Button';
-import { runWhenIdle } from '../utils/idle';
-import { executeAgentReasoningWorkflow } from '../engines/reasoningEngine';
+} from '../../../data/uploadedSignalRuns';
+import { getRegistryProject, normalizeRegistryProjectId } from '../../../data/demoProjectRegistry';
+import { cn } from '../../../components/ui/Button';
+import { runWhenIdle } from '../../../utils/idle';
+import { executeAgentReasoningWorkflow } from '../../../engines/reasoningEngine';
 
 const TECHNIQUES = ['xrd', 'xps', 'ftir', 'raman'] as const;
 

@@ -25,7 +25,7 @@ import {
 } from '../../../utils/evidenceRouteContext';
 import { getProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
 import { getAnalysisSessions } from '../../../data/analysisSessions';
-import { AnalysisWorkspaceHome } from '../../../pages/AnalysisWorkspace';
+import { AnalysisWorkspaceHome } from '../../../features/analysis/pages/AnalysisWorkspace';
 import {
   claimStatusColorClass,
   claimStatusLabel,

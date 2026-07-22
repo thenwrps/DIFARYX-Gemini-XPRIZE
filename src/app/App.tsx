@@ -28,22 +28,22 @@ const RamanWorkspace = lazy(() => import("../features/workspaces/pages/RamanWork
 const FusionWorkspace = lazy(() => import("../features/workspaces/pages/FusionWorkspace"));
 
 const AnalysisWorkspaceHome = lazy(() =>
-  import("../pages/AnalysisWorkspace").then((module) => ({
+  import("../features/analysis/pages/AnalysisWorkspace").then((module) => ({
     default: module.AnalysisWorkspaceHome,
   }))
 );
 const AnalysisNew = lazy(() =>
-  import("../pages/AnalysisWorkspace").then((module) => ({
+  import("../features/analysis/pages/AnalysisWorkspace").then((module) => ({
     default: module.AnalysisNew,
   }))
 );
 const AnalysisSessionPage = lazy(() =>
-  import("../pages/AnalysisWorkspace").then((module) => ({
+  import("../features/analysis/pages/AnalysisWorkspace").then((module) => ({
     default: module.AnalysisSessionPage,
   }))
 );
 const ProjectEvidenceRegistry = lazy(() =>
-  import("../pages/AnalysisWorkspace").then((module) => ({
+  import("../features/analysis/pages/AnalysisWorkspace").then((module) => ({
     default: module.ProjectEvidenceRegistry,
   }))
 );
