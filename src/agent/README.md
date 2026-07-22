@@ -2,7 +2,7 @@
 
 This directory is reserved for a future local structured agent runtime.
 
-No runtime code lives here yet. The current demo behavior remains in `src/pages/AgentDemo.tsx` and `src/data/demoProjects.ts`.
+No runtime code lives here yet. The current demo behavior remains in `src/features/agent/pages/ClassicAgentDemo.tsx` and `src/data/demoProjects.ts`.
 
 Future modules may include:
 

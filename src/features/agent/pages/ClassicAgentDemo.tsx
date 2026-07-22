@@ -23,20 +23,20 @@ import {
   Terminal,
   Upload,
 } from 'lucide-react';
-import { Graph } from '../components/ui/Graph';
-import { Card } from '../components/ui/Card';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { useAuth } from '../contexts/AuthContext';
-import { useXrdWorkflowRuntime, getStageLabel, isXrdBackendEvidenceRecord } from '../context/XrdWorkflowRuntimeContext';
-import { runXrdPhaseIdentificationAgent } from '../agents/xrdAgent';
+import { Graph } from '../../../components/ui/Graph';
+import { Card } from '../../../components/ui/Card';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useXrdWorkflowRuntime, getStageLabel, isXrdBackendEvidenceRecord } from '../../../context/XrdWorkflowRuntimeContext';
+import { runXrdPhaseIdentificationAgent } from '../../../agents/xrdAgent';
 import {
   demoProjects,
   getProject,
   getProjectDatasets,
   saveAgentRunResult,
   DEFAULT_PROJECT_ID,
-} from '../data/demoProjects';
-import { getAnalysisSessions, getAnalysisSession } from '../data/analysisSessions';
+} from '../../../data/demoProjects';
+import { getAnalysisSessions, getAnalysisSession } from '../../../data/analysisSessions';
 import type {
   AgentRunResult,
   DemoDataset,
@@ -45,24 +45,24 @@ import type {
   Technique,
   ClaimStatus,
   ValidationState,
-} from '../data/demoProjects';
-import { generateRunId, saveRun, type AgentRun } from '../data/runModel';
-import type { XpsElementEvidence } from '../agent/mcp/types';
-import { readLatestXpsElementEvidence } from '../data/xpsElementEvidence';
+} from '../../../data/demoProjects';
+import { generateRunId, saveRun, type AgentRun } from '../../../data/runModel';
+import type { XpsElementEvidence } from '../../../agent/mcp/types';
+import { readLatestXpsElementEvidence } from '../../../data/xpsElementEvidence';
 import {
   xpsOxidationStatePeakInputs,
   detectXpsXrdOxidationContradiction,
-} from '../engines/fusionEngine/xpsOxidationEvidence';
-import { callReasoningAPI } from '../server/api/reasoning';
-import { getProviderStatus } from '../server/llm/router';
-import type { ReasoningOutput, ToolResult } from '../agent/mcp/types';
+} from '../../../engines/fusionEngine/xpsOxidationEvidence';
+import { callReasoningAPI } from '../../../server/api/reasoning';
+import { getProviderStatus } from '../../../server/llm/router';
+import type { ReasoningOutput, ToolResult } from '../../../agent/mcp/types';
 import {
   createProcessingResultFromXrdDemo,
   getLatestProcessingResult,
   getProcessingResult,
   normalizeNotebookTemplateMode,
   type NotebookEntry,
-} from '../data/workflowPipeline';
+} from '../../../data/workflowPipeline';
 import {
   selectXrdWorkflowScientificEvidence,
   selectXrdWorkflowReferenceMatchEvidence,
@@ -70,35 +70,35 @@ import {
   extractReferenceMatchFields,
   selectXrdQualityMetrics,
   selectXrdPhaseMatchSummary,
-} from '../data/xrdWorkflowHandoffSelectors';
-import { LeftSidebar } from '../features/agent/components/LeftSidebar';
+} from '../../../data/xrdWorkflowHandoffSelectors';
+import { LeftSidebar } from '../components/LeftSidebar';
 import {
   EvidenceIntakeDrawer,
   StandaloneEvidenceEmptyState,
-} from '../features/agent/components/EvidenceIntake/EvidenceIntake';
-import { MainHeader } from '../features/agent/components/MainHeader';
-import { CenterColumn } from '../features/agent/components/CenterColumn';
-import type { ScientificStageId } from '../features/agent/components/CenterColumn/CompactWorkflowStepper';
-import { RightPanel } from '../features/agent/components/RightPanel';
-import { MultiTechPopover } from '../features/agent/components/MultiTechPopover';
-import { type EvidenceNode, type FusionResult, type PeakInput } from '../engines/fusionEngine';
-import { ClaimBoundaryService } from '../scientificReview/services/claimBoundaryService';
-import { EvidenceBundleService } from '../scientificReview/services/evidenceBundleService';
-import { FusionService } from '../scientificReview/services/fusionService';
-import { NotebookHandoffService } from '../scientificReview/services/notebookHandoffService';
+} from '../components/EvidenceIntake/EvidenceIntake';
+import { MainHeader } from '../components/MainHeader';
+import { CenterColumn } from '../components/CenterColumn';
+import type { ScientificStageId } from '../components/CenterColumn/CompactWorkflowStepper';
+import { RightPanel } from '../components/RightPanel';
+import { MultiTechPopover } from '../components/MultiTechPopover';
+import { type EvidenceNode, type FusionResult, type PeakInput } from '../../../engines/fusionEngine';
+import { ClaimBoundaryService } from '../../../scientificReview/services/claimBoundaryService';
+import { EvidenceBundleService } from '../../../scientificReview/services/evidenceBundleService';
+import { FusionService } from '../../../scientificReview/services/fusionService';
+import { NotebookHandoffService } from '../../../scientificReview/services/notebookHandoffService';
 import {
   getLatestExperimentConditionLock,
   unlockExperimentConditions,
   lockExperimentConditions,
   attachParameterContextToConditionLock,
   type ExperimentConditionLock,
-} from '../data/experimentConditionLock';
+} from '../../../data/experimentConditionLock';
 import {
   createCanonicalParameterContext,
   type AnalysisModeId,
   type CanonicalTechnique,
-} from '../data/parameterDefinitions';
-import { readParameterState } from '../utils/parameterStateManager';
+} from '../../../data/parameterDefinitions';
+import { readParameterState } from '../../../utils/parameterStateManager';
 import {
   type AgentEvidenceWorkspace,
   type TechniqueId,
@@ -108,8 +108,8 @@ import {
   applyParameterChange,
   toggleTechnique,
   changeFocusedTechnique,
-} from '../utils/agentEvidenceModel';
-import { useBackendStatus, BackendStatusBadge } from '../utils/backendStatus';
+} from '../../../utils/agentEvidenceModel';
+import { useBackendStatus, BackendStatusBadge } from '../../../utils/backendStatus';
 import {
   demoProjectRegistry,
   getFocusedEvidenceSource,
@@ -118,34 +118,34 @@ import {
   normalizeRegistryProjectId,
   type RegistryProject,
   type DemoReferencePlaceholder,
-} from '../data/demoProjectRegistry';
+} from '../../../data/demoProjectRegistry';
 import {
   getRuntimeBadgeClass,
   getRuntimeBadgeLabel,
   getRuntimeContextForEvidenceSource,
   requiresApproval,
   type RuntimeMode,
-} from '../runtime/difaryxRuntimeMode';
-import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
-import { createUploadedEvidenceRegistryProject } from '../utils/uploadedEvidenceProjectContext';
-import type { UploadedSignalRun } from '../data/uploadedSignalRuns';
+} from '../../../runtime/difaryxRuntimeMode';
+import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
+import { createUploadedEvidenceRegistryProject } from '../../../utils/uploadedEvidenceProjectContext';
+import type { UploadedSignalRun } from '../../../data/uploadedSignalRuns';
 import {
   buildAggregateUploadedSnapshot,
   hasValidScientificObjective,
   persistValidatedEvidenceRuns,
   type StandaloneReviewMetadata,
-} from '../scientificReview/services/standaloneEvidenceIntakeService';
+} from '../../../scientificReview/services/standaloneEvidenceIntakeService';
 import {
   getStoredWorkspaceMode,
   setWorkspaceMode,
-} from '../utils/workspaceMode';
+} from '../../../utils/workspaceMode';
 import {
   buildEvidenceRouteSearch,
   getEvidenceRouteContext,
   type EvidenceRouteContext,
-} from '../utils/evidenceRouteContext';
-import { runWhenIdle } from '../utils/idle';
-import { searchLiterature, buildLiteratureQuery } from '../services/literatureSearch';
+} from '../../../utils/evidenceRouteContext';
+import { runWhenIdle } from '../../../utils/idle';
+import { searchLiterature, buildLiteratureQuery } from '../../../services/literatureSearch';
 import {
   type ResearchEvidenceItem,
   type ReasoningProvenance,
@@ -153,8 +153,8 @@ import {
   type ClaimBoundaryArtifact,
   type LiteratureSearchTrace,
   formatLiteratureSearchTrace,
-} from '../types/researchEvidence';
-import { sanitizeScientificWording } from '../utils/claimBoundaryPresentation';
+} from '../../../types/researchEvidence';
+import { sanitizeScientificWording } from '../../../utils/claimBoundaryPresentation';
 
 type TechniqueContext = Technique;
 type AgentMode = 'deterministic' | 'guided' | 'autonomous';
@@ -1180,57 +1180,57 @@ function buildNotebookReferenceCandidateEvidence(
   };
 }
 
-import { formatChemicalFormula } from '../utils';
-import { buildAgentContext, type AgentContext, type WorkspaceParameters } from '../utils/agentContext';
-import { readLatestXrdBackendEvidenceResult, type XRDBackendEvidenceRecord } from '../data/xrdBackendEvidence';
-import type { XRDWorkflowReferenceMatchEvidence } from '../types/xrdWorkflowContract';
+import { formatChemicalFormula } from '../../../utils';
+import { buildAgentContext, type AgentContext, type WorkspaceParameters } from '../../../utils/agentContext';
+import { readLatestXrdBackendEvidenceResult, type XRDBackendEvidenceRecord } from '../../../data/xrdBackendEvidence';
+import type { XRDWorkflowReferenceMatchEvidence } from '../../../types/xrdWorkflowContract';
 import {
   getProjectTechniques,
   getProjectParameterGroups,
   type ParameterGroupId,
-} from '../utils/projectEvidence';
-import { ApprovalActionDialog } from '../components/runtime/ApprovalActionDialog';
-import { ConnectedAccountStatus } from '../components/runtime/ConnectedAccountStatus';
+} from '../../../utils/projectEvidence';
+import { ApprovalActionDialog } from '../../../components/runtime/ApprovalActionDialog';
+import { ConnectedAccountStatus } from '../../../components/runtime/ConnectedAccountStatus';
 import {
   createApprovalActionPreview,
   type ApprovalActionPreview,
   type ApprovalActionType,
   type ApprovalRiskLevel,
-} from '../runtime/actionApproval';
-import { appendApprovalLedgerEntry, createApprovalLedgerEntry } from '../runtime/approvalLedger';
+} from '../../../runtime/actionApproval';
+import { appendApprovalLedgerEntry, createApprovalLedgerEntry } from '../../../runtime/approvalLedger';
 import {
   getDefaultConnectedAccountState,
   getGoogleConnectedShellState,
-} from '../runtime/connectedAccounts';
+} from '../../../runtime/connectedAccounts';
 import {
   createEvidenceBundleFromSnapshot,
   getEvidenceBundleBadgeLabel,
   getTechniqueCoverageFromBundle,
   mergeEvidenceFilesIntoBundle,
-} from '../runtime/evidenceBundle';
+} from '../../../runtime/evidenceBundle';
 import {
   clearTechniqueParameterOverrides,
   getParameterOverrideStorageKey,
   readProjectWorkspaceParameters,
   writeProjectWorkspaceParameters,
-} from '../utils/workspaceParameterOverrides';
+} from '../../../utils/workspaceParameterOverrides';
 import {
   getParameterProvenanceSummary,
   formatProvenanceSource,
-} from '../utils/parameterProvenanceSummary';
-import type { TechniqueWorkspaceId } from '../data/techniqueWorkspaceContent';
-import { getXrdProcessingParams, getXrdParameterSnapshot } from '../utils/xrdParameterAdapter';
-import { getRamanProcessingParams, getRamanParameterSnapshot } from '../utils/ramanParameterAdapter';
-import { getXpsProcessingParams, getXpsParameterSnapshot } from '../utils/xpsParameterAdapter';
-import { getFtirProcessingParams, getFtirParameterSnapshot } from '../utils/ftirParameterAdapter';
-import { runRamanProcessing } from '../agents/ramanAgent/runner';
-import { runXpsProcessing } from '../agents/xpsAgent/runner';
-import { runFtirProcessing } from '../agents/ftirAgent/runner';
+} from '../../../utils/parameterProvenanceSummary';
+import type { TechniqueWorkspaceId } from '../../../data/techniqueWorkspaceContent';
+import { getXrdProcessingParams, getXrdParameterSnapshot } from '../../../utils/xrdParameterAdapter';
+import { getRamanProcessingParams, getRamanParameterSnapshot } from '../../../utils/ramanParameterAdapter';
+import { getXpsProcessingParams, getXpsParameterSnapshot } from '../../../utils/xpsParameterAdapter';
+import { getFtirProcessingParams, getFtirParameterSnapshot } from '../../../utils/ftirParameterAdapter';
+import { runRamanProcessing } from '../../../agents/ramanAgent/runner';
+import { runXpsProcessing } from '../../../agents/xpsAgent/runner';
+import { runFtirProcessing } from '../../../agents/ftirAgent/runner';
 import {
   demoDatasetToRamanDataset,
   demoDatasetToXpsDataset,
   demoDatasetToFtirDataset,
-} from '../utils/techniqueDatasetAdapters';
+} from '../../../utils/techniqueDatasetAdapters';
 
 const compatibilityEvidenceBundleService = new EvidenceBundleService();
 const compatibilityFusionService = new FusionService();
@@ -1957,7 +1957,7 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
 
     const availableTechniques = evidenceSnapshot.availableTechniques ?? [];
     const techniqueCount = availableTechniques.length;
-    const context: import('../runtime/evidenceBundle').BundleCreationContext = {
+    const context: import('../../../runtime/evidenceBundle').BundleCreationContext = {
       route: '/demo/agent',
       techniqueCount,
       hasMultiTechIntent: techniqueCount >= 2 || searchParams.get('bundle') === 'mixed',
@@ -3236,7 +3236,7 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
     });
     logLocalAction('Report export', 'report_export', 'Local report export preview', 'medium');
 
-    import('../utils/agentReportBuilder').then(({ exportAgentReport }) => {
+    import('../../../utils/agentReportBuilder').then(({ exportAgentReport }) => {
       exportAgentReport({
         projectId: selectedProject?.id || 'unknown',
         projectTitle: selectedProject?.name || registryProject?.title || currentProject?.name,

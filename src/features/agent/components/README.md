@@ -5,7 +5,7 @@ Complete rewrite of the Agent Demo UI components to match the v3.1 reference des
 ## Architecture
 
 ```
-AgentDemo.tsx (Main Page)
+ClassicAgentDemo.tsx (Main Page)
 ├── LeftSidebar/
 │   └── LeftSidebar.tsx          # Navigation + Current Dataset Card
 ├── MainHeader/
@@ -194,7 +194,7 @@ AgentDemo.tsx (Main Page)
 ## Data Flow
 
 ```
-AgentDemo.tsx
+ClassicAgentDemo.tsx
   ↓
   ├─→ LeftSidebar (dataset, project)
   ├─→ MainHeader (status, handlers)
