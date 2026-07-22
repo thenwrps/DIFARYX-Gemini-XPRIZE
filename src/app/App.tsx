@@ -19,7 +19,7 @@ const NotebookLab = lazy(() => import("../features/notebook/pages/NotebookLab"))
 const ReportBuilder = lazy(() => import("../features/reports/pages/ReportBuilder"));
 const AgentDemo = lazy(() => import("../pages/AgentWorkspace"));
 const HistoryPage = lazy(() => import("../features/history/pages/History"));
-const SettingsPage = lazy(() => import("../pages/Settings"));
+const SettingsPage = lazy(() => import("../features/settings/pages/Settings"));
 
 const XRDWorkspace = lazy(() => import("../pages/XRDWorkspace"));
 const XPSWorkspace = lazy(() => import("../pages/XPSWorkspace"));
