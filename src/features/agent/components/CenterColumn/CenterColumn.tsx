@@ -13,7 +13,7 @@ import {
   Target,
 } from 'lucide-react';
 import { Graph } from '../../../../shared/ui/Graph';
-import { DemoProjectGraph } from '../../../../components/graphs/DemoProjectGraph';
+import { DemoProjectGraph } from '../../../../shared/visualization/DemoProjectGraph';
 import { CompactWorkflowStepper, type ScientificStageId } from './CompactWorkflowStepper';
 import { EvidenceWorkspaceCard } from './EvidenceWorkspaceCard';
 import type { AgentContext, EvidenceLayer } from '../../../../utils/agentContext';

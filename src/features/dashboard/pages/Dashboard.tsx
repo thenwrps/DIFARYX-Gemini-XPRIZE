@@ -38,7 +38,7 @@ import {
   type TechniqueId,
   type DemoGraphData,
 } from '../../../data/demoProjectRegistry';
-import { DemoProjectGraph } from '../../../components/graphs/DemoProjectGraph';
+import { DemoProjectGraph } from '../../../shared/visualization/DemoProjectGraph';
 import { getProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
 import {
   getAnalysisSessions,
