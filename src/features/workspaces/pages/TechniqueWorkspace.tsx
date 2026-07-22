@@ -19,12 +19,12 @@ import {
   Sparkles,
   Upload,
 } from 'lucide-react';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { Graph } from '../components/ui/Graph';
-import { EmptyStateCard } from '../components/ui/EmptyStateCard';
-import XRDWorkspace from '../features/workspaces/pages/XRDWorkspace';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { Button } from '../../../components/ui/Button';
+import { Card } from '../../../components/ui/Card';
+import { Graph } from '../../../components/ui/Graph';
+import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import XRDWorkspace from './XRDWorkspace';
 import {
   DEFAULT_PROJECT_ID,
   DemoDataset,
@@ -55,16 +55,16 @@ import {
   saveEvidence,
   saveExperiment,
   saveProcessingRun,
-} from '../data/demoProjects';
-import { DemoExportFormat, exportDemoArtifact } from '../utils/demoExport';
-import { getRun, type AgentRun } from '../data/runModel';
+} from '../../../data/demoProjects';
+import { DemoExportFormat, exportDemoArtifact } from '../../../utils/demoExport';
+import { getRun, type AgentRun } from '../../../data/runModel';
 import {
   ExperimentConditionLock,
   createDraftExperimentConditionLock,
   getConditionBoundaryNotes,
   getConditionLockStatusLabel,
   lockExperimentConditions,
-} from '../data/experimentConditionLock';
+} from '../../../data/experimentConditionLock';
 
 type XpsRegion = 'Survey' | 'Cu 2p' | 'Fe 2p' | 'O 1s';
 

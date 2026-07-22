@@ -1,8 +1,8 @@
 import React from 'react';
-import { resolveRuntimeConfig } from '../config/runtimeConfig';
-import { DemoWorkspaceLauncher } from '../components/workspace/DemoWorkspaceLauncher';
-import { ServerWorkspaceLauncher } from '../components/workspace/ServerWorkspaceLauncher';
-import { ConfigurationErrorScreen } from '../components/ui/ConfigurationErrorScreen';
+import { resolveRuntimeConfig } from '../../../config/runtimeConfig';
+import { DemoWorkspaceLauncher } from '../../../components/workspace/DemoWorkspaceLauncher';
+import { ServerWorkspaceLauncher } from '../../../components/workspace/ServerWorkspaceLauncher';
+import { ConfigurationErrorScreen } from '../../../components/ui/ConfigurationErrorScreen';
 
 export default function WorkspaceLauncher() {
   const { config, error } = resolveRuntimeConfig();

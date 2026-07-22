@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, BookOpen, CheckCircle2, FileText, LockKeyhole, Play, Save, Upload, X } from 'lucide-react';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { EmptyStateCard } from '../components/ui/EmptyStateCard';
-import { Graph } from '../components/ui/Graph';
-import { useAuth } from '../contexts/AuthContext';
-import { LockedScientificContext } from '../components/locked-context/LockedScientificContext';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { Button } from '../../../components/ui/Button';
+import { Card } from '../../../components/ui/Card';
+import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import { Graph } from '../../../components/ui/Graph';
+import { useAuth } from '../../../contexts/AuthContext';
+import { LockedScientificContext } from '../../../components/locked-context/LockedScientificContext';
 import {
   DEFAULT_PROJECT_ID,
   Technique,
@@ -16,18 +16,18 @@ import {
   getNotebookPath,
   getProject,
   getWorkspaceRoute,
-} from '../data/demoProjects';
-import { formatChemicalFormula } from '../utils';
-import { evaluate as evaluateFusionEngine, createEvidenceNodes, type EvidenceNode, type FusionResult, type EvidenceCategory, type PeakInput } from '../engines/fusionEngine';
-import { runUniversalFusionAgent } from '../agents/fusionAgent/runner';
+} from '../../../data/demoProjects';
+import { formatChemicalFormula } from '../../../utils';
+import { evaluate as evaluateFusionEngine, createEvidenceNodes, type EvidenceNode, type FusionResult, type EvidenceCategory, type PeakInput } from '../../../engines/fusionEngine';
+import { runUniversalFusionAgent } from '../../../agents/fusionAgent/runner';
 import {
   createProcessingResultFromXrdDemo,
   saveProcessingResult,
-} from '../data/workflowPipeline';
+} from '../../../data/workflowPipeline';
 import {
   readProjectWorkspaceParameters,
-} from '../utils/workspaceParameterOverrides';
-import { getProjectTechniques } from '../utils/projectEvidence';
+} from '../../../utils/workspaceParameterOverrides';
+import { getProjectTechniques } from '../../../utils/projectEvidence';
 import {
   AXIS_DEFAULTS_BY_TECHNIQUE,
   BETA_TECHNIQUES,
@@ -45,7 +45,7 @@ import {
   type ParsedUploadedSignalSuccess,
   type Technique as UploadedTechnique,
   type UploadedSignalRun,
-} from '../data/uploadedSignalRuns';
+} from '../../../data/uploadedSignalRuns';
 import {
   demoProjectRegistry,
   getRegistryProject,
@@ -56,28 +56,28 @@ import {
   jobTypeLabel,
   jobTypeBadgeClass,
   claimStatusLabel,
-} from '../data/demoProjectRegistry';
+} from '../../../data/demoProjectRegistry';
 import {
   getConditionBoundaryNotes,
   getConditionLockStatusLabel,
   getLatestExperimentConditionLock,
-} from '../data/experimentConditionLock';
-import { getProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
+} from '../../../data/experimentConditionLock';
+import { getProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
 import {
   createEvidenceBundleFromSnapshot,
   getEvidenceBundleBadgeLabel,
   getTechniqueCoverageFromBundle,
-} from '../runtime/evidenceBundle';
+} from '../../../runtime/evidenceBundle';
 import {
   getStoredWorkspaceMode,
   setWorkspaceMode,
-} from '../utils/workspaceMode';
+} from '../../../utils/workspaceMode';
 import {
   buildEvidenceRouteSearch,
   getEvidenceRouteContext,
   type EvidenceRouteContext,
-} from '../utils/evidenceRouteContext';
-import { runWhenIdle } from '../utils/idle';
+} from '../../../utils/evidenceRouteContext';
+import { runWhenIdle } from '../../../utils/idle';
 
 // Cross-tech evidence types
 interface CrossTechEvidence {

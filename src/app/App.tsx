@@ -12,9 +12,9 @@ import AuthCallback from "../features/auth/pages/AuthCallback";
 
 const Dashboard = lazy(() => import("../features/dashboard/pages/Dashboard"));
 const ProjectDetail = lazy(() => import("../features/project/pages/ProjectDetail"));
-const MultiTechWorkspace = lazy(() => import("../pages/MultiTechWorkspace"));
-const TechniqueWorkspace = lazy(() => import("../pages/TechniqueWorkspace"));
-const WorkspaceLauncher = lazy(() => import("../pages/WorkspaceLauncher"));
+const MultiTechWorkspace = lazy(() => import("../features/workspaces/pages/MultiTechWorkspace"));
+const TechniqueWorkspace = lazy(() => import("../features/workspaces/pages/TechniqueWorkspace"));
+const WorkspaceLauncher = lazy(() => import("../features/workspaces/pages/WorkspaceLauncher"));
 const NotebookLab = lazy(() => import("../features/notebook/pages/NotebookLab"));
 const ReportBuilder = lazy(() => import("../features/reports/pages/ReportBuilder"));
 const AgentDemo = lazy(() => import("../features/agent/pages/AgentWorkspace"));
