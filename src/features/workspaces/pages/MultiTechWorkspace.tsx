@@ -7,7 +7,7 @@ import { Card } from '../../../shared/ui/Card';
 import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
 import { Graph } from '../../../shared/ui/Graph';
 import { useAuth } from '../../../contexts/AuthContext';
-import { LockedScientificContext } from '../../../components/locked-context/LockedScientificContext';
+import { LockedScientificContext } from '../components/context/LockedScientificContext';
 import {
   DEFAULT_PROJECT_ID,
   Technique,
