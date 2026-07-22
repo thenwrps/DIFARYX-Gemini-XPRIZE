@@ -7,7 +7,7 @@ import {
   generateXpsTrace,
   generateXrdTrace,
   SyntheticTracePoint,
-} from '../../data/syntheticTraces';
+} from '../../../data/syntheticTraces';
 import { useLandingReveal } from './useLandingReveal';
 
 const techniques = [

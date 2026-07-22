@@ -7,7 +7,7 @@ import {
   generateVsmTrace,
   generateXpsTrace,
   generateXrdTrace,
-} from '../../data/syntheticTraces';
+} from '../../../data/syntheticTraces';
 
 type SpectrumCardProps = {
   title: string;

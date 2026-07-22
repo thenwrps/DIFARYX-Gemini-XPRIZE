@@ -7,7 +7,7 @@ import {
   generateRamanTrace,
   generateXpsTrace,
   generateXrdTrace,
-} from '../../data/syntheticTraces';
+} from '../../../data/syntheticTraces';
 
 const heroEvidence = [
   {

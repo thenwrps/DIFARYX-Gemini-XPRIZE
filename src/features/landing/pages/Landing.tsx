@@ -1,19 +1,19 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
-import Navbar from '../components/landing/Navbar';
-import HeroSection from '../components/landing/HeroSection_NEW';
-import { runWhenIdle } from '../utils/idle';
-import '../components/landing/landingJourney.css';
+import Navbar from '../components/Navbar';
+import HeroSection from '../components/HeroSection_NEW';
+import { runWhenIdle } from '../../../utils/idle';
+import '../components/landingJourney.css';
 
-const ProblemSection = lazy(() => import('../components/landing/ProblemSection_NEW'));
-const UserResearchSection = lazy(() => import('../components/landing/UserResearchSection_NEW'));
-const SolutionSection = lazy(() => import('../components/landing/SolutionSection_NEW'));
-const ProductFunctionSection = lazy(() => import('../components/landing/ProductFunctionSection_NEW'));
-const AgentDemoSection = lazy(() => import('../components/landing/AgentDemoSection_NEW'));
-const GoogleAlignmentSection = lazy(() => import('../components/landing/GoogleAlignmentSection_NEW'));
-const TechniqueCoverageSection = lazy(() => import('../components/landing/TechniqueCoverageSection_NEW'));
-const TrustControlSection = lazy(() => import('../components/landing/TrustControlSection_NEW'));
-const CTASection = lazy(() => import('../components/landing/CTASection_NEW'));
-const FooterSection = lazy(() => import('../components/landing/FooterSection'));
+const ProblemSection = lazy(() => import('../components/ProblemSection_NEW'));
+const UserResearchSection = lazy(() => import('../components/UserResearchSection_NEW'));
+const SolutionSection = lazy(() => import('../components/SolutionSection_NEW'));
+const ProductFunctionSection = lazy(() => import('../components/ProductFunctionSection_NEW'));
+const AgentDemoSection = lazy(() => import('../components/AgentDemoSection_NEW'));
+const GoogleAlignmentSection = lazy(() => import('../components/GoogleAlignmentSection_NEW'));
+const TechniqueCoverageSection = lazy(() => import('../components/TechniqueCoverageSection_NEW'));
+const TrustControlSection = lazy(() => import('../components/TrustControlSection_NEW'));
+const CTASection = lazy(() => import('../components/CTASection_NEW'));
+const FooterSection = lazy(() => import('../components/FooterSection'));
 
 function LandingStoryFallback() {
   return <section aria-hidden="true" className="min-h-[320px] border-t border-slate-200 bg-white" />;

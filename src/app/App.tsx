@@ -2,48 +2,48 @@ import { lazy, Suspense, type ReactElement } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
-import { AuthProvider } from "./contexts/AuthContext";
-import { ProtectedRoute } from "./components/auth/ProtectedRoute";
-import { XrdWorkflowRuntimeProvider } from "./context/XrdWorkflowRuntimeContext";
+import { AuthProvider } from "../contexts/AuthContext";
+import { ProtectedRoute } from "../components/auth/ProtectedRoute";
+import { XrdWorkflowRuntimeProvider } from "../context/XrdWorkflowRuntimeContext";
 
-import Landing from "./pages/Landing";
-import SignIn from "./pages/SignIn";
-import AuthCallback from "./pages/AuthCallback";
+import Landing from "../features/landing/pages/Landing";
+import SignIn from "../pages/SignIn";
+import AuthCallback from "../pages/AuthCallback";
 
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
-const MultiTechWorkspace = lazy(() => import("./pages/MultiTechWorkspace"));
-const TechniqueWorkspace = lazy(() => import("./pages/TechniqueWorkspace"));
-const WorkspaceLauncher = lazy(() => import("./pages/WorkspaceLauncher"));
-const NotebookLab = lazy(() => import("./pages/NotebookLab"));
-const ReportBuilder = lazy(() => import("./pages/ReportBuilder"));
-const AgentDemo = lazy(() => import("./pages/AgentWorkspace"));
-const HistoryPage = lazy(() => import("./pages/History"));
-const SettingsPage = lazy(() => import("./pages/Settings"));
+const Dashboard = lazy(() => import("../pages/Dashboard"));
+const ProjectDetail = lazy(() => import("../pages/ProjectDetail"));
+const MultiTechWorkspace = lazy(() => import("../pages/MultiTechWorkspace"));
+const TechniqueWorkspace = lazy(() => import("../pages/TechniqueWorkspace"));
+const WorkspaceLauncher = lazy(() => import("../pages/WorkspaceLauncher"));
+const NotebookLab = lazy(() => import("../pages/NotebookLab"));
+const ReportBuilder = lazy(() => import("../pages/ReportBuilder"));
+const AgentDemo = lazy(() => import("../pages/AgentWorkspace"));
+const HistoryPage = lazy(() => import("../pages/History"));
+const SettingsPage = lazy(() => import("../pages/Settings"));
 
-const XRDWorkspace = lazy(() => import("./pages/XRDWorkspace"));
-const XPSWorkspace = lazy(() => import("./pages/XPSWorkspace"));
-const FTIRWorkspace = lazy(() => import("./pages/FTIRWorkspace"));
-const RamanWorkspace = lazy(() => import("./pages/RamanWorkspace"));
-const FusionWorkspace = lazy(() => import("./pages/FusionWorkspace"));
+const XRDWorkspace = lazy(() => import("../pages/XRDWorkspace"));
+const XPSWorkspace = lazy(() => import("../pages/XPSWorkspace"));
+const FTIRWorkspace = lazy(() => import("../pages/FTIRWorkspace"));
+const RamanWorkspace = lazy(() => import("../pages/RamanWorkspace"));
+const FusionWorkspace = lazy(() => import("../pages/FusionWorkspace"));
 
 const AnalysisWorkspaceHome = lazy(() =>
-  import("./pages/AnalysisWorkspace").then((module) => ({
+  import("../pages/AnalysisWorkspace").then((module) => ({
     default: module.AnalysisWorkspaceHome,
   }))
 );
 const AnalysisNew = lazy(() =>
-  import("./pages/AnalysisWorkspace").then((module) => ({
+  import("../pages/AnalysisWorkspace").then((module) => ({
     default: module.AnalysisNew,
   }))
 );
 const AnalysisSessionPage = lazy(() =>
-  import("./pages/AnalysisWorkspace").then((module) => ({
+  import("../pages/AnalysisWorkspace").then((module) => ({
     default: module.AnalysisSessionPage,
   }))
 );
 const ProjectEvidenceRegistry = lazy(() =>
-  import("./pages/AnalysisWorkspace").then((module) => ({
+  import("../pages/AnalysisWorkspace").then((module) => ({
     default: module.ProjectEvidenceRegistry,
   }))
 );
@@ -83,9 +83,9 @@ function PageLoadingIndicator({ message }: { message: string }) {
   );
 }
 
-import { resolveRuntimeConfig } from "./config/runtimeConfig";
-import { ConfigurationErrorScreen } from "./components/ui/ConfigurationErrorScreen";
-import { OrganizationProvider } from "./contexts/OrganizationContext";
+import { resolveRuntimeConfig } from "../config/runtimeConfig";
+import { ConfigurationErrorScreen } from "../components/ui/ConfigurationErrorScreen";
+import { OrganizationProvider } from "../contexts/OrganizationContext";
 
 function App() {
   const { error } = resolveRuntimeConfig();

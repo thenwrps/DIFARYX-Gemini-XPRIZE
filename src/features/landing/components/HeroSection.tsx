@@ -6,8 +6,8 @@ import {
   generateRamanTrace,
   generateXpsTrace,
   generateXrdTrace,
-} from '../../data/syntheticTraces';
-import { formatChemicalFormula } from '../../utils';
+} from '../../../data/syntheticTraces';
+import { formatChemicalFormula } from '../../../utils';
 
 const signalTraces = [
   {
