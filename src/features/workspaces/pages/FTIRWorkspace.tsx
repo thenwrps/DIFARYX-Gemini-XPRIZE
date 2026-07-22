@@ -1,8 +1,8 @@
 import { useSearchParams } from 'react-router-dom';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { TechniqueWorkspaceShell } from '../components/workspace/TechniqueWorkspaceShell';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { TechniqueWorkspaceShell } from '../../../components/workspace/TechniqueWorkspaceShell';
 
-export default function RamanWorkspace() {
+export default function FTIRWorkspace() {
   const [searchParams] = useSearchParams();
   const mode = searchParams.get('mode') === 'quick' ? 'quick' : 'project';
   const fileName = searchParams.get('file') ?? undefined;
@@ -10,7 +10,7 @@ export default function RamanWorkspace() {
 
   return (
     <DashboardLayout>
-      <TechniqueWorkspaceShell technique="raman" mode={mode} fileName={fileName} sessionId={sessionId} />
+      <TechniqueWorkspaceShell technique="ftir" mode={mode} fileName={fileName} sessionId={sessionId} />
     </DashboardLayout>
   );
 }

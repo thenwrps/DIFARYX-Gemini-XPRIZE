@@ -6,13 +6,13 @@ import {
   Layers,
   Zap,
 } from 'lucide-react';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { EmptyStateCard } from '../components/ui/EmptyStateCard';
-import { runUniversalFusionAgent } from '../agents/fusionAgent/runner';
-import type { FusedFinding, FusionTier } from '../agents/fusionAgent/types';
-import { getRegistryProject, normalizeRegistryProjectId } from '../data/demoProjectRegistry';
-import { DEFAULT_PROJECT_ID } from '../data/demoProjects';
-import { runWhenIdle } from '../utils/idle';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import { runUniversalFusionAgent } from '../../../agents/fusionAgent/runner';
+import type { FusedFinding, FusionTier } from '../../../agents/fusionAgent/types';
+import { getRegistryProject, normalizeRegistryProjectId } from '../../../data/demoProjectRegistry';
+import { DEFAULT_PROJECT_ID } from '../../../data/demoProjects';
+import { runWhenIdle } from '../../../utils/idle';
 
 export default function FusionWorkspace() {
   const [searchParams] = useSearchParams();

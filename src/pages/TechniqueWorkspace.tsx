@@ -24,7 +24,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Graph } from '../components/ui/Graph';
 import { EmptyStateCard } from '../components/ui/EmptyStateCard';
-import XRDWorkspace from './XRDWorkspace';
+import XRDWorkspace from '../features/workspaces/pages/XRDWorkspace';
 import {
   DEFAULT_PROJECT_ID,
   DemoDataset,

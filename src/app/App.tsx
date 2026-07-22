@@ -21,11 +21,11 @@ const AgentDemo = lazy(() => import("../features/agent/pages/AgentWorkspace"));
 const HistoryPage = lazy(() => import("../features/history/pages/History"));
 const SettingsPage = lazy(() => import("../features/settings/pages/Settings"));
 
-const XRDWorkspace = lazy(() => import("../pages/XRDWorkspace"));
-const XPSWorkspace = lazy(() => import("../pages/XPSWorkspace"));
-const FTIRWorkspace = lazy(() => import("../pages/FTIRWorkspace"));
-const RamanWorkspace = lazy(() => import("../pages/RamanWorkspace"));
-const FusionWorkspace = lazy(() => import("../pages/FusionWorkspace"));
+const XRDWorkspace = lazy(() => import("../features/workspaces/pages/XRDWorkspace"));
+const XPSWorkspace = lazy(() => import("../features/workspaces/pages/XPSWorkspace"));
+const FTIRWorkspace = lazy(() => import("../features/workspaces/pages/FTIRWorkspace"));
+const RamanWorkspace = lazy(() => import("../features/workspaces/pages/RamanWorkspace"));
+const FusionWorkspace = lazy(() => import("../features/workspaces/pages/FusionWorkspace"));
 
 const AnalysisWorkspaceHome = lazy(() =>
   import("../pages/AnalysisWorkspace").then((module) => ({
