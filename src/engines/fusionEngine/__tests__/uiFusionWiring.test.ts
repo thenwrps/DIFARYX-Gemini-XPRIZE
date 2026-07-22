@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateCrossTechConsistency } from '../../../pages/MultiTechWorkspace';
+import { generateCrossTechConsistency } from '../../../features/workspaces/pages/MultiTechWorkspace';
 
 test('UI fusion path derives from evaluateFusionEngine rather than static strings', () => {
   const mockClaim = {
