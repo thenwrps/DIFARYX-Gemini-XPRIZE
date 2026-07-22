@@ -53,8 +53,7 @@ import {
   xpsOxidationStatePeakInputs,
   detectXpsXrdOxidationContradiction,
 } from '../../../engines/fusionEngine/xpsOxidationEvidence';
-import { callReasoningAPI } from '../../../server/api/reasoning';
-import { getProviderStatus } from '../../../server/llm/router';
+import { callReasoningAPI } from '../../../services/api/reasoningClient';
 import type { ReasoningOutput, ToolResult } from '../../../agent/mcp/types';
 import {
   createProcessingResultFromXrdDemo,

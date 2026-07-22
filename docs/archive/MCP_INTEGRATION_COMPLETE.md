@@ -41,7 +41,7 @@ Each tool has:
 - Includes uncertainty flags, signal quality assessment, processing notes
 - **CRITICAL**: Only uses deterministic tool outputs, no data generation
 
-#### 4. Vertex AI Gemini Provider (`src/server/llm/vertexGemini.ts`)
+#### 4. Vertex AI Gemini Provider (`server/llm/providers/vertexGemini.ts`)
 - Server-side only implementation
 - Uses `@google-cloud/vertexai` package (production code commented)
 - Prompt engineering with anti-hallucination safeguards
@@ -49,21 +49,21 @@ Each tool has:
 - Environment variables: `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `GOOGLE_GENAI_USE_VERTEXAI`
 - Model: `gemini-2.0-flash-exp`
 
-#### 5. Gemma Provider (`src/server/llm/gemmaProvider.ts`)
+#### 5. Gemma Provider (`server/llm/providers/gemmaProvider.ts`)
 - Server-side only implementation
 - Supports Ollama format (POST /api/generate)
 - Configurable endpoint via `GEMMA_ENDPOINT`
 - Model selection via `GEMMA_MODEL` (default: gemma-2-9b-it)
 - Same prompt engineering and validation as Vertex AI
 
-#### 6. Provider Router (`src/server/llm/router.ts`)
+#### 6. Provider Router (`server/llm/router.ts`)
 - `routeReasoning()` - Routes to appropriate provider
 - `generateDeterministicReasoning()` - Fallback reasoning
 - Automatic fallback on LLM failure
 - `getProviderStatus()` - Provider configuration check
 - Returns `ReasoningResponse` with success/error/fallback flags
 
-#### 7. Server API Route (`src/server/api/reasoning.ts`)
+#### 7. Server API Route (`server/api/reasoning.ts`)
 - `handleReasoningRequest()` - Server-side request handler
 - `callReasoningAPI()` - Client-side helper
 - Request validation
@@ -253,7 +253,7 @@ Exit Code: 0
    npm install @google-cloud/vertexai
    ```
 
-2. **Uncomment production code** in `src/server/llm/vertexGemini.ts`:
+2. **Uncomment production code** in `server/llm/providers/vertexGemini.ts`:
    - Remove demo error throw
    - Uncomment Vertex AI import and call
 
@@ -278,10 +278,10 @@ Exit Code: 0
 - `src/agent/mcp/types.ts` (217 lines)
 - `src/agent/mcp/toolRegistry.ts` (234 lines)
 - `src/agent/mcp/evidencePacket.ts` (197 lines)
-- `src/server/llm/vertexGemini.ts` (186 lines)
-- `src/server/llm/gemmaProvider.ts` (175 lines)
-- `src/server/llm/router.ts` (186 lines)
-- `src/server/api/reasoning.ts` (73 lines)
+- `server/llm/providers/vertexGemini.ts` (186 lines)
+- `server/llm/providers/gemmaProvider.ts` (175 lines)
+- `server/llm/router.ts` (186 lines)
+- `server/api/reasoning.ts` (73 lines)
 - `.env.example` (48 lines)
 - `DEPLOYMENT.md` (389 lines)
 - `MCP_INTEGRATION_COMPLETE.md` (this file)

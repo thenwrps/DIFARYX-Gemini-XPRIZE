@@ -2,7 +2,8 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { routeReasoning } from '../src/server/llm/router'
+import { routeReasoning } from './llm/router'
+import type { ReasoningResponse } from '../src/agent/mcp/types'
 
 const app = express()
 app.use(cors())
@@ -65,7 +66,7 @@ async function callGeminiAIStudio(packet: any) {
   }
 }
 
-async function reason(packet: any, provider: any, model?: any) {
+async function reason(packet: any, provider: any, model?: any): Promise<ReasoningResponse> {
   const wantsGemini = provider === 'vertex-gemini' || provider === 'gemini'
   if (wantsGemini && process.env.GEMINI_API_KEY) {
     try {

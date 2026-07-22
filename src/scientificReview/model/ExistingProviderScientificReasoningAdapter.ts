@@ -1,4 +1,4 @@
-import { callReasoningAPI } from '../../server/api/reasoning';
+import { callReasoningAPI } from '../../services/api/reasoningClient';
 import type {
   ModelProvider,
   ReasoningRequest,

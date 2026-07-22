@@ -1,6 +1,6 @@
 /** Legacy Gemma compatibility adapter. New UI modes use GPT-5.6, Gemini 2.5 Flash, or Baseline. */
-import type { AgentEvidencePacket, ReasoningOutput } from '../../agent/mcp/types';
-import { buildCanonicalAgentPrompt, normalizeAgentModelOutput } from '../../agent/prompt/canonicalAgentPrompt';
+import type { AgentEvidencePacket, ReasoningOutput } from '../../../src/agent/mcp/types';
+import { buildCanonicalAgentPrompt, normalizeAgentModelOutput } from '../../../src/agent/prompt/canonicalAgentPrompt';
 
 export async function callGemma(
   packet: AgentEvidencePacket,
@@ -21,7 +21,11 @@ export async function callGemma(
     }),
   });
   if (!response.ok) throw new Error(`Gemma API error: ${response.status} ${response.statusText}`);
-  const data = await response.json();
+  const data = await response.json() as {
+    response?: string;
+    text?: string;
+    output?: string;
+  };
   const text = data.response || data.text || data.output || '';
   if (!text) throw new Error('Empty response from Gemma endpoint');
   return normalizeAgentModelOutput(JSON.parse(text), packet, 'gemini-2.5-flash', Date.now() - startTime);
