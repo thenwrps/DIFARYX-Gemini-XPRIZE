@@ -12,14 +12,14 @@ import {
   ShieldAlert,
   Target,
 } from 'lucide-react';
-import { Graph } from '../../ui/Graph';
-import { DemoProjectGraph } from '../../graphs/DemoProjectGraph';
+import { Graph } from '../../../../components/ui/Graph';
+import { DemoProjectGraph } from '../../../../components/graphs/DemoProjectGraph';
 import { CompactWorkflowStepper, type ScientificStageId } from './CompactWorkflowStepper';
 import { EvidenceWorkspaceCard } from './EvidenceWorkspaceCard';
-import type { AgentContext, EvidenceLayer } from '../../../utils/agentContext';
-import type { AgentEvidenceWorkspace, TechniqueId } from '../../../utils/agentEvidenceModel';
-import type { DemoFocusedEvidenceSource, RegistryProject } from '../../../data/demoProjectRegistry';
-import type { ClaimBoundaryArtifact, ReasoningProvenance } from '../../../types/researchEvidence';
+import type { AgentContext, EvidenceLayer } from '../../../../utils/agentContext';
+import type { AgentEvidenceWorkspace, TechniqueId } from '../../../../utils/agentEvidenceModel';
+import type { DemoFocusedEvidenceSource, RegistryProject } from '../../../../data/demoProjectRegistry';
+import type { ClaimBoundaryArtifact, ReasoningProvenance } from '../../../../types/researchEvidence';
 
 interface CenterColumnProps {
   agentContext: AgentContext;

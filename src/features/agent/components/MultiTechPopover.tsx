@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
-import type { Technique } from '../../data/demoProjects';
-import type { EvidenceLayer } from '../../utils/agentContext';
+import type { Technique } from '../../../data/demoProjects';
+import type { EvidenceLayer } from '../../../utils/agentContext';
 
 interface MultiTechPopoverProps {
   evidenceLayers: EvidenceLayer[];

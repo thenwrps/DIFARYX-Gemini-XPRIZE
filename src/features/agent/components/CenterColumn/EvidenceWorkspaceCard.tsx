@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertTriangle, Layers } from 'lucide-react';
-import type { AgentContext, EvidenceLayer } from '../../../utils/agentContext';
+import type { AgentContext, EvidenceLayer } from '../../../../utils/agentContext';
 
 interface EvidenceWorkspaceCardProps {
   layer?: EvidenceLayer;

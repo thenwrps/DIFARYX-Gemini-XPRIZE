@@ -1,6 +1,6 @@
 import React from 'react';
 import { CheckCircle2, Clock3, Database, FlaskConical, Plus, Target } from 'lucide-react';
-import type { DemoDataset, DemoProject } from '../../../data/demoProjects';
+import type { DemoDataset, DemoProject } from '../../../../data/demoProjects';
 
 interface LeftSidebarProps {
   currentDataset: DemoDataset;

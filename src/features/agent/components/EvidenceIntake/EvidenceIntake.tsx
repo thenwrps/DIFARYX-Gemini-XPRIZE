@@ -8,13 +8,13 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import type { Technique, UploadedSignalRun } from '../../../data/uploadedSignalRuns';
+import type { Technique, UploadedSignalRun } from '../../../../data/uploadedSignalRuns';
 import {
   hasValidScientificObjective,
   validateEvidenceFile,
   type EvidenceIntakeStatus,
   type StandaloneReviewMetadata,
-} from '../../../scientificReview/services/standaloneEvidenceIntakeService';
+} from '../../../../scientificReview/services/standaloneEvidenceIntakeService';
 
 const ACCEPTED_FILES = '.csv,.txt,.xy,.dat';
 const TECHNIQUES: Technique[] = ['XRD', 'XPS', 'FTIR', 'Raman'];

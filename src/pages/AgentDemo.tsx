@@ -71,16 +71,16 @@ import {
   selectXrdQualityMetrics,
   selectXrdPhaseMatchSummary,
 } from '../data/xrdWorkflowHandoffSelectors';
-import { LeftSidebar } from '../components/agent-demo/LeftSidebar';
+import { LeftSidebar } from '../features/agent/components/LeftSidebar';
 import {
   EvidenceIntakeDrawer,
   StandaloneEvidenceEmptyState,
-} from '../components/agent-demo/EvidenceIntake/EvidenceIntake';
-import { MainHeader } from '../components/agent-demo/MainHeader';
-import { CenterColumn } from '../components/agent-demo/CenterColumn';
-import type { ScientificStageId } from '../components/agent-demo/CenterColumn/CompactWorkflowStepper';
-import { RightPanel } from '../components/agent-demo/RightPanel';
-import { MultiTechPopover } from '../components/agent-demo/MultiTechPopover';
+} from '../features/agent/components/EvidenceIntake/EvidenceIntake';
+import { MainHeader } from '../features/agent/components/MainHeader';
+import { CenterColumn } from '../features/agent/components/CenterColumn';
+import type { ScientificStageId } from '../features/agent/components/CenterColumn/CompactWorkflowStepper';
+import { RightPanel } from '../features/agent/components/RightPanel';
+import { MultiTechPopover } from '../features/agent/components/MultiTechPopover';
 import { type EvidenceNode, type FusionResult, type PeakInput } from '../engines/fusionEngine';
 import { ClaimBoundaryService } from '../scientificReview/services/claimBoundaryService';
 import { EvidenceBundleService } from '../scientificReview/services/evidenceBundleService';

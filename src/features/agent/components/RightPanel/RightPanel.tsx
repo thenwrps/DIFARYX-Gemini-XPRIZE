@@ -10,14 +10,14 @@ import {
   Terminal,
   Unlock,
 } from 'lucide-react';
-import type { AgentContext, WorkspaceParameters } from '../../../utils/agentContext';
-import type { ParameterGroupId } from '../../../utils/projectEvidence';
-import type { AgentEvidenceWorkspace } from '../../../utils/agentEvidenceModel';
-import type { RegistryProject } from '../../../data/demoProjectRegistry';
-import type { RuntimeMode } from '../../../runtime/difaryxRuntimeMode';
-import type { ClaimBoundaryArtifact, ReasoningProvenance, ResearchEvidenceItem } from '../../../types/researchEvidence';
+import type { AgentContext, WorkspaceParameters } from '../../../../utils/agentContext';
+import type { ParameterGroupId } from '../../../../utils/projectEvidence';
+import type { AgentEvidenceWorkspace } from '../../../../utils/agentEvidenceModel';
+import type { RegistryProject } from '../../../../data/demoProjectRegistry';
+import type { RuntimeMode } from '../../../../runtime/difaryxRuntimeMode';
+import type { ClaimBoundaryArtifact, ReasoningProvenance, ResearchEvidenceItem } from '../../../../types/researchEvidence';
 import type { ScientificStageId } from '../CenterColumn/CompactWorkflowStepper';
-import { ANALYSIS_MODE_REGISTRY, PARAMETER_SCHEMA_VERSION } from '../../../data/parameterDefinitions';
+import { ANALYSIS_MODE_REGISTRY, PARAMETER_SCHEMA_VERSION } from '../../../../data/parameterDefinitions';
 
 type InspectorTab = 'context' | 'evidence' | 'reasoning' | 'validation' | 'trace';
 
