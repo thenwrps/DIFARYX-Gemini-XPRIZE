@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { Button, cn } from '../../../components/ui/Button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ExperimentModal } from '../../../components/workspace/ExperimentModal';
+import { ExperimentModal } from '../../workspaces/components/ExperimentModal';
 import { CreateMenu } from '../components/CreateMenu';
 import { ProjectNotebookWizard } from '../components/ProjectNotebookWizard';
 import { QuickExperimentSetup } from '../components/QuickExperimentSetup';

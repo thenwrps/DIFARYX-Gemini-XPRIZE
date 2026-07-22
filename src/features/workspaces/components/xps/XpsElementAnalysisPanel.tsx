@@ -1,19 +1,19 @@
 import React, { useEffect, useMemo } from 'react';
 import { ArrowLeft, Atom, AlertTriangle, BookOpen, Layers, Shield } from 'lucide-react';
-import { Graph } from '../../ui/Graph';
-import { sanitizeScientificWording } from '../../../utils/claimBoundaryPresentation';
+import { Graph } from '../../../../components/ui/Graph';
+import { sanitizeScientificWording } from '../../../../utils/claimBoundaryPresentation';
 import {
   getElementRegionWindow,
   getReferencesForElement,
-} from '../../../data/xpsReferenceData';
+} from '../../../../data/xpsReferenceData';
 import {
   runXpsProcessing,
   type XpsProcessingParams,
   type StateAggregation,
-} from '../../../agents/xpsAgent/runner';
-import type { XpsDataset } from '../../../data/xpsDemoData';
-import { levelToConfidence } from '../../../data/xpsElementEvidence';
-import type { XpsElementEvidence } from '../../../agent/mcp/types';
+} from '../../../../agents/xpsAgent/runner';
+import type { XpsDataset } from '../../../../data/xpsDemoData';
+import { levelToConfidence } from '../../../../data/xpsElementEvidence';
+import type { XpsElementEvidence } from '../../../../agent/mcp/types';
 
 /**
  * Element Selection Analysis — in-place, survey-first sub-view.

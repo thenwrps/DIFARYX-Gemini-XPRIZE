@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { FlaskConical, GitBranch, Search, Sparkles } from 'lucide-react';
-import type { XRDParameters, XRDBaselineMethod, XRDSmoothingMethod, XRDPeakFitModel } from '../../../types/xrdParameters';
+import type { XRDParameters, XRDBaselineMethod, XRDSmoothingMethod, XRDPeakFitModel } from '../../../../types/xrdParameters';
 
 interface XRDProcessingParametersPanelProps {
   // Parameter groups

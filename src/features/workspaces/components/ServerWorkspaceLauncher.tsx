@@ -10,12 +10,12 @@ import {
   FlaskConical,
   X,
 } from 'lucide-react';
-import { DashboardLayout } from '../layout/DashboardLayout';
-import { Card } from '../ui/Card';
-import { useAuth } from '../../contexts/AuthContext';
-import { useOrganization } from '../../contexts/OrganizationContext';
-import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
-import type { ProjectResponse, ApiError } from '../../services/api/types';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { Card } from '../../../components/ui/Card';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useOrganization } from '../../../contexts/OrganizationContext';
+import { useWorkspaceProjects } from '../../../hooks/useWorkspaceProjects';
+import type { ProjectResponse, ApiError } from '../../../services/api/types';
 
 export function ServerWorkspaceLauncher() {
   const [searchParams, setSearchParams] = useSearchParams();

@@ -1,4 +1,4 @@
-import type { TechniqueParameterControl, TechniqueParameterValue } from '../../data/techniqueWorkspaceContent';
+import type { TechniqueParameterControl, TechniqueParameterValue } from '../../../data/techniqueWorkspaceContent';
 
 interface ParameterControlFieldProps {
   control: TechniqueParameterControl;

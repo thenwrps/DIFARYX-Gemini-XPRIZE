@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { ParameterControl } from './ParameterControl';
-import type { ParameterDefinition, ParameterValue } from '../../types/parameters';
+import type { ParameterDefinition, ParameterValue } from '../../../types/parameters';
 
 interface ParameterDrawerProps {
   isOpen: boolean;

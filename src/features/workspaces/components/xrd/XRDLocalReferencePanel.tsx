@@ -8,8 +8,8 @@
 
 import React from 'react';
 import { Layers, Save, RotateCcw, CheckCircle2, Trash2 } from 'lucide-react';
-import type { XRDLocalReferenceMetadata, XRDLocalReferenceParseResult } from '../../../types/xrdLocalReference';
-import type { XRDStoredLocalReferenceRecord } from '../../../data/xrdLocalReferences';
+import type { XRDLocalReferenceMetadata, XRDLocalReferenceParseResult } from '../../../../types/xrdLocalReference';
+import type { XRDStoredLocalReferenceRecord } from '../../../../data/xrdLocalReferences';
 
 interface XRDLocalReferencePanelProps {
   // Parse preview state

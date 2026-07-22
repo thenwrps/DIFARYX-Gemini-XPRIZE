@@ -1,8 +1,8 @@
 import React from 'react';
 import { Database, Upload } from 'lucide-react';
-import { Button } from '../ui/Button';
-import { Card } from '../ui/Card';
-import { Technique } from '../../data/demoProjects';
+import { Button } from '../../../components/ui/Button';
+import { Card } from '../../../components/ui/Card';
+import { Technique } from '../../../data/demoProjects';
 
 interface EmptyWorkspaceStateProps {
   technique: Technique;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { cn } from '../ui/Button';
+import { cn } from '../../../components/ui/Button';
 
 // ---------------------------------------------------------------------------
 // Types

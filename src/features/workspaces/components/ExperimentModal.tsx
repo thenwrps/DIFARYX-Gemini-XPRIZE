@@ -1,6 +1,6 @@
 import React, { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronRight, FilePlus2, LockKeyhole, Upload, X } from 'lucide-react';
-import { Button } from '../ui/Button';
+import { Button } from '../../../components/ui/Button';
 import {
   DEFAULT_PROJECT_ID,
   DemoDataset,
@@ -15,15 +15,15 @@ import {
   normalizeTechnique,
   saveDataset,
   saveExperiment,
-} from '../../data/demoProjects';
+} from '../../../data/demoProjects';
 import {
   ExperimentConditionLock,
   createDraftExperimentConditionLock,
   getConditionBoundaryNotes,
   getConditionLockStatusLabel,
   lockExperimentConditions,
-} from '../../data/experimentConditionLock';
-import { getRegistryProject } from '../../data/demoProjectRegistry';
+} from '../../../data/experimentConditionLock';
+import { getRegistryProject } from '../../../data/demoProjectRegistry';
 
 interface ExperimentModalProps {
   open: boolean;

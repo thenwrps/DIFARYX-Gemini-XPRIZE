@@ -38,17 +38,17 @@ import {
   X,
   ZoomIn,
 } from 'lucide-react';
-import { Graph } from '../ui/Graph';
+import { Graph } from '../../../components/ui/Graph';
 import { RawFileUploadModal } from './RawFileUploadModal';
 import { ReportPreviewPanel } from './ReportPreviewPanel';
-import { processWorkspaceSignal } from '../../utils/workspaceSignalProcessor';
-import type { UploadedSignalRun } from '../../data/uploadedSignalRuns';
+import { processWorkspaceSignal } from '../../../utils/workspaceSignalProcessor';
+import type { UploadedSignalRun } from '../../../data/uploadedSignalRuns';
 import {
   buildReferencePresentation,
   readImportedReferenceFile,
   writeImportedReferenceFile,
-} from '../../utils/referencePresentation';
-import type { ImportedReferenceFile, ReferencePresentation } from '../../utils/reportPreviewTypes';
+} from '../../../utils/referencePresentation';
+import type { ImportedReferenceFile, ReferencePresentation } from '../../../utils/reportPreviewTypes';
 import {
   ANALYSIS_MODE_REGISTRY,
   PARAMETER_SCHEMA_VERSION,
@@ -58,15 +58,15 @@ import {
   type AnalysisModeId,
   type CanonicalParameterValue,
   type CanonicalWorkspaceControl,
-} from '../../data/parameterDefinitions';
-import { createEvidenceOutput, type EvidenceOutputKind } from '../../evidence/canonicalEvidence';
-import { readParameterState, setParameterOverride, setParameterOverrides } from '../../utils/parameterStateManager';
-import { getRegionWindowByValue } from '../../data/xpsReferenceData';
+} from '../../../data/parameterDefinitions';
+import { createEvidenceOutput, type EvidenceOutputKind } from '../../../evidence/canonicalEvidence';
+import { readParameterState, setParameterOverride, setParameterOverrides } from '../../../utils/parameterStateManager';
+import { getRegionWindowByValue } from '../../../data/xpsReferenceData';
 import {
   buildAgentProcessingPlan,
   type AgentProcessingPlanStep,
   type ProcessingPlanStepId,
-} from '../../agent/processing/processingStepPlanner';
+} from '../../../agent/processing/processingStepPlanner';
 
 type TechniqueId = 'xrd' | 'xps' | 'ftir' | 'raman';
 type AnalysisMode = AnalysisModeId;

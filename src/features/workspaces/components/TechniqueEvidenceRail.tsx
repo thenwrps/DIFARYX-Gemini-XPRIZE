@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, Circle, Database, Download, FileText, Layers, Play, Save, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import type { TechniqueWorkspaceConfig } from '../../data/techniqueWorkspaceContent';
-import { formatChemicalFormula } from '../../utils/chemicalFormula';
+import type { TechniqueWorkspaceConfig } from '../../../data/techniqueWorkspaceContent';
+import { formatChemicalFormula } from '../../../utils/chemicalFormula';
 
 export type PipelineStepState = 'done' | 'active' | 'pending' | 'optional';
 

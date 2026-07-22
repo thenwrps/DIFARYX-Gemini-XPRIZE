@@ -11,13 +11,13 @@ import {
   Loader2,
   Sparkles,
 } from 'lucide-react';
-import type { PeakResult, ReferencePresentation, TechniqueId, WorkspaceFile } from '../../utils/reportPreviewTypes';
+import type { PeakResult, ReferencePresentation, TechniqueId, WorkspaceFile } from '../../../utils/reportPreviewTypes';
 import {
   exportReportAsDocx,
   exportReportAsMarkdown,
   exportReportAsPdf,
   type ReportData,
-} from '../../utils/reportExportEngine';
+} from '../../../utils/reportExportEngine';
 
 // ---------------------------------------------------------------------------
 // Types

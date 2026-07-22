@@ -1,7 +1,7 @@
 import React from 'react';
 import { Database, Upload, FileText, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Technique } from '../../data/demoProjects';
+import { Technique } from '../../../data/demoProjects';
 
 interface DatasetInfoBarProps {
   technique: Technique;

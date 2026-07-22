@@ -1,6 +1,6 @@
 import { useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '../../../components/layout/DashboardLayout';
-import { TechniqueWorkspaceShell } from '../../../components/workspace/TechniqueWorkspaceShell';
+import { TechniqueWorkspaceShell } from '../components/TechniqueWorkspaceShell';
 
 export default function RamanWorkspace() {
   const [searchParams] = useSearchParams();

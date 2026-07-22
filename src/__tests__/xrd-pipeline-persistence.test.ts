@@ -6,7 +6,7 @@ import {
   mapPipelineStepStatusToState,
   loadSessionState,
   getDefaultPipelineStates
-} from '../components/workspace/TechniqueWorkspaceShell';
+} from '../features/workspaces/components/TechniqueWorkspaceShell';
 import { TechniqueWorkspaceConfig } from '../types/xrdWorkflowContract';
 
 const mockPipelineConfig = [

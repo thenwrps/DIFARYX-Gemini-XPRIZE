@@ -5,7 +5,7 @@ import { DashboardLayout } from '../../../components/layout/DashboardLayout';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { AIInsightPanel } from '../../../components/ui/AIInsightPanel';
-import { ExperimentModal } from '../../../components/workspace/ExperimentModal';
+import { ExperimentModal } from '../../workspaces/components/ExperimentModal';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useXrdWorkflowRuntime } from '../../../context/XrdWorkflowRuntimeContext';
 import { useX7UniversalHook } from '../../../hooks/useX7UniversalHook';

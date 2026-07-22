@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { CheckCircle2, AlertTriangle, XCircle, Loader2 } from 'lucide-react';
-import type { ProcessingStepStatus, TechniqueParameters } from '../../types/parameters';
+import type { ProcessingStepStatus, TechniqueParameters } from '../../../types/parameters';
 
 export interface ProcessingPipelineProps {
   /** Technique identifier */

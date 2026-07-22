@@ -10,22 +10,22 @@ import {
   NotebookTabs,
   Upload,
 } from 'lucide-react';
-import { DashboardLayout } from '../layout/DashboardLayout';
-import { Card } from '../ui/Card';
-import { useAuth } from '../../contexts/AuthContext';
-import { formatChemicalFormula } from '../../utils';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { Card } from '../../../components/ui/Card';
+import { useAuth } from '../../../contexts/AuthContext';
+import { formatChemicalFormula } from '../../../utils';
 import {
   getStoredWorkspaceMode,
   setWorkspaceMode,
-} from '../../utils/workspaceMode';
+} from '../../../utils/workspaceMode';
 import {
   buildEvidenceRouteSearch,
   getEvidenceRouteContext,
   type EvidenceRouteContext,
-} from '../../utils/evidenceRouteContext';
-import { getProjectEvidenceSnapshot } from '../../utils/evidenceSnapshot';
-import { getAnalysisSessions } from '../../data/analysisSessions';
-import { AnalysisWorkspaceHome } from '../../pages/AnalysisWorkspace';
+} from '../../../utils/evidenceRouteContext';
+import { getProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
+import { getAnalysisSessions } from '../../../data/analysisSessions';
+import { AnalysisWorkspaceHome } from '../../../pages/AnalysisWorkspace';
 import {
   claimStatusColorClass,
   claimStatusLabel,
@@ -37,7 +37,7 @@ import {
   normalizeRegistryProjectId,
   type RegistryProject,
   type TechniqueId,
-} from '../../data/demoProjectRegistry';
+} from '../../../data/demoProjectRegistry';
 
 type WorkspaceTechniqueId = Exclude<TechniqueId, 'multi'>;
 

@@ -25,24 +25,24 @@ import {
   Upload,
   ZoomIn,
 } from 'lucide-react';
-import { Graph } from '../ui/Graph';
+import { Graph } from '../../../components/ui/Graph';
 import {
   getFocusedEvidenceSource,
   getRegistryProject,
   isKnownProjectId,
   type DemoFocusedEvidenceSource,
   type RegistryProject,
-} from '../../data/demoProjectRegistry';
-import { formatChemicalFormula } from '../../utils/chemicalFormula';
+} from '../../../data/demoProjectRegistry';
+import { formatChemicalFormula } from '../../../utils/chemicalFormula';
 import {
   getTechniqueWorkspaceConfig,
   type TechniqueParameterControl,
   type TechniqueParameterValue,
   type TechniqueWorkspaceId,
   type TechniqueWorkspaceConfig,
-} from '../../data/techniqueWorkspaceContent';
-import { getWorkspaceParameterControls } from '../../data/parameterDefinitions';
-import { DEFAULT_XRD_PARAMETERS } from '../../config/xrdDefaults';
+} from '../../../data/techniqueWorkspaceContent';
+import { getWorkspaceParameterControls } from '../../../data/parameterDefinitions';
+import { DEFAULT_XRD_PARAMETERS } from '../../../config/xrdDefaults';
 import {
   XRD_BASELINE_METHOD_OPTIONS,
   XRD_CLAIM_MODE_OPTIONS,
@@ -51,7 +51,7 @@ import {
   XRD_REFERENCE_SOURCE_OPTIONS,
   XRD_SMOOTHING_METHOD_OPTIONS,
   type XRDParameterOption,
-} from '../../config/xrdParameterOptions';
+} from '../../../config/xrdParameterOptions';
 import { ParameterControlField } from './ParameterControlField';
 import { TechniqueEvidenceRail, MetadataRow } from './TechniqueEvidenceRail';
 import { PeriodicTablePicker } from './PeriodicTablePicker';
@@ -63,9 +63,9 @@ import {
   type AnalysisSession,
   type PipelineStepStatus,
   type ProcessingPipelineStep,
-} from '../../data/analysisSessions';
-import type { DemoDataset, Technique } from '../../data/demoProjects';
-import type { TechniqueId } from '../../data/demoProjectRegistry';
+} from '../../../data/analysisSessions';
+import type { DemoDataset, Technique } from '../../../data/demoProjects';
+import type { TechniqueId } from '../../../data/demoProjectRegistry';
 import {
   readParameterState,
   setParameterOverride,
@@ -73,32 +73,32 @@ import {
   getParameterStateStorageKey,
   readParameterHistory,
   type ParameterHistoryEntry,
-} from '../../utils/parameterStateManager';
+} from '../../../utils/parameterStateManager';
 import {
   shouldTriggerReprocessOnApply,
   buildReprocessUnwiredNotice,
   computeSaveSessionUpdate,
-} from '../../utils/ramanReprocessState';
-import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../utils/evidenceSnapshot';
-import { useAuth } from '../../contexts/AuthContext';
-import { useXrdWorkflowRuntime } from '../../context/XrdWorkflowRuntimeContext';
+} from '../../../utils/ramanReprocessState';
+import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useXrdWorkflowRuntime } from '../../../context/XrdWorkflowRuntimeContext';
 import {
   getEffectiveWorkspaceMode,
   getStoredWorkspaceMode,
   setWorkspaceMode,
-} from '../../utils/workspaceMode';
+} from '../../../utils/workspaceMode';
 import {
   buildEvidenceRouteSearch,
   getEvidenceRouteContext,
-} from '../../utils/evidenceRouteContext';
-import { readLastUploadedContext } from '../../utils/uploadedContextStore';
+} from '../../../utils/evidenceRouteContext';
+import { readLastUploadedContext } from '../../../utils/uploadedContextStore';
 import {
   getRuntimeBadgeClass,
   getRuntimeBadgeLabel,
   getRuntimeContextForEvidenceSource,
-} from '../../runtime/difaryxRuntimeMode';
-import { sanitizeScientificWording } from '../../utils/claimBoundaryPresentation';
-import { EmptyStateCard } from '../ui/EmptyStateCard';
+} from '../../../runtime/difaryxRuntimeMode';
+import { sanitizeScientificWording } from '../../../utils/claimBoundaryPresentation';
+import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
 import {
   readUploadedSignalRuns,
   updateUploadedRunProcessingResults,
@@ -106,37 +106,37 @@ import {
   saveUploadedSignalRun,
   type TechniqueFeature,
   type UploadedSignalRun,
-} from '../../data/uploadedSignalRuns';
+} from '../../../data/uploadedSignalRuns';
 import { RawFileUpload } from './RawFileUpload';
 import { RawFileUploadModal } from './RawFileUploadModal';
 import { ScientificFeatureTable, featureRowToScientificFeature, peakMarkerToScientificFeature, xrdPeakToScientificFeature, xpsPeakToScientificFeature, ramanPeakToScientificFeature, type ScientificTechnique, type ScientificFeature } from './ScientificFeatureTable';
 import { XpsElementAnalysisPanel } from './xps/XpsElementAnalysisPanel';
-import { listReferenceElements, getElementRegionWindow } from '../../data/xpsReferenceData';
-import { saveXpsElementEvidence } from '../../data/xpsElementEvidence';
-import type { XpsElementEvidence } from '../../agent/mcp/types';
-import type { XrdDetectedPeak } from '../../agents/xrdAgent/types';
-import { runXrdPhaseIdentificationAgent, preprocess_xrd, detect_xrd_peaks, type XrdProcessingParams } from '../../agents/xrdAgent/runner';
-import { getXrdProcessingParams, getXrdParameterSnapshot, xrdToFlatParameters, flatToXrdParameters } from '../../utils/xrdParameterAdapter';
+import { listReferenceElements, getElementRegionWindow } from '../../../data/xpsReferenceData';
+import { saveXpsElementEvidence } from '../../../data/xpsElementEvidence';
+import type { XpsElementEvidence } from '../../../agent/mcp/types';
+import type { XrdDetectedPeak } from '../../../agents/xrdAgent/types';
+import { runXrdPhaseIdentificationAgent, preprocess_xrd, detect_xrd_peaks, type XrdProcessingParams } from '../../../agents/xrdAgent/runner';
+import { getXrdProcessingParams, getXrdParameterSnapshot, xrdToFlatParameters, flatToXrdParameters } from '../../../utils/xrdParameterAdapter';
 import {
   processXrdSkillEvidence,
   checkXrdBackendHealth,
   XRDBackendError,
   type XRDHealthStatus,
-} from '../../services/xrdBackendClient';
-import { useBackendStatus, BackendStatusBadge } from '../../utils/backendStatus';
-import type { XRDLocalReferencePayload, XRDNormalizedResult, XRDReferenceMatchV2, XRDReferenceMatchV2Candidate } from '../../types/xrdBackend';
-import type { XRDDatasetContext } from '../../types/xrdDatasetContext';
-import type { XRDClaimMode, XRDMatchMode, XRDParameters, XRDBaselineMethod, XRDSmoothingMethod, XRDPeakFitModel } from '../../types/xrdParameters';
+} from '../../../services/xrdBackendClient';
+import { useBackendStatus, BackendStatusBadge } from '../../../utils/backendStatus';
+import type { XRDLocalReferencePayload, XRDNormalizedResult, XRDReferenceMatchV2, XRDReferenceMatchV2Candidate } from '../../../types/xrdBackend';
+import type { XRDDatasetContext } from '../../../types/xrdDatasetContext';
+import type { XRDClaimMode, XRDMatchMode, XRDParameters, XRDBaselineMethod, XRDSmoothingMethod, XRDPeakFitModel } from '../../../types/xrdParameters';
 import {
   PLANNED_XRD_LOCAL_REFERENCES,
   createEmptyXrdLocalReferenceParseResult,
   getXrdLocalReferenceValidationStatusLabel,
   type XRDLocalReferenceParseResult,
-} from '../../types/xrdLocalReference';
+} from '../../../types/xrdLocalReference';
 import {
   createXrdLocalReferenceImportErrorResult,
   parseXrdLocalReferenceText,
-} from '../../utils/xrdLocalReferenceParser';
+} from '../../../utils/xrdLocalReferenceParser';
 import {
   approveXrdLocalReferenceDraftForMatching,
   buildXrdLocalReferenceDraftFromParseResult,
@@ -152,22 +152,22 @@ import {
   rejectXrdLocalReferenceDraft,
   saveXrdLocalReferenceDraft,
   type XRDStoredLocalReferenceRecord,
-} from '../../data/xrdLocalReferences';
+} from '../../../data/xrdLocalReferences';
 import { XRDReadinessPanel } from './xrd/XRDReadinessPanel';
 import { XRDBoundaryPanel } from './xrd/XRDBoundaryPanel';
 import { XRDLocalReferencePanel } from './xrd/XRDLocalReferencePanel';
 import { XRDReferenceMatchPanel } from './xrd/XRDReferenceMatchPanel';
 import { XRDProcessingParametersPanel } from './xrd/XRDProcessingParametersPanel';
-import { saveXrdBackendEvidenceResult } from '../../data/xrdBackendEvidence';
-import { runRamanProcessing } from '../../agents/ramanAgent/runner';
-import { getRamanProcessingParams, getRamanParameterSnapshot } from '../../utils/ramanParameterAdapter';
-import { runXpsProcessing } from '../../agents/xpsAgent/runner';
-import { getXpsProcessingParams, getXpsParameterSnapshot } from '../../utils/xpsParameterAdapter';
-import { runFtirProcessing } from '../../agents/ftirAgent/runner';
-import { getFtirProcessingParams, getFtirParameterSnapshot, convertToFtirProcessingParams } from '../../utils/ftirParameterAdapter';
-import { getTechniqueProcessingSupport } from '../../utils/techniqueProcessingSupport';
-import { runWhenIdle } from '../../utils/idle';
-import { identifyMaterialFeatures, applyBaseline, applySmoothing } from '../../hooks/useX7UniversalHook';
+import { saveXrdBackendEvidenceResult } from '../../../data/xrdBackendEvidence';
+import { runRamanProcessing } from '../../../agents/ramanAgent/runner';
+import { getRamanProcessingParams, getRamanParameterSnapshot } from '../../../utils/ramanParameterAdapter';
+import { runXpsProcessing } from '../../../agents/xpsAgent/runner';
+import { getXpsProcessingParams, getXpsParameterSnapshot } from '../../../utils/xpsParameterAdapter';
+import { runFtirProcessing } from '../../../agents/ftirAgent/runner';
+import { getFtirProcessingParams, getFtirParameterSnapshot, convertToFtirProcessingParams } from '../../../utils/ftirParameterAdapter';
+import { getTechniqueProcessingSupport } from '../../../utils/techniqueProcessingSupport';
+import { runWhenIdle } from '../../../utils/idle';
+import { identifyMaterialFeatures, applyBaseline, applySmoothing } from '../../../hooks/useX7UniversalHook';
 
 const RIGHT_TABS = ['Parameters', 'Evidence', 'Boundary'] as const;
 type RightTab = (typeof RIGHT_TABS)[number];

@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
-import type { ParameterDefinition, ParameterValue } from '../../types/parameters';
+import type { ParameterDefinition, ParameterValue } from '../../../types/parameters';
 
 export interface ParameterControlProps {
   /** Parameter definition (type, range, options, etc.) */

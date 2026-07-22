@@ -8,7 +8,7 @@
 import React, { useMemo } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { ParameterControl } from './ParameterControl';
-import type { ParameterDefinition, ParameterValue } from '../../types/parameters';
+import type { ParameterDefinition, ParameterValue } from '../../../types/parameters';
 
 export interface ParameterAccordionProps {
   /** Processing step identifier */

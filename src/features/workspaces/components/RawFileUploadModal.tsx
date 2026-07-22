@@ -1,7 +1,7 @@
 import React from 'react';
 import { X, FileText } from 'lucide-react';
 import { RawFileUpload } from './RawFileUpload';
-import { type UploadedSignalRun } from '../../data/uploadedSignalRuns';
+import { type UploadedSignalRun } from '../../../data/uploadedSignalRuns';
 
 interface RawFileUploadModalProps {
   open: boolean;

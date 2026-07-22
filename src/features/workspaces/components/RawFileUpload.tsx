@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Upload, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { uploadRawData } from '../../services/uploadService';
-import { type UploadedSignalRun } from '../../data/uploadedSignalRuns';
+import { uploadRawData } from '../../../services/uploadService';
+import { type UploadedSignalRun } from '../../../data/uploadedSignalRuns';
 
 interface RawFileUploadProps {
   technique: string;
