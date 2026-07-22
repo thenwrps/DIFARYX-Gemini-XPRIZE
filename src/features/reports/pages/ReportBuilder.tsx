@@ -747,7 +747,7 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
 
     const availableTechniques = evidenceSnapshot.availableTechniques ?? [];
     const techniqueCount = availableTechniques.length;
-    const context: import('../runtime/evidenceBundle').BundleCreationContext = {
+    const context: import('../../../runtime/evidenceBundle').BundleCreationContext = {
       route: '/reports',
       techniqueCount,
       hasMultiTechIntent: techniqueCount >= 2 || searchParams.get('bundle') === 'mixed',

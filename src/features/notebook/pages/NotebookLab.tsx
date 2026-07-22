@@ -1204,7 +1204,7 @@ function NotebookLabContent({ routeContext }: { routeContext: EvidenceRouteConte
 
     const availableTechniques = evidenceSnapshot.availableTechniques ?? [];
     const techniqueCount = availableTechniques.length;
-    const context: import('../runtime/evidenceBundle').BundleCreationContext = {
+    const context: import('../../../runtime/evidenceBundle').BundleCreationContext = {
       route: '/notebook',
       techniqueCount,
       hasMultiTechIntent: techniqueCount >= 2 || searchParams.get('bundle') === 'mixed',
