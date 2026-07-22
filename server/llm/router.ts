@@ -17,7 +17,7 @@ import type {
   ModelProvider,
   ReasoningResponse,
 } from '../../src/agent/mcp/types';
-import { callVertexGemini, isVertexAIConfigured } from './providers/vertexGemini';
+import { callVertexGemini, isVertexAIConfigured } from './providers/geminiProvider';
 import { callGemma, isGemmaConfigured } from './providers/gemmaProvider';
 import { generateDeterministicReasoning } from '../../src/services/api/deterministicReasoning';
 
@@ -43,7 +43,6 @@ export async function routeReasoning(
     // Vertex AI Gemini mode
     if (provider === 'vertex-gemini' || provider === 'gemini-2.5-flash') {
       if (!isVertexAIConfigured()) {
-        console.warn('Vertex AI not configured, falling back to deterministic reasoning');
         const output = generateDeterministicReasoning(packet);
         return {
           success: true,
@@ -53,14 +52,13 @@ export async function routeReasoning(
       }
 
       try {
-        const output = await callVertexGemini(packet, model ?? 'gemini-2.5-flash');
+        const output = await callVertexGemini(packet, model);
         return {
           success: true,
           output,
           fallbackUsed: false,
         };
-      } catch (error) {
-        console.error('Vertex AI Gemini failed, falling back to deterministic reasoning:', error);
+      } catch {
         const output = generateDeterministicReasoning(packet);
         return {
           success: true,
@@ -81,7 +79,6 @@ export async function routeReasoning(
     // Gemma mode
     if (provider === 'gemma') {
       if (!isGemmaConfigured()) {
-        console.warn('Gemma not configured, falling back to deterministic reasoning');
         const output = generateDeterministicReasoning(packet);
         return {
           success: true,
@@ -97,8 +94,7 @@ export async function routeReasoning(
           output,
           fallbackUsed: false,
         };
-      } catch (error) {
-        console.error('Gemma failed, falling back to deterministic reasoning:', error);
+      } catch {
         const output = generateDeterministicReasoning(packet);
         return {
           success: true,
@@ -113,11 +109,10 @@ export async function routeReasoning(
       success: false,
       error: `Unknown provider: ${provider}`,
     };
-  } catch (error) {
-    console.error('Routing error:', error);
+  } catch {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown routing error',
+      error: 'Reasoning routing failed',
     };
   }
 }
