@@ -39,7 +39,7 @@ import {
   getProjectJobTypeLabel,
   getProjectJobTypeBadgeColor,
 } from '../utils/projectEvidence';
-import { ActivityTimelineWidget } from '../components/dashboard/ActivityTimelineWidget';
+import { ActivityTimelineWidget } from '../features/dashboard/components/ActivityTimelineWidget';
 import { formatClaimStatus as formatSharedClaimStatus, sanitizeScientificWording } from '../utils/claimBoundaryPresentation';
 import { EmptyStateCard } from '../components/ui/EmptyStateCard';
 
