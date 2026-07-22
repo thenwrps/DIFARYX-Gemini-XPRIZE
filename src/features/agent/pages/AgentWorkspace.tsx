@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
-import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 import { ScientificAnalysisWorkspace } from '../../workspaces/components/ScientificAnalysisWorkspace';
 import AgentDemo from './ClassicAgentDemo';
 

@@ -10,7 +10,7 @@ import {
   FlaskConical,
   X,
 } from 'lucide-react';
-import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 import { Card } from '../../../shared/ui/Card';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useOrganization } from '../../../contexts/OrganizationContext';

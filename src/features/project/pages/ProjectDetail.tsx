@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 import { Card } from '../../../shared/ui/Card';
 import { Graph } from '../../../shared/ui/Graph';
 import {

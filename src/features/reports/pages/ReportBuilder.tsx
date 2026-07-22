@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Clipboard, Download, FileText, Save, ShieldCheck, Sparkles, RotateCcw } from 'lucide-react';
 import { reproduceAnalysis } from '../../../utils/reproduceAnalysis';
-import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 
 import { Button } from '../../../shared/ui/Button';
 import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';

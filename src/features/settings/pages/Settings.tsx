@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Bot, Database, Download, Link2, User } from 'lucide-react';
-import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 import { Card } from '../../../shared/ui/Card';
 import { ConnectedAccountStatus } from '../../../components/runtime/ConnectedAccountStatus';
 import { useAuth } from '../../../contexts/AuthContext';

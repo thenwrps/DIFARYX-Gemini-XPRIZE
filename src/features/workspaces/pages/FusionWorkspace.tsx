@@ -6,7 +6,7 @@ import {
   Layers,
   Zap,
 } from 'lucide-react';
-import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
 import { runUniversalFusionAgent } from '../../../agents/fusionAgent/runner';
 import type { FusedFinding, FusionTier } from '../../../agents/fusionAgent/types';

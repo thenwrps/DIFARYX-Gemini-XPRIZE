@@ -19,7 +19,7 @@ import {
   Sparkles,
   Upload,
 } from 'lucide-react';
-import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 import { Button } from '../../../shared/ui/Button';
 import { Card } from '../../../shared/ui/Card';
 import { Graph } from '../../../shared/ui/Graph';

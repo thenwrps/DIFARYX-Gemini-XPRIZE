@@ -27,7 +27,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 import { Card } from '../../../shared/ui/Card';
 import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
 import { Graph } from '../../../shared/ui/Graph';

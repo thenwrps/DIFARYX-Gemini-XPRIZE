@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, BookOpen, Bot, ClipboardList, FileText, FolderOpen, History, Target, Trash2 } from 'lucide-react';
-import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 import { Card } from '../../../shared/ui/Card';
 import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
 import { ApprovalLedgerPanel } from '../../../components/runtime/ApprovalLedgerPanel';

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, BarChart3, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, FlaskConical, MoreHorizontal, Plus, Printer, Save, Share2, Target, X, RotateCcw } from 'lucide-react';
-import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 import { Button } from '../../../shared/ui/Button';
 import { Card } from '../../../shared/ui/Card';
 import { AIInsightPanel } from '../../../shared/ui/AIInsightPanel';
