@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { Card } from '../components/ui/Card';
-import { Graph } from '../components/ui/Graph';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { Card } from '../../../components/ui/Card';
+import { Graph } from '../../../components/ui/Graph';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -33,15 +33,15 @@ import {
   getAgentPath,
   getProjectInsight,
   makeTechniquePattern,
-} from '../data/demoProjects';
-import { formatChemicalFormula } from '../utils';
+} from '../../../data/demoProjects';
+import { formatChemicalFormula } from '../../../utils';
 import {
   getProjectJobTypeLabel,
   getProjectJobTypeBadgeColor,
-} from '../utils/projectEvidence';
-import { ActivityTimelineWidget } from '../features/dashboard/components/ActivityTimelineWidget';
-import { formatClaimStatus as formatSharedClaimStatus, sanitizeScientificWording } from '../utils/claimBoundaryPresentation';
-import { EmptyStateCard } from '../components/ui/EmptyStateCard';
+} from '../../../utils/projectEvidence';
+import { ActivityTimelineWidget } from '../../dashboard/components/ActivityTimelineWidget';
+import { formatClaimStatus as formatSharedClaimStatus, sanitizeScientificWording } from '../../../utils/claimBoundaryPresentation';
+import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
 
 /* ---------- helpers ---------- */
 
