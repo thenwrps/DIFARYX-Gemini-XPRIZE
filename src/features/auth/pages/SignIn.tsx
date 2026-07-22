@@ -1,13 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, Mail, UserRound } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { Button } from "../components/ui/Button";
-import { Card, CardContent } from "../components/ui/Card";
-import { useAuth, type AuthUser } from "../contexts/AuthContext";
+import { Button } from "../../../components/ui/Button";
+import { Card, CardContent } from "../../../components/ui/Card";
+import { useAuth, type AuthUser } from "../../../contexts/AuthContext";
 import {
   getGoogleOAuthClientId,
   getGoogleOAuthClientIdSource,
-} from "../utils/googleOAuthConfig";
+} from "../../../utils/googleOAuthConfig";
 
 const GOOGLE_CLIENT_ID = getGoogleOAuthClientId();
 const GOOGLE_CLIENT_ID_SOURCE = getGoogleOAuthClientIdSource();

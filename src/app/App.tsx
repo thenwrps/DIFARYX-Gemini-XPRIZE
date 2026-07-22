@@ -3,12 +3,12 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
 import { AuthProvider } from "../contexts/AuthContext";
-import { ProtectedRoute } from "../components/auth/ProtectedRoute";
+import { ProtectedRoute } from "../features/auth/components/ProtectedRoute";
 import { XrdWorkflowRuntimeProvider } from "../context/XrdWorkflowRuntimeContext";
 
 import Landing from "../features/landing/pages/Landing";
-import SignIn from "../pages/SignIn";
-import AuthCallback from "../pages/AuthCallback";
+import SignIn from "../features/auth/pages/SignIn";
+import AuthCallback from "../features/auth/pages/AuthCallback";
 
 const Dashboard = lazy(() => import("../pages/Dashboard"));
 const ProjectDetail = lazy(() => import("../pages/ProjectDetail"));
