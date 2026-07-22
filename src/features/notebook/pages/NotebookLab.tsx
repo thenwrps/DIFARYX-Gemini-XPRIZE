@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, BarChart3, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, FlaskConical, MoreHorizontal, Plus, Printer, Save, Share2, Target, X, RotateCcw } from 'lucide-react';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { AIInsightPanel } from '../components/ui/AIInsightPanel';
-import { ExperimentModal } from '../components/workspace/ExperimentModal';
-import { useAuth } from '../contexts/AuthContext';
-import { useXrdWorkflowRuntime } from '../context/XrdWorkflowRuntimeContext';
-import { useX7UniversalHook } from '../hooks/useX7UniversalHook';
-import { formatChemicalFormula } from '../utils';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { Button } from '../../../components/ui/Button';
+import { Card } from '../../../components/ui/Card';
+import { AIInsightPanel } from '../../../components/ui/AIInsightPanel';
+import { ExperimentModal } from '../../../components/workspace/ExperimentModal';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useXrdWorkflowRuntime } from '../../../context/XrdWorkflowRuntimeContext';
+import { useX7UniversalHook } from '../../../hooks/useX7UniversalHook';
+import { formatChemicalFormula } from '../../../utils';
 import {
   ProcessingRun,
   demoProjects,
@@ -32,7 +32,7 @@ import {
   type DemoProject,
   type ProjectNotebook,
   type Technique,
-} from '../data/demoProjects';
+} from '../../../data/demoProjects';
 import {
   getRegistryProject,
   isKnownProjectId,
@@ -41,12 +41,12 @@ import {
   jobTypeLabel,
   jobTypeBadgeClass,
   type RegistryProject,
-} from '../data/demoProjectRegistry';
-import { DemoExportFormat, exportDemoArtifact } from '../utils/demoExport';
-import { reproduceAnalysis } from '../utils/reproduceAnalysis';
-import { getRun, type AgentRun } from '../data/runModel';
-import { formatClaimStatus as formatSharedClaimStatus } from '../utils/claimBoundaryPresentation';
-import { EmptyStateCard } from '../components/ui/EmptyStateCard';
+} from '../../../data/demoProjectRegistry';
+import { DemoExportFormat, exportDemoArtifact } from '../../../utils/demoExport';
+import { reproduceAnalysis } from '../../../utils/reproduceAnalysis';
+import { getRun, type AgentRun } from '../../../data/runModel';
+import { formatClaimStatus as formatSharedClaimStatus } from '../../../utils/claimBoundaryPresentation';
+import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
 import {
   NOTEBOOK_TEMPLATES,
   createNotebookEntryFromRefinement,
@@ -62,7 +62,7 @@ import {
   saveNotebookEntry,
   saveProcessingResult,
   type NotebookTemplateMode,
-} from '../data/workflowPipeline';
+} from '../../../data/workflowPipeline';
 import {
   selectXrdWorkflowScientificEvidence,
   selectXrdWorkflowReferenceMatchEvidence,
@@ -70,68 +70,68 @@ import {
   extractReferenceMatchFields,
   selectXrdQualityMetrics,
   selectXrdPhaseMatchSummary,
-} from '../data/xrdWorkflowHandoffSelectors';
+} from '../../../data/xrdWorkflowHandoffSelectors';
 import {
   XRD_DEMO_DATASETS,
   getXrdProjectCompatibility,
   isDatasetCompatibleWithProject,
-} from '../data/xrdDemoDatasets';
-import { getLockedContext } from '../data/lockedContext';
+} from '../../../data/xrdDemoDatasets';
+import { getLockedContext } from '../../../data/lockedContext';
 import {
   formatConditionLockTimestamp,
   getConditionBoundaryNotes,
   getExperimentConditionLock,
   getConditionLockSectionLines,
   getConditionLockStatusLabel,
-} from '../data/experimentConditionLock';
-import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
-import { createUploadedEvidenceRegistryProject } from '../utils/uploadedEvidenceProjectContext';
-import { ScientificConfidenceSummary } from '../components/ui/ScientificConfidenceSummary';
-import { ConnectedAccountStatus } from '../components/runtime/ConnectedAccountStatus';
-import { getRuntimeBadgeClass, getRuntimeBadgeLabel, requiresApproval } from '../runtime/difaryxRuntimeMode';
+} from '../../../data/experimentConditionLock';
+import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
+import { createUploadedEvidenceRegistryProject } from '../../../utils/uploadedEvidenceProjectContext';
+import { ScientificConfidenceSummary } from '../../../components/ui/ScientificConfidenceSummary';
+import { ConnectedAccountStatus } from '../../../components/runtime/ConnectedAccountStatus';
+import { getRuntimeBadgeClass, getRuntimeBadgeLabel, requiresApproval } from '../../../runtime/difaryxRuntimeMode';
 import {
   createApprovalActionPreview,
   type ApprovalActionPreview,
   type ApprovalActionType,
   type ApprovalRiskLevel,
-} from '../runtime/actionApproval';
-import { appendApprovalLedgerEntry, createApprovalLedgerEntry, summarizeApprovalLedger } from '../runtime/approvalLedger';
-import { ApprovalLedgerPanel } from '../components/runtime/ApprovalLedgerPanel';
-import { ApprovalActionDialog } from '../components/runtime/ApprovalActionDialog';
+} from '../../../runtime/actionApproval';
+import { appendApprovalLedgerEntry, createApprovalLedgerEntry, summarizeApprovalLedger } from '../../../runtime/approvalLedger';
+import { ApprovalLedgerPanel } from '../../../components/runtime/ApprovalLedgerPanel';
+import { ApprovalActionDialog } from '../../../components/runtime/ApprovalActionDialog';
 import {
   getDefaultConnectedAccountState,
   getGoogleConnectedShellState,
-} from '../runtime/connectedAccounts';
+} from '../../../runtime/connectedAccounts';
 import {
   createEvidenceBundleFromSnapshot,
   getEvidenceBundleBadgeLabel,
   getTechniqueCoverageFromBundle,
-} from '../runtime/evidenceBundle';
+} from '../../../runtime/evidenceBundle';
 import {
   readProjectWorkspaceParameters,
-} from '../utils/workspaceParameterOverrides';
+} from '../../../utils/workspaceParameterOverrides';
 import {
   getParameterProvenanceSummary,
   formatParameterValueForDisplay,
   formatProvenanceSource,
   formatProvenanceTimestamp,
   generateParameterProvenanceMarkdown,
-} from '../utils/parameterProvenanceSummary';
-import type { TechniqueWorkspaceId } from '../data/techniqueWorkspaceContent';
-import { getProjectTechniques } from '../utils/projectEvidence';
+} from '../../../utils/parameterProvenanceSummary';
+import type { TechniqueWorkspaceId } from '../../../data/techniqueWorkspaceContent';
+import { getProjectTechniques } from '../../../utils/projectEvidence';
 import {
   getStoredWorkspaceMode,
   setWorkspaceMode,
-} from '../utils/workspaceMode';
+} from '../../../utils/workspaceMode';
 import {
   buildEvidenceRouteSearch,
   getEvidenceRouteContext,
   type EvidenceRouteContext,
-} from '../utils/evidenceRouteContext';
-import { runWhenIdle } from '../utils/idle';
-import { AuditTraceWindow } from '../components/notebook/AuditTraceWindow';
-import { EvidenceVerificationTable } from '../components/notebook/EvidenceVerificationTable';
-import { sanitizeExportContent } from '../utils/exportSanitizer';
+} from '../../../utils/evidenceRouteContext';
+import { runWhenIdle } from '../../../utils/idle';
+import { AuditTraceWindow } from '../components/AuditTraceWindow';
+import { EvidenceVerificationTable } from '../components/EvidenceVerificationTable';
+import { sanitizeExportContent } from '../../../utils/exportSanitizer';
 
 const NOTEBOOK_TEMPLATE_MODES: NotebookTemplateMode[] = ['research', 'rd', 'analytical'];
 const NOTEBOOK_TABS = ['Objective / Context', 'Evidence', 'Interpretation', 'Validation Gap', 'Decision'] as const;

@@ -27,8 +27,8 @@ import React from 'react';
 import type {
   AnalysisFeature,
   AnalysisInterpretation,
-} from '../../data/analysisSessions';
-import type { XpsEvidenceMetadata } from '../../types/universalEvidence';
+} from '../../../data/analysisSessions';
+import type { XpsEvidenceMetadata } from '../../../types/universalEvidence';
 
 // ---------------------------------------------------------------------------
 // Types
