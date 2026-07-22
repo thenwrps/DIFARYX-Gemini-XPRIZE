@@ -182,7 +182,7 @@ function deriveXpsClaimStatus(matchedPeaks: number, totalPeaks: number): ClaimSt
 9. **src/pages/XRDWorkspace.tsx** - Claim status
 10. **src/pages/XPSWorkspace.tsx** - Evidence reasoning
 11. **src/pages/Dashboard.tsx** - Claim status
-12. **src/pages/_cockpit_layout.tsx** - Claim status
+12. **archive/legacy-ui/_cockpit_layout.tsx** - Claim status
 
 ### Utility Files (3 files)
 13. **src/pages/TechniqueWorkspace.tsx** - Evidence roles

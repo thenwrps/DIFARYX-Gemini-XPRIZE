@@ -36,7 +36,7 @@
   - "Supported" → "Strongly Supported"
   - "Status" label → "Decision Status"
 
-### 4. **src/pages/_cockpit_layout.tsx**
+### 4. **archive/legacy-ui/_cockpit_layout.tsx**
 - ✅ Updated panel title: "Confidence Display" → "Decision Status Display"
 - ✅ Updated label: "Confidence" → "Decision Status"
 - ✅ Updated description: "High confidence" → "Strongly supported"

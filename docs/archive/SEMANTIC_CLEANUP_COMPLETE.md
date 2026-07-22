@@ -50,7 +50,7 @@ Successfully removed ALL confidence-based language from the DIFARYX codebase and
 - `src/pages/XRDWorkspace.tsx`
 - `src/pages/XPSWorkspace.tsx`
 - `src/pages/Dashboard.tsx`
-- `src/pages/_cockpit_layout.tsx`
+- `archive/legacy-ui/_cockpit_layout.tsx`
 - `src/components/ui/AIInsightPanel.tsx`
 
 **Changes:**
@@ -112,7 +112,7 @@ Successfully removed ALL confidence-based language from the DIFARYX codebase and
 9. `src/pages/XRDWorkspace.tsx` - XRD workspace
 10. `src/pages/XPSWorkspace.tsx` - XPS workspace
 11. `src/pages/Dashboard.tsx` - Main dashboard
-12. `src/pages/_cockpit_layout.tsx` - Agent demo cockpit
+12. `archive/legacy-ui/_cockpit_layout.tsx` - Agent demo cockpit
 
 ---
 
