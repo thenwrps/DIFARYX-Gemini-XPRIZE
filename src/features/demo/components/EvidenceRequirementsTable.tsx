@@ -1,7 +1,7 @@
 import React from 'react';
 import { ClipboardList } from 'lucide-react';
-import { canonicalDemoScenario } from '../../data/demo';
-import type { EvidenceRequirementStatus } from '../../data/demo';
+import { canonicalDemoScenario } from '../../../data/demo';
+import type { EvidenceRequirementStatus } from '../../../data/demo';
 
 const STATUS_CONFIG: Record<EvidenceRequirementStatus, { dot: string; badge: string }> = {
   Complete: {

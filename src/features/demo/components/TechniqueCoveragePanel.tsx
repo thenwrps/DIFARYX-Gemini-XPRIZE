@@ -1,6 +1,6 @@
 import React from 'react';
 import { Microscope } from 'lucide-react';
-import { canonicalDemoScenario } from '../../data/demo';
+import { canonicalDemoScenario } from '../../../data/demo';
 
 /**
  * TechniqueCoveragePanel

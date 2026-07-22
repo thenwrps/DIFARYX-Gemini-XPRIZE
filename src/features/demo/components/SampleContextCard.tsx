@@ -1,6 +1,6 @@
 import React from 'react';
 import { FlaskConical } from 'lucide-react';
-import { canonicalDemoScenario } from '../../data/demo';
+import { canonicalDemoScenario } from '../../../data/demo';
 
 /**
  * SampleContextCard

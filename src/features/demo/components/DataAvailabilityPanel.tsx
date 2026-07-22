@@ -1,7 +1,7 @@
 import React from 'react';
 import { Database } from 'lucide-react';
-import { canonicalDemoScenario } from '../../data/demo';
-import type { DataAvailabilityStatus } from '../../data/demo';
+import { canonicalDemoScenario } from '../../../data/demo';
+import type { DataAvailabilityStatus } from '../../../data/demo';
 
 const STATUS_CONFIG: Record<DataAvailabilityStatus, { label: string; dot: string; badge: string }> = {
   available: {
