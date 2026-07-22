@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_PROJECT_ID, getProject, getProjectDatasets } from '../../data/demoProjects';
 import { getXrdProcessingParams } from '../../utils/xrdParameterAdapter';
 import { runXrdPhaseIdentificationAgent } from '../../agents/xrdAgent';
-import { createDecisionResult, toAgentRunResult } from '../../pages/AgentDemo';
+import { createDecisionResult, toAgentRunResult } from '../../features/agent/pages/ClassicAgentDemo';
 
 describe('current AgentDemo execution characterization', () => {
   it('keeps deterministic XRD runner output stable for the same input', () => {

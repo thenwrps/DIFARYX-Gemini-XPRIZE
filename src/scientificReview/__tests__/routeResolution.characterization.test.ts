@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import AgentDemo from '../../pages/AgentDemo';
+import AgentDemo from '../../features/agent/pages/ClassicAgentDemo';
 
 describe('AgentDemo route characterization', () => {
   it('loads the actual AgentDemo component module at runtime', () => {
