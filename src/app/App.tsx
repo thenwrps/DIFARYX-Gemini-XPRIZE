@@ -18,7 +18,7 @@ const WorkspaceLauncher = lazy(() => import("../pages/WorkspaceLauncher"));
 const NotebookLab = lazy(() => import("../features/notebook/pages/NotebookLab"));
 const ReportBuilder = lazy(() => import("../features/reports/pages/ReportBuilder"));
 const AgentDemo = lazy(() => import("../pages/AgentWorkspace"));
-const HistoryPage = lazy(() => import("../pages/History"));
+const HistoryPage = lazy(() => import("../features/history/pages/History"));
 const SettingsPage = lazy(() => import("../pages/Settings"));
 
 const XRDWorkspace = lazy(() => import("../pages/XRDWorkspace"));

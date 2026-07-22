@@ -1,12 +1,12 @@
 import React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, BookOpen, Bot, ClipboardList, FileText, FolderOpen, History, Target, Trash2 } from 'lucide-react';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
-import { Card } from '../components/ui/Card';
-import { EmptyStateCard } from '../components/ui/EmptyStateCard';
-import { ApprovalLedgerPanel } from '../components/runtime/ApprovalLedgerPanel';
-import { useAuth } from '../contexts/AuthContext';
-import { formatChemicalFormula } from '../utils';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { Card } from '../../../components/ui/Card';
+import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import { ApprovalLedgerPanel } from '../../../components/runtime/ApprovalLedgerPanel';
+import { useAuth } from '../../../contexts/AuthContext';
+import { formatChemicalFormula } from '../../../utils';
 import {
   claimStatusColorClass,
   claimStatusLabel,
@@ -16,16 +16,16 @@ import {
   type DemoExperimentHistoryEvent,
   type ExperimentEventType,
   type TechniqueId,
-} from '../data/demoProjectRegistry';
+} from '../../../data/demoProjectRegistry';
 import {
   getEffectiveWorkspaceMode,
   getStoredWorkspaceMode,
   setWorkspaceMode,
-} from '../utils/workspaceMode';
-import { getApprovalLedgerEntries, type ApprovalLedgerEntry } from '../runtime/approvalLedger';
-import { deleteAnalysisSession, getAnalysisSessions, getStatusLabel, type AnalysisSession } from '../data/analysisSessions';
-import { deleteUploadedSignalRun } from '../data/uploadedSignalRuns';
-import { runWhenIdle } from '../utils/idle';
+} from '../../../utils/workspaceMode';
+import { getApprovalLedgerEntries, type ApprovalLedgerEntry } from '../../../runtime/approvalLedger';
+import { deleteAnalysisSession, getAnalysisSessions, getStatusLabel, type AnalysisSession } from '../../../data/analysisSessions';
+import { deleteUploadedSignalRun } from '../../../data/uploadedSignalRuns';
+import { runWhenIdle } from '../../../utils/idle';
 
 const EVENT_TYPES: ExperimentEventType[] = [
   'dataset_loaded',
