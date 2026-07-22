@@ -16,6 +16,7 @@
     "test:parameters": "vitest run src/data/__tests__/canonicalParameterContract.test.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "typecheck:server": "tsc --noEmit -p tsconfig.server.json",
     "preview": "vite preview",
     "validate": "tsx src/validation/validationHarness.ts"
   },

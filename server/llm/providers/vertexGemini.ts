@@ -1,6 +1,6 @@
 /** Server-side Gemini 2.5 Flash adapter using the shared canonical prompt. */
-import type { AgentEvidencePacket, ReasoningOutput } from '../../agent/mcp/types';
-import { buildCanonicalAgentPrompt, normalizeAgentModelOutput } from '../../agent/prompt/canonicalAgentPrompt';
+import type { AgentEvidencePacket, ReasoningOutput } from '../../../src/agent/mcp/types';
+import { buildCanonicalAgentPrompt, normalizeAgentModelOutput } from '../../../src/agent/prompt/canonicalAgentPrompt';
 
 export async function callVertexGemini(
   packet: AgentEvidencePacket,
@@ -39,8 +39,7 @@ export async function callVertexGemini(
 
 export function isVertexAIConfigured(): boolean {
   return Boolean(
-    typeof window === 'undefined'
-    && readServerEnvironment('GOOGLE_CLOUD_PROJECT')
+    readServerEnvironment('GOOGLE_CLOUD_PROJECT')
     && readServerEnvironment('GOOGLE_GENAI_USE_VERTEXAI') === 'true',
   );
 }
