@@ -1,16 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Clipboard, Download, FileText, Save, ShieldCheck, Sparkles, RotateCcw } from 'lucide-react';
-import { reproduceAnalysis } from '../utils/reproduceAnalysis';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
+import { reproduceAnalysis } from '../../../utils/reproduceAnalysis';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
 
-import { Button } from '../components/ui/Button';
-import { EmptyStateCard } from '../components/ui/EmptyStateCard';
-import { Card } from '../components/ui/Card';
-import { useAuth } from '../contexts/AuthContext';
-import { useXrdWorkflowRuntime } from '../context/XrdWorkflowRuntimeContext';
-import { useX7UniversalHook } from '../hooks/useX7UniversalHook';
-import { getProject, getWorkspaceRoute } from '../data/demoProjects';
+import { Button } from '../../../components/ui/Button';
+import { EmptyStateCard } from '../../../components/ui/EmptyStateCard';
+import { Card } from '../../../components/ui/Card';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useXrdWorkflowRuntime } from '../../../context/XrdWorkflowRuntimeContext';
+import { useX7UniversalHook } from '../../../hooks/useX7UniversalHook';
+import { getProject, getWorkspaceRoute } from '../../../data/demoProjects';
 import {
   claimStatusColorClass,
   claimStatusLabel,
@@ -18,7 +18,7 @@ import {
   isKnownProjectId,
   jobTypeBadgeClass,
   jobTypeLabel,
-} from '../data/demoProjectRegistry';
+} from '../../../data/demoProjectRegistry';
 import {
   NOTEBOOK_TEMPLATES,
   createNotebookEntryFromRefinement,
@@ -32,7 +32,7 @@ import {
   refineDiscussionFromProcessing,
   type NotebookEntry,
   type NotebookTemplateMode,
-} from '../data/workflowPipeline';
+} from '../../../data/workflowPipeline';
 import {
   selectXrdWorkflowScientificEvidence,
   selectXrdWorkflowReferenceMatchEvidence,
@@ -40,60 +40,60 @@ import {
   extractReferenceMatchFields,
   selectXrdQualityMetrics,
   selectXrdPhaseMatchSummary,
-} from '../data/xrdWorkflowHandoffSelectors';
-import { exportDemoArtifact, type DemoExportFormat, type DemoExportSection } from '../utils/demoExport';
-import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
-import { createUploadedEvidenceRegistryProject } from '../utils/uploadedEvidenceProjectContext';
-import { ScientificConfidenceSummary } from '../components/ui/ScientificConfidenceSummary';
+} from '../../../data/xrdWorkflowHandoffSelectors';
+import { exportDemoArtifact, type DemoExportFormat, type DemoExportSection } from '../../../utils/demoExport';
+import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
+import { createUploadedEvidenceRegistryProject } from '../../../utils/uploadedEvidenceProjectContext';
+import { ScientificConfidenceSummary } from '../../../components/ui/ScientificConfidenceSummary';
 import {
   getRuntimeBadgeClass,
   getRuntimeBadgeLabel,
   requiresApproval,
-} from '../runtime/difaryxRuntimeMode';
-import { ApprovalActionDialog } from '../components/runtime/ApprovalActionDialog';
-import { ConnectedAccountStatus } from '../components/runtime/ConnectedAccountStatus';
+} from '../../../runtime/difaryxRuntimeMode';
+import { ApprovalActionDialog } from '../../../components/runtime/ApprovalActionDialog';
+import { ConnectedAccountStatus } from '../../../components/runtime/ConnectedAccountStatus';
 import {
   createApprovalActionPreview,
   type ApprovalActionPreview,
   type ApprovalActionType,
   type ApprovalRiskLevel,
-} from '../runtime/actionApproval';
-import { appendApprovalLedgerEntry, createApprovalLedgerEntry, summarizeApprovalLedger } from '../runtime/approvalLedger';
-import { ApprovalLedgerPanel } from '../components/runtime/ApprovalLedgerPanel';
+} from '../../../runtime/actionApproval';
+import { appendApprovalLedgerEntry, createApprovalLedgerEntry, summarizeApprovalLedger } from '../../../runtime/approvalLedger';
+import { ApprovalLedgerPanel } from '../../../components/runtime/ApprovalLedgerPanel';
 import {
   getDefaultConnectedAccountState,
   getGoogleConnectedShellState,
-} from '../runtime/connectedAccounts';
+} from '../../../runtime/connectedAccounts';
 import {
   createEvidenceBundleFromSnapshot,
   getEvidenceBundleBadgeLabel,
   getTechniqueCoverageFromBundle,
   getValidationGapsFromBundle,
   type EvidenceBundle,
-} from '../runtime/evidenceBundle';
+} from '../../../runtime/evidenceBundle';
 import {
   readProjectWorkspaceParameters,
-} from '../utils/workspaceParameterOverrides';
-import { getProjectTechniques } from '../utils/projectEvidence';
+} from '../../../utils/workspaceParameterOverrides';
+import { getProjectTechniques } from '../../../utils/projectEvidence';
 import {
   getParameterProvenanceSummary,
   formatParameterValueForDisplay,
   formatProvenanceSource,
   formatProvenanceTimestamp,
-} from '../utils/parameterProvenanceSummary';
-import { getTechniqueWorkspaceConfig, type TechniqueWorkspaceId } from '../data/techniqueWorkspaceContent';
+} from '../../../utils/parameterProvenanceSummary';
+import { getTechniqueWorkspaceConfig, type TechniqueWorkspaceId } from '../../../data/techniqueWorkspaceContent';
 import {
   getStoredWorkspaceMode,
   setWorkspaceMode,
-} from '../utils/workspaceMode';
+} from '../../../utils/workspaceMode';
 import {
   buildEvidenceRouteSearch,
   getEvidenceRouteContext,
   type EvidenceRouteContext,
-} from '../utils/evidenceRouteContext';
-import { runWhenIdle } from '../utils/idle';
-import { buildClaimBoundaryArtifact } from '../utils/claimBoundaryArtifact';
-import type { ClaimBoundarySignals } from '../types/researchEvidence';
+} from '../../../utils/evidenceRouteContext';
+import { runWhenIdle } from '../../../utils/idle';
+import { buildClaimBoundaryArtifact } from '../../../utils/claimBoundaryArtifact';
+import type { ClaimBoundarySignals } from '../../../types/researchEvidence';
 
 function reportTypeLabel(mode: NotebookTemplateMode) {
   if (mode === 'rd') return 'Technical Evidence Report';
