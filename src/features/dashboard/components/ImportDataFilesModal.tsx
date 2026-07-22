@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Upload, FileText, Link2, FolderOpen } from 'lucide-react';
-import { Button } from '../ui/Button';
+import { Button } from '../../../components/ui/Button';
 
 interface ImportDataFilesModalProps {
   open: boolean;

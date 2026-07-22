@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card } from '../ui/Card';
+import { Card } from '../../../components/ui/Card';
 import {
   Activity,
   Layers,
@@ -9,7 +9,7 @@ import {
   FileText,
   RefreshCw
 } from 'lucide-react';
-import { getProvenanceTimelineEvents, type TimelineEvent } from '../../utils/provenanceTimeline';
+import { getProvenanceTimelineEvents, type TimelineEvent } from '../../../utils/provenanceTimeline';
 
 export function ActivityTimelineWidget({ projectId }: { projectId?: string }) {
   const events = React.useMemo(() => {

@@ -10,7 +10,7 @@ import Landing from "../features/landing/pages/Landing";
 import SignIn from "../features/auth/pages/SignIn";
 import AuthCallback from "../features/auth/pages/AuthCallback";
 
-const Dashboard = lazy(() => import("../pages/Dashboard"));
+const Dashboard = lazy(() => import("../features/dashboard/pages/Dashboard"));
 const ProjectDetail = lazy(() => import("../pages/ProjectDetail"));
 const MultiTechWorkspace = lazy(() => import("../pages/MultiTechWorkspace"));
 const TechniqueWorkspace = lazy(() => import("../pages/TechniqueWorkspace"));

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { DashboardLayout } from '../components/layout/DashboardLayout';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
 import {
   AlertTriangle,
   ArrowRight,
@@ -17,19 +17,19 @@ import {
   Shield,
   Upload,
 } from 'lucide-react';
-import { Button, cn } from '../components/ui/Button';
+import { Button, cn } from '../../../components/ui/Button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ExperimentModal } from '../components/workspace/ExperimentModal';
-import { CreateMenu } from '../components/dashboard/CreateMenu';
-import { ProjectNotebookWizard } from '../components/dashboard/ProjectNotebookWizard';
-import { QuickExperimentSetup } from '../components/dashboard/QuickExperimentSetup';
-import { useAuth } from '../contexts/AuthContext';
-import { DEFAULT_PROJECT_ID } from '../data/demoProjects';
-import { formatChemicalFormula } from '../utils';
+import { ExperimentModal } from '../../../components/workspace/ExperimentModal';
+import { CreateMenu } from '../components/CreateMenu';
+import { ProjectNotebookWizard } from '../components/ProjectNotebookWizard';
+import { QuickExperimentSetup } from '../components/QuickExperimentSetup';
+import { useAuth } from '../../../contexts/AuthContext';
+import { DEFAULT_PROJECT_ID } from '../../../data/demoProjects';
+import { formatChemicalFormula } from '../../../utils';
 import {
   getEvidenceStrengthQualifier,
   getConfidenceLevel,
-} from '../components/ui/ScientificConfidenceSummary';
+} from '../../../components/ui/ScientificConfidenceSummary';
 import {
   claimStatusLabel,
   demoProjectRegistry,
@@ -37,13 +37,13 @@ import {
   type RegistryProject,
   type TechniqueId,
   type DemoGraphData,
-} from '../data/demoProjectRegistry';
-import { DemoProjectGraph } from '../components/graphs/DemoProjectGraph';
-import { getProjectEvidenceSnapshot } from '../utils/evidenceSnapshot';
+} from '../../../data/demoProjectRegistry';
+import { DemoProjectGraph } from '../../../components/graphs/DemoProjectGraph';
+import { getProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
 import {
   getAnalysisSessions,
   type AnalysisSession,
-} from '../data/analysisSessions';
+} from '../../../data/analysisSessions';
 import {
   getStoredWorkspaceMode,
   setWorkspaceMode,
@@ -52,9 +52,9 @@ import {
   getEffectiveWorkspaceMode,
   toWorkspaceMode,
   type WorkspaceMode,
-} from '../utils/workspaceMode';
-import { runWhenIdle } from '../utils/idle';
-import { downloadSessionBundle, importSessionBundle } from '../utils/sessionBundle';
+} from '../../../utils/workspaceMode';
+import { runWhenIdle } from '../../../utils/idle';
+import { downloadSessionBundle, importSessionBundle } from '../../../utils/sessionBundle';
 import './Dashboard.css';
 
 /* ─── Workflow strip labels ─── */
