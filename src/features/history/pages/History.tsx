@@ -4,7 +4,7 @@ import { ArrowRight, BookOpen, Bot, ClipboardList, FileText, FolderOpen, History
 import { DashboardLayout } from '../../../shared/layout/DashboardLayout';
 import { Card } from '../../../shared/ui/Card';
 import { EmptyStateCard } from '../../../shared/ui/EmptyStateCard';
-import { ApprovalLedgerPanel } from '../../../components/runtime/ApprovalLedgerPanel';
+import { ApprovalLedgerPanel } from '../../runtime/components/ApprovalLedgerPanel';
 import { useAuth } from '../../../contexts/AuthContext';
 import { formatChemicalFormula } from '../../../utils';
 import {

@@ -1189,8 +1189,8 @@ import {
   getProjectParameterGroups,
   type ParameterGroupId,
 } from '../../../utils/projectEvidence';
-import { ApprovalActionDialog } from '../../../components/runtime/ApprovalActionDialog';
-import { ConnectedAccountStatus } from '../../../components/runtime/ConnectedAccountStatus';
+import { ApprovalActionDialog } from '../../runtime/components/ApprovalActionDialog';
+import { ConnectedAccountStatus } from '../../runtime/components/ConnectedAccountStatus';
 import {
   createApprovalActionPreview,
   type ApprovalActionPreview,

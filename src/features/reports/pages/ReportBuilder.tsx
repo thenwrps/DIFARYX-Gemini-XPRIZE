@@ -50,8 +50,8 @@ import {
   getRuntimeBadgeLabel,
   requiresApproval,
 } from '../../../runtime/difaryxRuntimeMode';
-import { ApprovalActionDialog } from '../../../components/runtime/ApprovalActionDialog';
-import { ConnectedAccountStatus } from '../../../components/runtime/ConnectedAccountStatus';
+import { ApprovalActionDialog } from '../../runtime/components/ApprovalActionDialog';
+import { ConnectedAccountStatus } from '../../runtime/components/ConnectedAccountStatus';
 import {
   createApprovalActionPreview,
   type ApprovalActionPreview,
@@ -59,7 +59,7 @@ import {
   type ApprovalRiskLevel,
 } from '../../../runtime/actionApproval';
 import { appendApprovalLedgerEntry, createApprovalLedgerEntry, summarizeApprovalLedger } from '../../../runtime/approvalLedger';
-import { ApprovalLedgerPanel } from '../../../components/runtime/ApprovalLedgerPanel';
+import { ApprovalLedgerPanel } from '../../runtime/components/ApprovalLedgerPanel';
 import {
   getDefaultConnectedAccountState,
   getGoogleConnectedShellState,

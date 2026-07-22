@@ -1,8 +1,8 @@
 import { AlertTriangle, CheckCircle2, Database, ShieldCheck, X } from 'lucide-react';
-import { Button } from '../../shared/ui/Button';
-import { getRuntimeBadgeLabel } from '../../runtime/difaryxRuntimeMode';
-import type { ApprovalActionPreview } from '../../runtime/actionApproval';
-import { appendApprovalLedgerEntry, createApprovalLedgerEntry } from '../../runtime/approvalLedger';
+import { Button } from '../../../shared/ui/Button';
+import { getRuntimeBadgeLabel } from '../../../runtime/difaryxRuntimeMode';
+import type { ApprovalActionPreview } from '../../../runtime/actionApproval';
+import { appendApprovalLedgerEntry, createApprovalLedgerEntry } from '../../../runtime/approvalLedger';
 
 interface ApprovalActionDialogProps {
   action: ApprovalActionPreview | null;

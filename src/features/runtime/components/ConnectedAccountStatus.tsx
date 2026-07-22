@@ -4,7 +4,7 @@ import {
   getConnectedAccountBadgeLabel,
   type ConnectedAccountState,
   type ConnectedCapability,
-} from '../../runtime/connectedAccounts';
+} from '../../../runtime/connectedAccounts';
 
 interface ConnectedAccountStatusProps {
   state: ConnectedAccountState;

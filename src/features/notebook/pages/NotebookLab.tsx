@@ -87,7 +87,7 @@ import {
 import { getProjectEvidenceSnapshot, type ProjectEvidenceSnapshot } from '../../../utils/evidenceSnapshot';
 import { createUploadedEvidenceRegistryProject } from '../../../utils/uploadedEvidenceProjectContext';
 import { ScientificConfidenceSummary } from '../../../shared/ui/ScientificConfidenceSummary';
-import { ConnectedAccountStatus } from '../../../components/runtime/ConnectedAccountStatus';
+import { ConnectedAccountStatus } from '../../runtime/components/ConnectedAccountStatus';
 import { getRuntimeBadgeClass, getRuntimeBadgeLabel, requiresApproval } from '../../../runtime/difaryxRuntimeMode';
 import {
   createApprovalActionPreview,
@@ -96,8 +96,8 @@ import {
   type ApprovalRiskLevel,
 } from '../../../runtime/actionApproval';
 import { appendApprovalLedgerEntry, createApprovalLedgerEntry, summarizeApprovalLedger } from '../../../runtime/approvalLedger';
-import { ApprovalLedgerPanel } from '../../../components/runtime/ApprovalLedgerPanel';
-import { ApprovalActionDialog } from '../../../components/runtime/ApprovalActionDialog';
+import { ApprovalLedgerPanel } from '../../runtime/components/ApprovalLedgerPanel';
+import { ApprovalActionDialog } from '../../runtime/components/ApprovalActionDialog';
 import {
   getDefaultConnectedAccountState,
   getGoogleConnectedShellState,
