@@ -2,6 +2,7 @@ import type {
   ReasoningRequest,
   ReasoningResponse,
 } from '../../agent/mcp/types';
+import { getAgentApiUrl } from './agentApiUrl';
 import { generateDeterministicReasoning } from './deterministicReasoning';
 
 /**
@@ -13,9 +14,8 @@ import { generateDeterministicReasoning } from './deterministicReasoning';
 export async function callReasoningAPI(
   request: ReasoningRequest,
 ): Promise<ReasoningResponse> {
-  const baseUrl = import.meta.env.VITE_AGENT_API_URL || 'http://localhost:3001';
   try {
-    const response = await fetch(`${baseUrl}/api/reasoning`, {
+    const response = await fetch(getAgentApiUrl('/api/reasoning'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

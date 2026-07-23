@@ -13,6 +13,6 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["server/**/*.ts"],
+  "include": ["server/**/*.ts", "api/**/*.ts"],
   "exclude": ["server/python/**", "node_modules", "dist", "archive"]
 }
