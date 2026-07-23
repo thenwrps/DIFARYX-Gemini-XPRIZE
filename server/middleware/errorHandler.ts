@@ -4,6 +4,8 @@ export class HttpError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly code?: string,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -15,7 +17,7 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
     : typeof error?.status === 'number' && error.status >= 400 && error.status < 500
       ? error.status
       : 500;
-  const publicMessage = error instanceof HttpError && status < 500
+  const publicMessage = error instanceof HttpError
     ? error.message
     : status === 400
       ? 'Malformed request body'
@@ -25,5 +27,11 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
     success: false,
     error: publicMessage,
     requestId: response.locals.requestId,
+    ...(error instanceof HttpError && error.code
+      ? { errorCode: error.code }
+      : {}),
+    ...(error instanceof HttpError && error.details
+      ? error.details
+      : {}),
   });
 };

@@ -1,3 +1,8 @@
+import {
+  loadGeminiQuotaConfig,
+  type GeminiQuotaConfigResult,
+} from './quota/quotaConfig';
+
 export type GeminiProviderMode = 'developer' | 'vertex';
 
 export interface ServerConfig {
@@ -8,6 +13,7 @@ export interface ServerConfig {
   serviceName: string;
   serviceVersion: string;
   allowedOrigins: string[];
+  googleOAuthClientId?: string;
   geminiProviderMode: GeminiProviderMode;
   geminiApiKey?: string;
   googleCloudProject?: string;
@@ -16,6 +22,7 @@ export interface ServerConfig {
   geminiModel: string;
   geminiModelConfigured: boolean;
   geminiRequestTimeoutMs: number;
+  geminiQuota: GeminiQuotaConfigResult;
 }
 
 const LOCAL_ORIGINS = [
@@ -41,6 +48,7 @@ export function loadServerConfig(
     serviceName: 'difaryx-gemini-backend',
     serviceVersion: environment.npm_package_version?.trim() || '0.0.0',
     allowedOrigins,
+    googleOAuthClientId: environment.GOOGLE_OAUTH_CLIENT_ID?.trim() || undefined,
     geminiProviderMode: parseGeminiProviderMode(environment.GEMINI_PROVIDER_MODE),
     geminiApiKey: environment.GEMINI_API_KEY?.trim() || undefined,
     googleCloudProject: environment.GOOGLE_CLOUD_PROJECT?.trim() || undefined,
@@ -54,6 +62,7 @@ export function loadServerConfig(
       1_000,
       120_000,
     ),
+    geminiQuota: loadGeminiQuotaConfig(environment),
   };
 }
 

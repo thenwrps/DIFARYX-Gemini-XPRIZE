@@ -1,4 +1,8 @@
-import express, { type RequestHandler } from 'express';
+import express, {
+  type Request,
+  type RequestHandler,
+  type Response,
+} from 'express';
 import cors from 'cors';
 import type {
   AgentEvidencePacket,
@@ -6,7 +10,16 @@ import type {
   ReasoningRequest,
   ReasoningResponse,
 } from '../src/agent/mcp/types';
-import { handleReasoningRequest } from './api/reasoning';
+import {
+  handleReasoningRequest,
+  type ReasoningRequestContext,
+} from './api/reasoning';
+import { createGoogleIdentityVerifier } from './auth/googleIdentityVerifier';
+import { requireGoogleIdentity } from './auth/requireGoogleIdentity';
+import type {
+  GoogleIdentityVerifier,
+  VerifiedGoogleIdentity,
+} from './auth/types';
 import { loadServerConfig, type ServerConfig } from './config';
 import { errorHandler, HttpError } from './middleware/errorHandler';
 import {
@@ -14,14 +27,31 @@ import {
   requestContext,
   type StructuredLogger,
 } from './middleware/requestContext';
+import {
+  isGeminiRequestProvider,
+  resolveReasoningExecutionPolicy,
+  type ReasoningExecutionPolicy,
+} from './llm/executionPolicy';
 import { getGeminiProviderStatus } from './llm/providers/geminiProvider';
+import { createGeminiQuotaService } from './quota/geminiQuotaService';
+import type { GeminiQuotaConfig } from './quota/quotaConfig';
+import type { GeminiQuotaService } from './quota/types';
+import { createUpstashGeminiQuotaStore } from './quota/upstashGeminiQuotaStore';
 
 type PublicProvider = ModelProvider | 'gemini';
-type ReasoningHandler = (request: ReasoningRequest) => Promise<ReasoningResponse>;
+interface ReasoningContext extends ReasoningRequestContext {
+  identity?: VerifiedGoogleIdentity;
+}
+type ReasoningHandler = (
+  request: ReasoningRequest,
+  context: ReasoningContext,
+) => Promise<ReasoningResponse>;
 
 export interface CreateAppOptions {
   config?: ServerConfig;
   reasoningHandler?: ReasoningHandler;
+  identityVerifier?: GoogleIdentityVerifier;
+  quotaService?: GeminiQuotaService;
   logger?: StructuredLogger;
 }
 
@@ -38,7 +68,20 @@ const SUPPORTED_PROVIDERS = new Set<PublicProvider>([
 export function createApp(options: CreateAppOptions = {}) {
   const config = options.config ?? loadServerConfig();
   const reasoningHandler = options.reasoningHandler ?? handleReasoningRequest;
+  const identityVerifier = options.identityVerifier ?? createGoogleIdentityVerifier({
+    clientId: config.googleOAuthClientId,
+  });
   const logger = options.logger ?? jsonStructuredLogger;
+  let quotaService = options.quotaService;
+  const getQuotaService = (quotaConfig: GeminiQuotaConfig): GeminiQuotaService => {
+    if (!quotaService) {
+      quotaService = createGeminiQuotaService({
+        config: quotaConfig,
+        store: createUpstashGeminiQuotaStore(quotaConfig),
+      });
+    }
+    return quotaService;
+  };
   const app = express();
 
   app.disable('x-powered-by');
@@ -74,9 +117,33 @@ export function createApp(options: CreateAppOptions = {}) {
       const provider = readProvider(body.provider, true);
       const model = readOptionalModel(body.model);
       response.locals.selectedProvider = provider;
-      response.locals.selectedModel = model ?? (isGeminiProvider(provider) ? config.geminiModel : null);
+      response.locals.selectedModel = model ?? (
+        isGeminiRequestProvider(provider) ? config.geminiModel : null
+      );
+      const executionPolicy = resolveReasoningExecutionPolicy(provider, config);
 
-      const result = await reasoningHandler({ packet, provider, model });
+      const identity = await authenticateForExecutionPolicy(
+        request,
+        response,
+        executionPolicy,
+        identityVerifier,
+      );
+      await consumeGeminiQuota(
+        response,
+        executionPolicy,
+        identity,
+        config,
+        getQuotaService,
+      );
+      const result = await reasoningHandler(
+        { packet, provider, model },
+        {
+          identity,
+          config,
+          executionPolicy,
+          geminiQuotaConsumed: executionPolicy.consumesGeminiQuota,
+        },
+      );
       response.locals.selectedProvider = result.output?.metadata.provider ?? provider;
       response.locals.selectedModel = result.output?.metadata.model ?? response.locals.selectedModel;
       response.locals.fallbackUsed = result.fallbackUsed ?? false;
@@ -92,9 +159,33 @@ export function createApp(options: CreateAppOptions = {}) {
       const packet = readPacket(body.packet, 'Missing packet in request body');
       const provider = readProvider(body.modelMode, false);
       response.locals.selectedProvider = provider;
-      response.locals.selectedModel = isGeminiProvider(provider) ? config.geminiModel : null;
+      response.locals.selectedModel = isGeminiRequestProvider(provider)
+        ? config.geminiModel
+        : null;
+      const executionPolicy = resolveReasoningExecutionPolicy(provider, config);
 
-      const result = await reasoningHandler({ packet, provider });
+      const identity = await authenticateForExecutionPolicy(
+        request,
+        response,
+        executionPolicy,
+        identityVerifier,
+      );
+      await consumeGeminiQuota(
+        response,
+        executionPolicy,
+        identity,
+        config,
+        getQuotaService,
+      );
+      const result = await reasoningHandler(
+        { packet, provider },
+        {
+          identity,
+          config,
+          executionPolicy,
+          geminiQuotaConsumed: executionPolicy.consumesGeminiQuota,
+        },
+      );
       response.locals.selectedProvider = result.output?.metadata.provider ?? provider;
       response.locals.selectedModel = result.output?.metadata.model ?? response.locals.selectedModel;
       response.locals.fallbackUsed = result.fallbackUsed ?? false;
@@ -159,6 +250,62 @@ function readOptionalModel(value: unknown): string | undefined {
   return model;
 }
 
-function isGeminiProvider(provider: ModelProvider): boolean {
-  return provider === 'vertex-gemini' || provider === 'gemini-2.5-flash';
+async function authenticateForExecutionPolicy(
+  request: Request,
+  response: Response,
+  executionPolicy: ReasoningExecutionPolicy,
+  identityVerifier: GoogleIdentityVerifier,
+): Promise<VerifiedGoogleIdentity | undefined> {
+  if (!executionPolicy.requiresGoogleIdentity) {
+    response.locals.authOutcome = 'not_required';
+    return undefined;
+  }
+  return requireGoogleIdentity(request, response, identityVerifier);
+}
+
+async function consumeGeminiQuota(
+  response: Response,
+  executionPolicy: ReasoningExecutionPolicy,
+  identity: VerifiedGoogleIdentity | undefined,
+  config: ServerConfig,
+  getQuotaService: (quotaConfig: GeminiQuotaConfig) => GeminiQuotaService,
+): Promise<void> {
+  if (!executionPolicy.consumesGeminiQuota) {
+    response.locals.quotaOutcome = 'not_required';
+    return;
+  }
+  if (!identity || !config.geminiQuota.ok) {
+    response.locals.quotaOutcome = 'unavailable';
+    throw new HttpError(
+      503,
+      'Gemini quota service unavailable',
+      'GEMINI_QUOTA_UNAVAILABLE',
+    );
+  }
+
+  const decision = await getQuotaService(config.geminiQuota.value)
+    .consume(identity.subject);
+  response.locals.quotaOutcome = decision.status;
+  if (decision.status === 'allowed') return;
+  if (decision.status === 'unavailable') {
+    throw new HttpError(
+      503,
+      'Gemini quota service unavailable',
+      'GEMINI_QUOTA_UNAVAILABLE',
+    );
+  }
+
+  response.setHeader('Retry-After', String(decision.retryAfterSeconds));
+  throw new HttpError(
+    429,
+    'Gemini beta usage limit reached',
+    'GEMINI_QUOTA_EXCEEDED',
+    {
+      quota: {
+        dimension: decision.dimension,
+        resetAt: decision.resetAt,
+        retryAfterSeconds: decision.retryAfterSeconds,
+      },
+    },
+  );
 }

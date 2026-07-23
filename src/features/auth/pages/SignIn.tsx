@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Mail, UserRound } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "../../../shared/ui/Button";
@@ -6,17 +6,17 @@ import { Card, CardContent } from "../../../shared/ui/Card";
 import { useAuth, type AuthUser } from "../../../contexts/AuthContext";
 import {
   getGoogleOAuthClientId,
-  getGoogleOAuthClientIdSource,
 } from "../../../utils/googleOAuthConfig";
+import { loadGoogleIdentityServices } from "../../../services/google/googleIdentityServices";
 
 const GOOGLE_CLIENT_ID = getGoogleOAuthClientId();
-const GOOGLE_CLIENT_ID_SOURCE = getGoogleOAuthClientIdSource();
 
 export default function SignIn() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn } = useAuth();
+  const { signIn, signInWithGoogleCredential } = useAuth();
   const googleConfigured = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
   const [emailMode, setEmailMode] = useState(false);
   const [createMode, setCreateMode] = useState(false);
   const [name, setName] = useState("");
@@ -40,6 +40,46 @@ export default function SignIn() {
     }
   }, [routeState?.authError]);
 
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !googleButtonRef.current) return;
+    let active = true;
+
+    loadGoogleIdentityServices()
+      .then((accounts) => {
+        if (!active || !googleButtonRef.current) return;
+        accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          auto_select: false,
+          callback(response) {
+            if (!active) return;
+            if (signInWithGoogleCredential(response.credential)) {
+              navigate(from, { replace: true });
+              return;
+            }
+            setEmailError("Google sign-in could not establish a valid identity session.");
+          },
+        });
+        googleButtonRef.current.replaceChildren();
+        accounts.id.renderButton(googleButtonRef.current, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          text: 'continue_with',
+          shape: 'rectangular',
+          width: 382,
+        });
+      })
+      .catch(() => {
+        if (active) {
+          setEmailError("Google sign-in is temporarily unavailable.");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [from, navigate, signInWithGoogleCredential]);
+
   const enterDemo = (
     profile: AuthUser = {
       name: "Researcher",
@@ -50,42 +90,6 @@ export default function SignIn() {
   ) => {
     signIn(profile);
     navigate(from, { replace: true });
-  };
-
-  const handleGoogleLogin = () => {
-    console.log("[SignIn] Google login button clicked");
-    setEmailError("");
-
-    if (!GOOGLE_CLIENT_ID) {
-      console.warn("[SignIn] Google OAuth client ID is not configured");
-      setEmailError(
-        "Google sign-in is not configured. Continue as Guest / Researcher or use Email."
-      );
-      return;
-    }
-
-    console.log("[SignIn] Google client ID configured via:", GOOGLE_CLIENT_ID_SOURCE);
-
-    const redirectUri = `${window.location.origin}/auth/callback`;
-    console.log("[SignIn] Redirect URI:", redirectUri);
-    console.log("[SignIn] Intended destination after auth:", from);
-
-    // Store the intended destination in sessionStorage
-    sessionStorage.setItem("auth_redirect_to", from);
-
-    const params = new URLSearchParams({
-      client_id: GOOGLE_CLIENT_ID,
-      redirect_uri: redirectUri,
-      response_type: "token",
-      scope: "openid email profile",
-      include_granted_scopes: "true",
-      prompt: "select_account",
-    });
-
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-    console.log("[SignIn] Redirecting to:", authUrl);
-
-    window.location.href = authUrl;
   };
 
   const handleEmailSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -158,40 +162,11 @@ export default function SignIn() {
               <CardContent className="p-6">
                 {!emailMode && !createMode ? (
                   <div className="space-y-3">
-                    <Button
-                      variant="outline"
-                      className={`h-12 w-full justify-center gap-3 border-slate-200 bg-white text-base font-semibold text-slate-800 ${
-                        !googleConfigured
-                          ? "opacity-50 cursor-not-allowed"
-                          : "hover:border-blue-300 hover:bg-blue-50/60"
-                      }`}
-                      onClick={handleGoogleLogin}
-                      disabled={!googleConfigured}
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="h-5 w-5"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M12.0003 4.75C13.7703 4.75 15.3553 5.36002 16.6053 6.54998L20.0303 3.125C17.9502 1.19 15.2353 0 12.0003 0C7.31028 0 3.25527 2.69 1.28027 6.60998L5.27028 9.70498C6.21525 6.86002 8.87028 4.75 12.0003 4.75Z"
-                          fill="#EA4335"
-                        />
-                        <path
-                          d="M23.49 12.275C23.49 11.49 23.415 10.73 23.3 10H12V14.51H18.47C18.18 15.99 17.34 17.25 16.08 18.1L19.945 21.1C22.2 19.01 23.49 15.92 23.49 12.275Z"
-                          fill="#4285F4"
-                        />
-                        <path
-                          d="M5.26498 14.2949C5.02498 13.5699 4.88501 12.7999 4.88501 11.9999C4.88501 11.1999 5.01998 10.4299 5.26498 9.7049L1.275 6.60986C0.46 8.22986 0 10.0599 0 11.9999C0 13.9399 0.46 15.7699 1.28 17.3899L5.26498 14.2949Z"
-                          fill="#FBBC05"
-                        />
-                        <path
-                          d="M12.0004 24.0001C15.2404 24.0001 17.9654 22.935 19.9454 21.095L16.0804 18.095C15.0054 18.82 13.6204 19.245 12.0004 19.245C8.8704 19.245 6.21537 17.135 5.26537 14.29L1.27539 17.385C3.25539 21.31 7.3104 24.0001 12.0004 24.0001Z"
-                          fill="#34A853"
-                        />
-                      </svg>
-                      Continue with Google
-                    </Button>
+                    <div
+                      ref={googleButtonRef}
+                      className="flex min-h-12 w-full items-center justify-center"
+                      aria-label="Continue with Google"
+                    />
                     {!googleConfigured && (
                       <p className="text-center text-[10px] font-semibold text-amber-600 bg-amber-50 rounded border border-amber-200/50 py-1.5 px-2">
                         Google authentication is not configured in this demo build.
