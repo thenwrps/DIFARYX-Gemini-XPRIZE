@@ -79,6 +79,27 @@ describe('Phase 1 source and service seams', () => {
     expect(new ClaimBoundaryService().build(input)).toEqual(buildClaimBoundaryArtifact(input));
   });
 
+  it('preserves model-generated claim provenance for the Developer API label', () => {
+    const artifact = new ClaimBoundaryService().buildFromReasoning('XRD', {
+      primaryResult: 'Candidate phase',
+      confidence: 0.8,
+      evidenceSummary: ['bounded evidence'],
+      rejectedAlternatives: [],
+      decisionLogic: 'compatibility test',
+      uncertainty: ['validation required'],
+      recommendedNextStep: 'Validate',
+      metadata: {
+        provider: 'existing-provider',
+        actualProvider: 'gemini-developer-api',
+        fallbackUsed: false,
+        evidenceSnapshotId: 'snapshot-test',
+        timestamp: '2026-07-22T00:00:00.000Z',
+      },
+    });
+
+    expect(artifact.provider).toBe('vertex');
+  });
+
   it('keeps processing orchestration synchronous and delegates the supplied runner once', () => {
     const runner = vi.fn(() => ({ status: 'complete' }));
     const result = new ProcessingOrchestrationService().run({ name: 'test-runner', execute: runner });

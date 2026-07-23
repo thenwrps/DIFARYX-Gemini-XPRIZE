@@ -29,8 +29,9 @@ function productionConfig() {
   return loadServerConfig({
     NODE_ENV: 'production',
     ALLOWED_ORIGINS: 'https://app.example.test',
-    GOOGLE_CLOUD_LOCATION: 'us-central1',
-    GOOGLE_GENAI_USE_VERTEXAI: 'true',
+    GEMINI_PROVIDER_MODE: 'developer',
+    GEMINI_API_KEY: 'test-only-placeholder',
+    GOOGLE_GENAI_USE_VERTEXAI: 'false',
     GEMINI_MODEL: 'gemini-2.5-flash',
     PORT: '3001',
   });
@@ -59,11 +60,33 @@ describe('DIFARYX server boundary', () => {
     expect(response.body).toMatchObject({
       ok: true,
       service: 'difaryx-gemini-backend',
-      provider: 'vertex-gemini',
+      provider: 'gemini-developer-api',
+      providerMode: 'developer',
       model: 'gemini-2.5-flash',
-      providerConfigured: false,
+      providerConfigured: true,
     });
     expect(JSON.stringify(response.body)).not.toMatch(/credential|secret|token|project/i);
+    expect(JSON.stringify(response.body)).not.toContain('test-only-placeholder');
+  });
+
+  it('reports optional Vertex mode without exposing configuration details', async () => {
+    const config = loadServerConfig({
+      NODE_ENV: 'production',
+      ALLOWED_ORIGINS: 'https://app.example.test',
+      GEMINI_PROVIDER_MODE: 'vertex',
+      GOOGLE_GENAI_USE_VERTEXAI: 'true',
+      GOOGLE_CLOUD_LOCATION: 'global',
+      GEMINI_MODEL: 'gemini-2.5-flash',
+    });
+    const response = await request(createApp({ config, logger: () => undefined })).get('/api/health');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      provider: 'vertex-gemini',
+      providerMode: 'vertex',
+      providerConfigured: false,
+    });
+    expect(response.body).not.toHaveProperty('project');
   });
 
   it('rejects a missing packet', async () => {

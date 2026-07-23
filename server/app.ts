@@ -14,7 +14,7 @@ import {
   requestContext,
   type StructuredLogger,
 } from './middleware/requestContext';
-import { isVertexAIConfigured } from './llm/providers/geminiProvider';
+import { getGeminiProviderStatus } from './llm/providers/geminiProvider';
 
 type PublicProvider = ModelProvider | 'gemini';
 type ReasoningHandler = (request: ReasoningRequest) => Promise<ReasoningResponse>;
@@ -55,13 +55,15 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.get('/api/health', (_request, response) => {
+    const geminiStatus = getGeminiProviderStatus(config);
     response.json({
       ok: true,
       service: config.serviceName,
       version: config.serviceVersion,
-      provider: 'vertex-gemini',
+      provider: geminiStatus.provider,
+      providerMode: geminiStatus.mode,
       model: config.geminiModel,
-      providerConfigured: isVertexAIConfigured(config),
+      providerConfigured: geminiStatus.configured,
     });
   });
 

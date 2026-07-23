@@ -1,24 +1,38 @@
-/** Server-only Vertex AI Gemini adapter using the shared canonical prompt. */
-import { GoogleGenAI } from '@google/genai';
-import type { AgentEvidencePacket, ReasoningOutput } from '../../../src/agent/mcp/types';
+/** Server-only Gemini adapter using the shared canonical prompt. */
+import {
+  GoogleGenAI,
+  type GenerateContentParameters,
+  type GoogleGenAIOptions,
+} from '@google/genai';
+import type { AgentEvidencePacket, ModelProvider, ReasoningOutput } from '../../../src/agent/mcp/types';
 import { buildCanonicalAgentPrompt, normalizeAgentModelOutput } from '../../../src/agent/prompt/canonicalAgentPrompt';
-import { loadServerConfig, type ServerConfig } from '../../config';
+import { loadServerConfig, type GeminiProviderMode, type ServerConfig } from '../../config';
 
-let cachedClient: GoogleGenAI | undefined;
-let cachedClientKey = '';
+let cachedDeveloperClient: GoogleGenAI | undefined;
+let cachedDeveloperApiKey: string | undefined;
+let cachedVertexClient: GoogleGenAI | undefined;
+let cachedVertexClientKey = '';
 
 export interface GeminiProviderOptions {
   config?: ServerConfig;
+  generateContent?: (parameters: GenerateContentParameters) => Promise<{ text?: string }>;
 }
 
-export async function callVertexGemini(
+export interface GeminiProviderStatus {
+  configured: boolean;
+  mode: GeminiProviderMode;
+  provider: Extract<ModelProvider, 'gemini-developer-api' | 'vertex-gemini'>;
+}
+
+export async function callGemini(
   packet: AgentEvidencePacket,
   model?: string,
   options: GeminiProviderOptions = {},
 ): Promise<ReasoningOutput> {
   const startTime = Date.now();
   const config = options.config ?? loadServerConfig();
-  if (!isVertexAIConfigured(config)) {
+  const status = getGeminiProviderStatus(config);
+  if (!status.configured) {
     throw new Error('Gemini provider is not configured');
   }
 
@@ -28,7 +42,7 @@ export async function callVertexGemini(
   const timeout = setTimeout(() => controller.abort(), config.geminiRequestTimeoutMs);
 
   try {
-    const response = await getClient(config).models.generateContent({
+    const parameters: GenerateContentParameters = {
       model: selectedModel,
       contents: prompt,
       config: {
@@ -38,7 +52,10 @@ export async function callVertexGemini(
         httpOptions: { timeout: config.geminiRequestTimeoutMs },
         abortSignal: controller.signal,
       },
-    });
+    };
+    const response = options.generateContent
+      ? await options.generateContent(parameters)
+      : await getClient(config).models.generateContent(parameters);
     const text = response.text ?? '';
     if (!text) throw new Error('Empty provider response');
 
@@ -52,7 +69,7 @@ export async function callVertexGemini(
       ...output,
       metadata: {
         ...output.metadata,
-        provider: 'vertex-gemini',
+        provider: status.provider,
         model: selectedModel,
       },
     };
@@ -63,19 +80,62 @@ export async function callVertexGemini(
   }
 }
 
-export function isVertexAIConfigured(config: ServerConfig = loadServerConfig()): boolean {
-  return Boolean(config.googleCloudProject && config.googleGenAIUseVertexAI);
+export function getGeminiProviderStatus(
+  config: ServerConfig = loadServerConfig(),
+): GeminiProviderStatus {
+  if (config.geminiProviderMode === 'vertex') {
+    return {
+      configured: Boolean(
+        config.googleCloudProject
+        && config.googleCloudLocation
+        && config.geminiModelConfigured,
+      ),
+      mode: 'vertex',
+      provider: 'vertex-gemini',
+    };
+  }
+  return {
+    configured: Boolean(config.geminiApiKey && config.geminiModelConfigured),
+    mode: 'developer',
+    provider: 'gemini-developer-api',
+  };
+}
+
+export function isGeminiConfigured(config: ServerConfig = loadServerConfig()): boolean {
+  return getGeminiProviderStatus(config).configured;
 }
 
 function getClient(config: ServerConfig): GoogleGenAI {
-  const clientKey = `${config.googleCloudProject}:${config.googleCloudLocation}`;
-  if (!cachedClient || cachedClientKey !== clientKey) {
-    cachedClient = new GoogleGenAI({
+  if (config.geminiProviderMode === 'vertex') {
+    const clientKey = `${config.googleCloudProject}:${config.googleCloudLocation}`;
+    if (!cachedVertexClient || cachedVertexClientKey !== clientKey) {
+      cachedVertexClient = new GoogleGenAI(buildGeminiClientOptions(config));
+      cachedVertexClientKey = clientKey;
+    }
+    return cachedVertexClient;
+  }
+
+  if (!config.geminiApiKey) throw new Error('Gemini provider is not configured');
+  if (!cachedDeveloperClient || cachedDeveloperApiKey !== config.geminiApiKey) {
+    cachedDeveloperClient = new GoogleGenAI(buildGeminiClientOptions(config));
+    cachedDeveloperApiKey = config.geminiApiKey;
+  }
+  return cachedDeveloperClient;
+}
+
+export function buildGeminiClientOptions(config: ServerConfig): GoogleGenAIOptions {
+  if (config.geminiProviderMode === 'vertex') {
+    if (!config.googleCloudProject || !config.googleCloudLocation || !config.geminiModelConfigured) {
+      throw new Error('Gemini provider is not configured');
+    }
+    return {
       vertexai: true,
       project: config.googleCloudProject,
       location: config.googleCloudLocation,
-    });
-    cachedClientKey = clientKey;
+    };
   }
-  return cachedClient;
+  if (!config.geminiApiKey || !config.geminiModelConfigured) {
+    throw new Error('Gemini provider is not configured');
+  }
+  return { apiKey: config.geminiApiKey, vertexai: false };
 }
