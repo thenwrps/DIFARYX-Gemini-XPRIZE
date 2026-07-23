@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react';
 import { UNIVERSAL_SPECTRAL_LIBRARY } from '../constants/spectralLibrary';
 import { UNIVERSAL_MASTER_LIBRARY } from '../constants/universalKnowledgeBase';
 import { searchLiterature } from '../services/literatureSearch';
+import {
+  CURRENT_GOOGLE_WORKSPACE_SCOPES,
+  clearGoogleApiAccessSession,
+  getGoogleApiAccessToken,
+  hasGoogleApiAccess,
+  requestGoogleApiAccess,
+  revokeGoogleApiAccess,
+  subscribeGoogleApiAccess,
+} from '../services/google/googleApiAuthorization';
+import { getGoogleOAuthClientId } from '../utils/googleOAuthConfig';
 
 // ============================================================================
 // Core Interfaces & Types
@@ -83,8 +93,8 @@ export interface UseX7UniversalHookResult {
   driveStorage: GoogleDriveStorageState;
   uploadToDrive: (fileName: string, content: string) => Promise<{ id: string; url: string }>;
   gmailConnected: boolean;
-  connectGmail: () => void;
-  disconnectGmail: () => void;
+  connectGmail: () => Promise<void>;
+  disconnectGmail: () => Promise<void>;
   scanGmail: (query?: string) => Promise<GmailEmailResult[]>;
   sendGmailReport: (to: string, subject: string, bodyText: string) => Promise<void>;
   listDriveFiles: () => Promise<Array<{ id: string; name: string }>>;
@@ -177,7 +187,7 @@ export function computeDeterministicHash(obj: any): string {
  */
 export function handleApiResponseError(responseStatus: number, serviceName: string): void {
   if (responseStatus === 401 || responseStatus === 403 || responseStatus === 429) {
-    localStorage.removeItem('difaryx_google_user_token');
+    clearGoogleApiAccessSession();
   }
 
   if (responseStatus === 401) {
@@ -574,7 +584,6 @@ const STORAGE_KEYS = {
   STRIPE_QUOTA: 'difaryx_x7_stripe_quota',
   DRIVE_STORAGE: 'difaryx_x7_drive_storage',
   SNAPSHOTS: 'difaryx_immutable_snapshots',
-  TOKEN: 'difaryx_google_user_token',
 };
 
 export function useX7UniversalHook(): UseX7UniversalHookResult {
@@ -618,7 +627,7 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
 
   // 3. Gmail OAuth connection based on localStorage token presence
   const [gmailConnected, setGmailConnected] = useState<boolean>(() => {
-    return !!localStorage.getItem(STORAGE_KEYS.TOKEN);
+    return hasGoogleApiAccess();
   });
 
   // 4. Immutable Snapshots State Setup
@@ -641,10 +650,10 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
 
   // Synchronize Google Profile email dynamically via OAuth token if connected
   useEffect(() => {
-    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
-    if (token) {
+    const googleApiAccessToken = getGoogleApiAccessToken();
+    if (googleApiAccessToken) {
       fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${googleApiAccessToken}` }
       })
       .then(res => {
         if (res.ok) return res.json();
@@ -664,22 +673,9 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
     }
   }, [gmailConnected]);
 
-  // URL Hash Listener for OAuth Implicit Flow Token Capture
-  useEffect(() => {
-    if (window.location.hash) {
-      const hash = window.location.hash.substring(1);
-      const params = new URLSearchParams(hash);
-      const accessToken = params.get('access_token');
-      if (accessToken) {
-        localStorage.setItem(STORAGE_KEYS.TOKEN, accessToken);
-        setGmailConnected(true);
-        console.log('[OAuth 2.0 Flow] Access Token captured and stored successfully.');
-
-        // Remove hash from URL to keep address bar clean
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      }
-    }
-  }, []);
+  useEffect(() => subscribeGoogleApiAccess(() => {
+    setGmailConnected(hasGoogleApiAccess());
+  }), []);
 
   // Synchronize States to Local Storage on Change
   useEffect(() => {
@@ -763,35 +759,19 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
   // Workspace Integration (Drive API & Gmail API)
   // ==========================================================================
 
-  const connectGmail = () => {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  const connectGmail = async () => {
+    const clientId = getGoogleOAuthClientId();
     if (!clientId) {
-      console.error('VITE_GOOGLE_CLIENT_ID is not configured in .env');
-      throw new Error('OAuth Redirect Failed: Client ID not configured.');
+      throw new Error('Google API authorization is not configured.');
     }
-
-    const redirectUri = window.location.origin + '/auth/callback'; // Always dynamic redirect URI matching client config
-    const scopes = [
-      'https://www.googleapis.com/auth/gmail.readonly',
-      'https://www.googleapis.com/auth/gmail.send',
-      'https://www.googleapis.com/auth/drive.file',
-      'https://www.googleapis.com/auth/cloud-platform',
-      'openid',
-      'email',
-      'profile'
-    ].join(' ');
-
-    const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(
-      redirectUri
-    )}&response_type=token&scope=${encodeURIComponent(scopes)}&prompt=consent`;
-
-    console.log('[OAuth 2.0 Flow] Redirecting user for Google Workspace permissions...');
-    window.location.assign(oauthUrl);
+    await requestGoogleApiAccess({
+      clientId,
+      scopes: CURRENT_GOOGLE_WORKSPACE_SCOPES,
+    });
   };
 
-  const disconnectGmail = () => {
-    localStorage.removeItem(STORAGE_KEYS.TOKEN);
-    setGmailConnected(false);
+  const disconnectGmail = async () => {
+    await revokeGoogleApiAccess();
   };
 
   /**
@@ -799,8 +779,8 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
    * Uploads file containing lab research into VITE_GDRIVE_FOLDER_ID
    */
   const uploadToDrive = async (fileName: string, content: string): Promise<{ id: string; url: string }> => {
-    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
-    if (!token) {
+    const googleApiAccessToken = getGoogleApiAccessToken();
+    if (!googleApiAccessToken) {
       throw new Error(
         'SaaS Hard Lock Exception: No active Google OAuth token. Connect your Google account first.'
       );
@@ -833,7 +813,7 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${googleApiAccessToken}`,
             'Content-Type': `multipart/related; boundary=${boundary}`,
           },
           body,
@@ -872,8 +852,8 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
    * Falls back to mock data lake results for demo continuity if search list is empty.
    */
   const scanGmail = async (query: string = ''): Promise<GmailEmailResult[]> => {
-    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
-    if (!token) {
+    const googleApiAccessToken = getGoogleApiAccessToken();
+    if (!googleApiAccessToken) {
       throw new Error(
         'SaaS Hard Lock Exception: No active Google OAuth token. Connect your Google account first.'
       );
@@ -888,7 +868,7 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
         `https://gmail.googleapis.com/v1/users/me/messages?q=${encodeURIComponent(searchQuery)}`,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${googleApiAccessToken}`,
           },
         }
       );
@@ -914,7 +894,7 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
           `https://gmail.googleapis.com/v1/users/me/messages/${msg.id}`,
           {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${googleApiAccessToken}`,
             },
           }
         );
@@ -971,8 +951,8 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
    * Sends research summary email using user OAuth Token.
    */
   const sendGmailReport = async (to: string, subject: string, bodyText: string): Promise<void> => {
-    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
-    if (!token) {
+    const googleApiAccessToken = getGoogleApiAccessToken();
+    if (!googleApiAccessToken) {
       throw new Error(
         'SaaS Hard Lock Exception: No active Google OAuth token. Connect your Google account first.'
       );
@@ -1003,7 +983,7 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${googleApiAccessToken}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -1030,8 +1010,8 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
    * Google Drive API - List files in VITE_GDRIVE_FOLDER_ID
    */
   const listDriveFiles = async (): Promise<Array<{ id: string; name: string }>> => {
-    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
-    if (!token) {
+    const googleApiAccessToken = getGoogleApiAccessToken();
+    if (!googleApiAccessToken) {
       throw new Error(
         'SaaS Hard Lock Exception: No active Google OAuth token. Connect your Google account first.'
       );
@@ -1045,7 +1025,7 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
         `https://www.googleapis.com/drive/v3/files?${query}`,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${googleApiAccessToken}`,
           },
         }
       );
@@ -1093,8 +1073,8 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
       return generateMockRamanFileContent();
     }
 
-    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
-    if (!token) {
+    const googleApiAccessToken = getGoogleApiAccessToken();
+    if (!googleApiAccessToken) {
       throw new Error(
         'SaaS Hard Lock Exception: No active Google OAuth token. Connect your Google account first.'
       );
@@ -1105,7 +1085,7 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
         `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${googleApiAccessToken}`,
           },
         }
       );
@@ -1258,8 +1238,8 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
    * Utilizes projectId, location, and model parameters from environmental configuration.
    */
   const analyzeWithVertexAI = async (payload: any): Promise<any> => {
-    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
-    if (!token) {
+    const googleApiAccessToken = getGoogleApiAccessToken();
+    if (!googleApiAccessToken) {
       throw new Error(
         'SaaS Hard Lock Exception: No active Google OAuth token. Connect your Google account first.'
       );
@@ -1326,7 +1306,7 @@ ${JSON.stringify(payload, null, 2)}`,
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${googleApiAccessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),

@@ -34,23 +34,42 @@ The exposure scale used for this audit is:
 - **B:** verified server-side application identity without durable quota controls.
 - **C:** no verified server-side application identity and no durable quota controls.
 
-The current backend is **Classification C**.
+The Phase 2D-C code boundary is **Classification B** once the matching Google
+Web client ID is configured in both browser and server environments.
 
-- The Express routes do not verify an authorization header, JWT, issuer,
-  audience, expiry, organization, or user entitlement.
-- Frontend route state and Google OAuth data stored in browser storage are not
-  server authentication.
+- Gemini-capable Express requests require a Google ID token.
+- The server verifies signature, Google issuer, configured audience, expiry,
+  and the stable `sub` claim using `google-auth-library`.
+- Browser profile data is display-only and cannot override verified identity.
 - CORS restricts participating browsers but does not prevent direct requests
   from scripts, bots, `curl`, or other servers.
-- Existing browser-local quota state is user-controlled and is not a durable
+- Browser-local quota state remains user-controlled and is not a durable
   production quota.
 - No in-memory rate limiter is added because serverless instances do not share
   memory and may be replaced or scaled independently.
 
-Production exposure is blocked until the application has server-side identity
-verification and a durable, atomic quota or rate-limit store. The design must
-define user or organization keys, limits, reset windows, failure behavior, and
-trusted proxy headers before implementation.
+Production exposure remains blocked until identity configuration is validated
+with a controlled synthetic smoke test and a durable, atomic quota store plus
+global policy are implemented.
+
+## Dual-token boundary
+
+Google Identity Services supplies two intentionally separate credentials:
+
+- The Sign in with Google `credential` is an ID token. DIFARYX keeps it only in
+  browser memory, attaches it only to Gemini-capable DIFARYX requests, and
+  requires a fresh GIS sign-in after reload or expiry.
+- `google.accounts.oauth2.initTokenClient()` supplies a Google API access token.
+  DIFARYX keeps it only in browser memory and uses it only for explicitly
+  authorized Google APIs. Current live scopes cover Gmail read/send, Drive file
+  access, user profile, and the legacy direct Vertex action. The existing
+  Sheets integration remains a deterministic local demo and requests no live
+  Sheets scope.
+
+Basic DIFARYX sign-in does not request Drive, Sheets, Gmail, or Cloud access.
+The Settings connection action requests Google API authorization separately.
+Explicit disconnect may revoke that access token; normal DIFARYX sign-out
+clears both in-memory sessions without revoking permanent Google consent.
 
 ## Vercel server environment
 
@@ -60,9 +79,16 @@ Configure only these backend variables in Vercel project settings:
 GEMINI_PROVIDER_MODE=developer
 GEMINI_API_KEY=<configure as a sensitive server-only value>
 GEMINI_MODEL=gemini-2.5-flash
+GOOGLE_OAUTH_CLIENT_ID=<same Google Web client ID used by the browser>
 ALLOWED_ORIGINS=https://difaryx.dfryxlab.xyz
 GEMINI_REQUEST_TIMEOUT_MS=30000
 JSON_BODY_LIMIT=4mb
+```
+
+Configure the same non-secret Web client ID in the frontend build:
+
+```text
+VITE_GOOGLE_CLIENT_ID=<same Google Web client ID used by the server>
 ```
 
 Do not put `GEMINI_API_KEY` in a `VITE_*` variable, source file, build argument,
@@ -118,9 +144,9 @@ quota.
 
 Local build, typecheck, route, adapter, and deterministic tests may establish
 code readiness only. Live validation remains blocked until the user privately
-configures `GEMINI_API_KEY`. Production deployment remains blocked after that
-until Classification C is resolved with application authentication and durable
-quota enforcement.
+configures `GEMINI_API_KEY`. Production deployment remains blocked until
+durable identity-based and global quota enforcement is added, the environment
+is configured, and one controlled synthetic live smoke test succeeds.
 
 No Vercel deployment, Google Cloud deployment, billing change, DNS change, or
-production environment update occurred in Phase 2D-A.
+production environment update occurred in Phase 2D-A or Phase 2D-C.

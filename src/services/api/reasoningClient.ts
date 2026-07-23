@@ -4,6 +4,10 @@ import type {
 } from '../../agent/mcp/types';
 import { getAgentApiUrl } from './agentApiUrl';
 import { generateDeterministicReasoning } from './deterministicReasoning';
+import {
+  clearIdentitySession,
+  getIdentityToken,
+} from '../auth/identitySession';
 
 /**
  * Client-side helper to call the reasoning API.
@@ -15,13 +19,29 @@ export async function callReasoningAPI(
   request: ReasoningRequest,
 ): Promise<ReasoningResponse> {
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (requiresGeminiIdentity(request.provider)) {
+      const identityToken = getIdentityToken();
+      if (identityToken) {
+        headers.Authorization = `Bearer ${identityToken}`;
+      }
+    }
+
     const response = await fetch(getAgentApiUrl('/api/reasoning'), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(request),
     });
+
+    if (response.status === 401) {
+      clearIdentitySession();
+      return {
+        success: false,
+        error: 'Sign in with Google to use Gemini reasoning',
+      };
+    }
 
     if (!response.ok) {
       throw new Error(`Agent backend returned HTTP ${response.status}`);
@@ -50,4 +70,10 @@ export async function callReasoningAPI(
       };
     }
   }
+}
+
+function requiresGeminiIdentity(provider: ReasoningRequest['provider']): boolean {
+  return provider === 'gemini-2.5-flash'
+    || provider === 'gemini-developer-api'
+    || provider === 'vertex-gemini';
 }

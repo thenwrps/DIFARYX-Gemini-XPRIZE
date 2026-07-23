@@ -15,7 +15,7 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
     : typeof error?.status === 'number' && error.status >= 400 && error.status < 500
       ? error.status
       : 500;
-  const publicMessage = error instanceof HttpError && status < 500
+  const publicMessage = error instanceof HttpError
     ? error.message
     : status === 400
       ? 'Malformed request body'

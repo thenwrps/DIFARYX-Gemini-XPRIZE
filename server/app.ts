@@ -1,4 +1,8 @@
-import express, { type RequestHandler } from 'express';
+import express, {
+  type Request,
+  type RequestHandler,
+  type Response,
+} from 'express';
 import cors from 'cors';
 import type {
   AgentEvidencePacket,
@@ -7,6 +11,12 @@ import type {
   ReasoningResponse,
 } from '../src/agent/mcp/types';
 import { handleReasoningRequest } from './api/reasoning';
+import { createGoogleIdentityVerifier } from './auth/googleIdentityVerifier';
+import { requireGoogleIdentity } from './auth/requireGoogleIdentity';
+import type {
+  GoogleIdentityVerifier,
+  VerifiedGoogleIdentity,
+} from './auth/types';
 import { loadServerConfig, type ServerConfig } from './config';
 import { errorHandler, HttpError } from './middleware/errorHandler';
 import {
@@ -17,11 +27,18 @@ import {
 import { getGeminiProviderStatus } from './llm/providers/geminiProvider';
 
 type PublicProvider = ModelProvider | 'gemini';
-type ReasoningHandler = (request: ReasoningRequest) => Promise<ReasoningResponse>;
+interface ReasoningContext {
+  identity?: VerifiedGoogleIdentity;
+}
+type ReasoningHandler = (
+  request: ReasoningRequest,
+  context?: ReasoningContext,
+) => Promise<ReasoningResponse>;
 
 export interface CreateAppOptions {
   config?: ServerConfig;
   reasoningHandler?: ReasoningHandler;
+  identityVerifier?: GoogleIdentityVerifier;
   logger?: StructuredLogger;
 }
 
@@ -38,6 +55,9 @@ const SUPPORTED_PROVIDERS = new Set<PublicProvider>([
 export function createApp(options: CreateAppOptions = {}) {
   const config = options.config ?? loadServerConfig();
   const reasoningHandler = options.reasoningHandler ?? handleReasoningRequest;
+  const identityVerifier = options.identityVerifier ?? createGoogleIdentityVerifier({
+    clientId: config.googleOAuthClientId,
+  });
   const logger = options.logger ?? jsonStructuredLogger;
   const app = express();
 
@@ -76,7 +96,14 @@ export function createApp(options: CreateAppOptions = {}) {
       response.locals.selectedProvider = provider;
       response.locals.selectedModel = model ?? (isGeminiProvider(provider) ? config.geminiModel : null);
 
-      const result = await reasoningHandler({ packet, provider, model });
+      const identity = await authenticateIfGeminiCanRun(
+        request,
+        response,
+        provider,
+        config,
+        identityVerifier,
+      );
+      const result = await reasoningHandler({ packet, provider, model }, { identity });
       response.locals.selectedProvider = result.output?.metadata.provider ?? provider;
       response.locals.selectedModel = result.output?.metadata.model ?? response.locals.selectedModel;
       response.locals.fallbackUsed = result.fallbackUsed ?? false;
@@ -94,7 +121,14 @@ export function createApp(options: CreateAppOptions = {}) {
       response.locals.selectedProvider = provider;
       response.locals.selectedModel = isGeminiProvider(provider) ? config.geminiModel : null;
 
-      const result = await reasoningHandler({ packet, provider });
+      const identity = await authenticateIfGeminiCanRun(
+        request,
+        response,
+        provider,
+        config,
+        identityVerifier,
+      );
+      const result = await reasoningHandler({ packet, provider }, { identity });
       response.locals.selectedProvider = result.output?.metadata.provider ?? provider;
       response.locals.selectedModel = result.output?.metadata.model ?? response.locals.selectedModel;
       response.locals.fallbackUsed = result.fallbackUsed ?? false;
@@ -161,4 +195,18 @@ function readOptionalModel(value: unknown): string | undefined {
 
 function isGeminiProvider(provider: ModelProvider): boolean {
   return provider === 'vertex-gemini' || provider === 'gemini-2.5-flash';
+}
+
+async function authenticateIfGeminiCanRun(
+  request: Request,
+  response: Response,
+  provider: ModelProvider,
+  config: ServerConfig,
+  identityVerifier: GoogleIdentityVerifier,
+): Promise<VerifiedGoogleIdentity | undefined> {
+  if (!isGeminiProvider(provider) || !getGeminiProviderStatus(config).configured) {
+    response.locals.authOutcome = 'not_required';
+    return undefined;
+  }
+  return requireGoogleIdentity(request, response, identityVerifier);
 }

@@ -5,8 +5,17 @@ import React, {
   useEffect,
   useMemo,
   useState,
-  ReactNode,
+  type ReactNode,
 } from 'react';
+import {
+  clearIdentitySession,
+  establishIdentitySessionFromCredential,
+  getIdentityToken as readIdentityToken,
+  invalidateLegacyBrowserAuthState,
+  subscribeIdentitySession,
+} from '../services/auth/identitySession';
+import { clearGoogleApiAccessSession } from '../services/google/googleApiAuthorization';
+import type { GoogleIdentityToken } from '../services/google/tokenTypes';
 
 export interface AuthUser {
   name: string;
@@ -29,15 +38,14 @@ interface AuthContextType {
   user: AuthUser | null;
   isLoading: boolean;
   error: string | null;
+  getIdentityToken: () => GoogleIdentityToken | null;
   signIn: (user: AuthUser) => void;
+  signInWithGoogleCredential: (credential: string) => boolean;
+  invalidateIdentity: () => void;
   signOut: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const AUTH_KEY = 'demoAuth';
-const PROFILE_KEY = 'demoProfile';
-const LEGACY_GOOGLE_AUTH_KEY = 'difaryx_google_demo_user';
 
 interface AuthState {
   status: AuthStatus;
@@ -45,148 +53,112 @@ interface AuthState {
   error: string | null;
 }
 
-function authDebug(message: string, details?: unknown) {
-  if (!import.meta.env.DEV) return;
-  if (details === undefined) {
-    console.info(message);
-    return;
+const INITIAL_AUTH_STATE: AuthState = {
+  status: 'initializing',
+  user: null,
+  error: null,
+};
+
+function normalizeDemoUser(user: AuthUser): AuthUser {
+  if (!user.email.trim() || !user.name.trim()) {
+    throw new Error('Auth profile is missing required fields');
   }
-  console.info(message, details);
-}
-
-function getStatusForUser(user: AuthUser | null): AuthStatus {
-  if (!user) return 'unauthenticated';
-  return user.provider === 'google' ? 'authenticated' : 'guest';
-}
-
-function normalizeStoredUser(user: Partial<AuthUser>): AuthUser | null {
-  if (!user.email || !user.name) return null;
-
+  if (user.provider === 'google') {
+    throw new Error('Google identity requires a verified credential');
+  }
   return {
-    name: user.name,
-    email: user.email,
+    name: user.name.trim(),
+    email: user.email.trim(),
     organization: user.organization,
     picture: user.picture,
     provider: user.provider ?? 'guest',
   };
 }
 
-function clearStoredAuth() {
-  localStorage.removeItem(AUTH_KEY);
-  localStorage.removeItem(PROFILE_KEY);
-}
-
-function restoreStoredAuthState(): AuthState {
-  authDebug('[auth] provider init start');
-
-  if (typeof window === 'undefined') {
-    return { status: 'initializing', user: null, error: null };
-  }
-
-  try {
-    const authStatus = localStorage.getItem(AUTH_KEY);
-    const profileData = localStorage.getItem(PROFILE_KEY);
-
-    if (authStatus === 'true' && profileData) {
-      const user = normalizeStoredUser(JSON.parse(profileData) as Partial<AuthUser>);
-
-      if (!user) {
-        clearStoredAuth();
-        authDebug('[auth] restored local session: false');
-        authDebug('[auth] provider user found: false');
-        return {
-          status: 'unauthenticated',
-          user: null,
-          error: null,
-        };
-      }
-
-      const status = getStatusForUser(user);
-      authDebug('[auth] restored local session: true');
-      authDebug('[auth] provider user found:', status === 'authenticated');
-      return { status, user, error: null };
-    }
-
-    const legacyGoogleProfile = localStorage.getItem(LEGACY_GOOGLE_AUTH_KEY);
-    if (legacyGoogleProfile) {
-      const legacyUser = JSON.parse(legacyGoogleProfile) as Partial<AuthUser>;
-      const user = normalizeStoredUser({
-        ...legacyUser,
-        provider: 'google',
-      });
-
-      if (user) {
-        localStorage.setItem(AUTH_KEY, 'true');
-        localStorage.setItem(PROFILE_KEY, JSON.stringify(user));
-        authDebug('[auth] restored local session: true');
-        authDebug('[auth] provider user found: true');
-        return { status: 'authenticated', user, error: null };
-      }
-    }
-
-    authDebug('[auth] restored local session: false');
-    authDebug('[auth] provider user found: false');
-    return { status: 'unauthenticated', user: null, error: null };
-  } catch (error) {
-    clearStoredAuth();
-    localStorage.removeItem(LEGACY_GOOGLE_AUTH_KEY);
-    const message = error instanceof Error ? error.message : 'Unable to restore auth session';
-    authDebug('[auth] restored local session: false');
-    authDebug('[auth] provider user found: false');
-    return { status: 'error', user: null, error: message };
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [authState, setAuthState] = useState<AuthState>(() => restoreStoredAuthState());
+  const [authState, setAuthState] = useState<AuthState>(INITIAL_AUTH_STATE);
 
   useEffect(() => {
-    if (authState.status === 'initializing' && typeof window !== 'undefined') {
-      setAuthState(restoreStoredAuthState());
+    if (typeof window !== 'undefined') {
+      invalidateLegacyBrowserAuthState(window.localStorage);
+      window.sessionStorage.removeItem('auth_redirect_to');
     }
-  }, [authState.status]);
+    clearIdentitySession();
+    clearGoogleApiAccessSession();
+    setAuthState({ status: 'unauthenticated', user: null, error: null });
+  }, []);
 
-  useEffect(() => {
-    authDebug(`[auth] status changed: ${authState.status}`);
-  }, [authState.status]);
+  useEffect(() => subscribeIdentitySession(() => {
+    if (readIdentityToken()) return;
+    setAuthState((current) => current.user?.provider === 'google'
+      ? { status: 'unauthenticated', user: null, error: null }
+      : current);
+  }), []);
 
   const signIn = useCallback((newUser: AuthUser) => {
     try {
-      const normalizedUser = normalizeStoredUser(newUser);
-      if (!normalizedUser) throw new Error('Auth profile is missing required fields');
-
-      localStorage.setItem(AUTH_KEY, 'true');
-      localStorage.setItem(PROFILE_KEY, JSON.stringify(normalizedUser));
+      clearIdentitySession();
+      const user = normalizeDemoUser(newUser);
       setAuthState({
-        status: getStatusForUser(normalizedUser),
-        user: normalizedUser,
+        status: 'guest',
+        user,
         error: null,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to save auth session';
+      const message = error instanceof Error ? error.message : 'Unable to establish demo session';
       setAuthState({ status: 'error', user: null, error: message });
     }
   }, []);
 
+  const signInWithGoogleCredential = useCallback((credential: string) => {
+    try {
+      const claims = establishIdentitySessionFromCredential(credential);
+      setAuthState({
+        status: 'authenticated',
+        user: {
+          name: claims.name,
+          email: claims.email,
+          organization: 'DIFARYX Lab',
+          picture: claims.picture,
+          provider: 'google',
+        },
+        error: null,
+      });
+      return true;
+    } catch (error) {
+      clearIdentitySession();
+      const message = error instanceof Error ? error.message : 'Google sign-in failed';
+      setAuthState({ status: 'error', user: null, error: message });
+      return false;
+    }
+  }, []);
+
+  const invalidateIdentity = useCallback(() => {
+    clearIdentitySession();
+    setAuthState((current) => current.user?.provider === 'google'
+      ? { status: 'unauthenticated', user: null, error: null }
+      : current);
+  }, []);
+
   const signOut = useCallback(() => {
-    clearStoredAuth();
+    clearIdentitySession();
+    clearGoogleApiAccessSession();
     setAuthState({ status: 'unauthenticated', user: null, error: null });
   }, []);
 
-  const value = useMemo(() => {
-    const isAuthenticated =
-      authState.status === 'authenticated' || authState.status === 'guest';
-
-    return {
-      status: authState.status,
-      isAuthenticated,
-      user: authState.user,
-      isLoading: authState.status === 'initializing',
-      error: authState.error,
-      signIn,
-      signOut,
-    };
-  }, [authState, signIn, signOut]);
+  const value = useMemo<AuthContextType>(() => ({
+    status: authState.status,
+    isAuthenticated:
+      authState.status === 'authenticated' || authState.status === 'guest',
+    user: authState.user,
+    isLoading: authState.status === 'initializing',
+    error: authState.error,
+    getIdentityToken: readIdentityToken,
+    signIn,
+    signInWithGoogleCredential,
+    invalidateIdentity,
+    signOut,
+  }), [authState, invalidateIdentity, signIn, signInWithGoogleCredential, signOut]);
 
   return (
     <AuthContext.Provider value={value}>

@@ -8,6 +8,7 @@ export interface ServerConfig {
   serviceName: string;
   serviceVersion: string;
   allowedOrigins: string[];
+  googleOAuthClientId?: string;
   geminiProviderMode: GeminiProviderMode;
   geminiApiKey?: string;
   googleCloudProject?: string;
@@ -41,6 +42,7 @@ export function loadServerConfig(
     serviceName: 'difaryx-gemini-backend',
     serviceVersion: environment.npm_package_version?.trim() || '0.0.0',
     allowedOrigins,
+    googleOAuthClientId: environment.GOOGLE_OAUTH_CLIENT_ID?.trim() || undefined,
     geminiProviderMode: parseGeminiProviderMode(environment.GEMINI_PROVIDER_MODE),
     geminiApiKey: environment.GEMINI_API_KEY?.trim() || undefined,
     googleCloudProject: environment.GOOGLE_CLOUD_PROJECT?.trim() || undefined,

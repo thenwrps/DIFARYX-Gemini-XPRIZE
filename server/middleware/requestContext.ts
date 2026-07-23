@@ -26,6 +26,7 @@ export function requestContext(logger: StructuredLogger): RequestHandler {
         provider: response.locals.selectedProvider ?? null,
         model: response.locals.selectedModel ?? null,
         fallbackUsed: response.locals.fallbackUsed ?? false,
+        authOutcome: response.locals.authOutcome ?? 'not_required',
       });
     });
     next();
