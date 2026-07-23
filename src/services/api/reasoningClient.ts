@@ -43,6 +43,25 @@ export async function callReasoningAPI(
       };
     }
 
+    if (response.status === 429) {
+      return {
+        success: false,
+        error: 'Gemini beta limit reached. Please try again after the reset, or use Scientific Baseline Mode now.',
+        errorCode: 'GEMINI_QUOTA_EXCEEDED',
+      };
+    }
+
+    if (response.status === 503) {
+      const envelope = await readErrorEnvelope(response);
+      if (envelope?.errorCode === 'GEMINI_QUOTA_UNAVAILABLE') {
+        return {
+          success: false,
+          error: 'Gemini beta usage is temporarily unavailable. Scientific Baseline Mode is still available.',
+          errorCode: 'GEMINI_QUOTA_UNAVAILABLE',
+        };
+      }
+    }
+
     if (!response.ok) {
       throw new Error(`Agent backend returned HTTP ${response.status}`);
     }
@@ -76,4 +95,17 @@ function requiresGeminiIdentity(provider: ReasoningRequest['provider']): boolean
   return provider === 'gemini-2.5-flash'
     || provider === 'gemini-developer-api'
     || provider === 'vertex-gemini';
+}
+
+async function readErrorEnvelope(
+  response: Response,
+): Promise<{ errorCode?: string } | undefined> {
+  try {
+    const value: unknown = await response.json();
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value as { errorCode?: string }
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }

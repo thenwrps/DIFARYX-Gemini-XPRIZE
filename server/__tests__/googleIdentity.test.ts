@@ -9,6 +9,7 @@ import {
   type GoogleIdentityVerifier,
 } from '../auth/types';
 import { loadServerConfig } from '../config';
+import type { GeminiQuotaService } from '../quota/types';
 
 const packet: AgentEvidencePacket = {
   context: 'xrd',
@@ -39,6 +40,10 @@ function productionConfig(includeClientId = true) {
     GEMINI_API_KEY: 'test-only-placeholder',
     GEMINI_MODEL: 'gemini-2.5-flash',
     GOOGLE_OAUTH_CLIENT_ID: includeClientId ? 'synthetic-client-id' : undefined,
+    UPSTASH_REDIS_REST_URL: 'https://synthetic-quota.upstash.io',
+    UPSTASH_REDIS_REST_TOKEN: 'synthetic-rest-token',
+    QUOTA_ID_HASH_SECRET: 'synthetic-independent-hmac-secret',
+    GEMINI_GLOBAL_DAILY_LIMIT: '100',
   });
 }
 
@@ -58,6 +63,37 @@ function rejectedIdentityVerifier(): GoogleIdentityVerifier {
     verifyIdentityToken: vi.fn(async () => {
       throw new IdentityVerificationError('invalid');
     }),
+  };
+}
+
+function allowedQuotaService(): GeminiQuotaService {
+  return {
+    consume: vi.fn(async () => ({
+      status: 'allowed' as const,
+      counters: [
+        {
+          dimension: 'user_burst' as const,
+          limit: 2,
+          remaining: 1,
+          resetAt: '2026-07-23T12:35:00.000Z',
+          retryAfterSeconds: 30,
+        },
+        {
+          dimension: 'user_daily' as const,
+          limit: 5,
+          remaining: 4,
+          resetAt: '2026-07-24T00:00:00.000Z',
+          retryAfterSeconds: 41_000,
+        },
+        {
+          dimension: 'global_daily' as const,
+          limit: 100,
+          remaining: 99,
+          resetAt: '2026-07-24T00:00:00.000Z',
+          retryAfterSeconds: 41_000,
+        },
+      ] as const,
+    })),
   };
 }
 
@@ -115,6 +151,7 @@ describe('Google identity protection for Gemini execution', () => {
     const response = await request(createApp({
       config: productionConfig(),
       identityVerifier: verifiedIdentityVerifier('canonical-verified-subject'),
+      quotaService: allowedQuotaService(),
       reasoningHandler,
       logger: () => undefined,
     }))
@@ -129,11 +166,12 @@ describe('Google identity protection for Gemini execution', () => {
 
     expect(response.status).toBe(200);
     expect(reasoningHandler).toHaveBeenCalledOnce();
-    expect(reasoningHandler.mock.calls[0][1]).toEqual({
+    expect(reasoningHandler.mock.calls[0][1]).toMatchObject({
       identity: {
         provider: 'google',
         subject: 'canonical-verified-subject',
       },
+      geminiQuotaConsumed: true,
     });
   });
 

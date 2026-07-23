@@ -180,6 +180,61 @@ describe('DIFARYX identity-token request boundary', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it('surfaces a 429 beta limit without retrying or clearing identity', async () => {
+    establishIdentitySession(
+      asGoogleIdentityToken('synthetic-google-id-credential'),
+      Date.now() + 60_000,
+    );
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 429,
+      json: async () => ({
+        errorCode: 'GEMINI_QUOTA_EXCEEDED',
+        quota: {
+          dimension: 'user_burst',
+          retryAfterSeconds: 30,
+        },
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await callReasoningAPI({
+      packet,
+      provider: 'gemini-2.5-flash',
+    });
+
+    expect(response).toEqual({
+      success: false,
+      error: 'Gemini beta limit reached. Please try again after the reset, or use Scientific Baseline Mode now.',
+      errorCode: 'GEMINI_QUOTA_EXCEEDED',
+    });
+    expect(getIdentityToken()).toBe('synthetic-google-id-credential');
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces quota-related 503 without retrying', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        errorCode: 'GEMINI_QUOTA_UNAVAILABLE',
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await callReasoningAPI({
+      packet,
+      provider: 'gemini-2.5-flash',
+    });
+
+    expect(response).toEqual({
+      success: false,
+      error: 'Gemini beta usage is temporarily unavailable. Scientific Baseline Mode is still available.',
+      errorCode: 'GEMINI_QUOTA_UNAVAILABLE',
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it('does not attach identity to deterministic requests', async () => {
     establishIdentitySession(
       asGoogleIdentityToken('synthetic-google-id-credential'),

@@ -1,3 +1,8 @@
+import {
+  loadGeminiQuotaConfig,
+  type GeminiQuotaConfigResult,
+} from './quota/quotaConfig';
+
 export type GeminiProviderMode = 'developer' | 'vertex';
 
 export interface ServerConfig {
@@ -17,6 +22,7 @@ export interface ServerConfig {
   geminiModel: string;
   geminiModelConfigured: boolean;
   geminiRequestTimeoutMs: number;
+  geminiQuota: GeminiQuotaConfigResult;
 }
 
 const LOCAL_ORIGINS = [
@@ -56,6 +62,7 @@ export function loadServerConfig(
       1_000,
       120_000,
     ),
+    geminiQuota: loadGeminiQuotaConfig(environment),
   };
 }
 

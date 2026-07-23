@@ -4,6 +4,8 @@ export class HttpError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly code?: string,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -25,5 +27,11 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
     success: false,
     error: publicMessage,
     requestId: response.locals.requestId,
+    ...(error instanceof HttpError && error.code
+      ? { errorCode: error.code }
+      : {}),
+    ...(error instanceof HttpError && error.details
+      ? error.details
+      : {}),
   });
 };

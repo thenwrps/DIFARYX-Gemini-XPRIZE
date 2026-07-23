@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
+    "@upstash/redis": "^1.38.0",
     "@vercel/speed-insights": "^2.0.0",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
