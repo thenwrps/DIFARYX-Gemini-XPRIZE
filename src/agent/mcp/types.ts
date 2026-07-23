@@ -12,7 +12,7 @@ import type { AgentAnalysisResult } from '../contracts/agentAnalysisResult';
  * and reasoning in scientific agent workflows.
  */
 
-export type ModelProvider = 'scientific-baseline' | 'gpt-5.6' | 'gemini-2.5-flash' | 'deterministic' | 'vertex-gemini' | 'gemma';
+export type ModelProvider = 'scientific-baseline' | 'gpt-5.6' | 'gemini-2.5-flash' | 'gemini-developer-api' | 'deterministic' | 'vertex-gemini' | 'gemma';
 
 export type ToolName =
   | 'baseline_correction'

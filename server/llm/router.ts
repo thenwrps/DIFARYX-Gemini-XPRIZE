@@ -5,7 +5,7 @@
  * 
  * Routes reasoning requests to appropriate provider:
  * - deterministic: No LLM, use deterministic reasoning
- * - vertex-gemini: Google Cloud Vertex AI Gemini
+ * - Gemini: Developer API by default, optional Vertex AI mode
  * - gemma: Open model via configurable endpoint
  * 
  * Includes fallback logic: if LLM fails, use deterministic reasoning.
@@ -17,7 +17,7 @@ import type {
   ModelProvider,
   ReasoningResponse,
 } from '../../src/agent/mcp/types';
-import { callVertexGemini, isVertexAIConfigured } from './providers/geminiProvider';
+import { callGemini, isGeminiConfigured } from './providers/geminiProvider';
 import { callGemma, isGemmaConfigured } from './providers/gemmaProvider';
 import { generateDeterministicReasoning } from '../../src/services/api/deterministicReasoning';
 
@@ -40,9 +40,9 @@ export async function routeReasoning(
       };
     }
 
-    // Vertex AI Gemini mode
+    // Gemini mode (Developer API by default; Vertex AI when explicitly enabled)
     if (provider === 'vertex-gemini' || provider === 'gemini-2.5-flash') {
-      if (!isVertexAIConfigured()) {
+      if (!isGeminiConfigured()) {
         const output = generateDeterministicReasoning(packet);
         return {
           success: true,
@@ -52,7 +52,7 @@ export async function routeReasoning(
       }
 
       try {
-        const output = await callVertexGemini(packet, model);
+        const output = await callGemini(packet, model);
         return {
           success: true,
           output,
@@ -136,7 +136,7 @@ export function getProviderStatus(provider: ModelProvider): {
   if (provider === 'vertex-gemini' || provider === 'gemini-2.5-flash') {
     return {
       provider,
-      configured: isVertexAIConfigured(),
+      configured: isGeminiConfigured(),
       displayName: 'Gemini 2.5 Flash',
     };
   }

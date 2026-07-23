@@ -1470,7 +1470,9 @@ export function createDecisionResult(
     metrics.push({ label: 'AI Confidence', value: `${confidencePercent}%`, tone: 'emerald' });
     const providerName = llmOutput.metadata?.provider === 'gpt-5.6'
       ? 'GPT-5.6'
-      : (llmOutput.metadata?.provider === 'gemini-2.5-flash' || llmOutput.metadata?.provider === 'vertex-gemini')
+      : (llmOutput.metadata?.provider === 'gemini-2.5-flash'
+          || llmOutput.metadata?.provider === 'gemini-developer-api'
+          || llmOutput.metadata?.provider === 'vertex-gemini')
         ? 'Gemini 2.5 Flash'
         : 'Scientific Baseline Mode';
     metrics.push({ label: 'Provider', value: providerName, tone: 'violet' });
@@ -2654,6 +2656,7 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
       llmOutput &&
       (llmOutput.metadata?.provider === 'gpt-5.6'
         || llmOutput.metadata?.provider === 'gemini-2.5-flash'
+        || llmOutput.metadata?.provider === 'gemini-developer-api'
         || llmOutput.metadata?.provider === 'vertex-gemini'
         || llmOutput.metadata?.provider === 'gemma')
         ? 'vertex'

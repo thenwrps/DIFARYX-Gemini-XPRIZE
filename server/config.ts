@@ -1,3 +1,5 @@
+export type GeminiProviderMode = 'developer' | 'vertex';
+
 export interface ServerConfig {
   nodeEnv: string;
   port: number;
@@ -6,10 +8,13 @@ export interface ServerConfig {
   serviceName: string;
   serviceVersion: string;
   allowedOrigins: string[];
+  geminiProviderMode: GeminiProviderMode;
+  geminiApiKey?: string;
   googleCloudProject?: string;
-  googleCloudLocation: string;
+  googleCloudLocation?: string;
   googleGenAIUseVertexAI: boolean;
   geminiModel: string;
+  geminiModelConfigured: boolean;
   geminiRequestTimeoutMs: number;
 }
 
@@ -23,6 +28,7 @@ export function loadServerConfig(
 ): ServerConfig {
   const nodeEnv = environment.NODE_ENV ?? 'development';
   const configuredOrigins = splitList(environment.ALLOWED_ORIGINS);
+  const configuredGeminiModel = environment.GEMINI_MODEL?.trim();
   const allowedOrigins = nodeEnv === 'production'
     ? configuredOrigins
     : [...new Set([...LOCAL_ORIGINS, ...configuredOrigins])];
@@ -35,10 +41,13 @@ export function loadServerConfig(
     serviceName: 'difaryx-gemini-backend',
     serviceVersion: environment.npm_package_version?.trim() || '0.0.0',
     allowedOrigins,
+    geminiProviderMode: parseGeminiProviderMode(environment.GEMINI_PROVIDER_MODE),
+    geminiApiKey: environment.GEMINI_API_KEY?.trim() || undefined,
     googleCloudProject: environment.GOOGLE_CLOUD_PROJECT?.trim() || undefined,
-    googleCloudLocation: environment.GOOGLE_CLOUD_LOCATION?.trim() || 'us-central1',
+    googleCloudLocation: environment.GOOGLE_CLOUD_LOCATION?.trim() || undefined,
     googleGenAIUseVertexAI: environment.GOOGLE_GENAI_USE_VERTEXAI?.trim().toLowerCase() === 'true',
-    geminiModel: boundedString(environment.GEMINI_MODEL, 'gemini-2.5-flash', 128),
+    geminiModel: boundedString(configuredGeminiModel, 'gemini-2.5-flash', 128),
+    geminiModelConfigured: Boolean(configuredGeminiModel && configuredGeminiModel.length <= 128),
     geminiRequestTimeoutMs: boundedInteger(
       environment.GEMINI_REQUEST_TIMEOUT_MS,
       30_000,
@@ -46,6 +55,13 @@ export function loadServerConfig(
       120_000,
     ),
   };
+}
+
+function parseGeminiProviderMode(value: string | undefined): GeminiProviderMode {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized || normalized === 'developer') return 'developer';
+  if (normalized === 'vertex') return 'vertex';
+  throw new Error('Invalid GEMINI_PROVIDER_MODE configuration');
 }
 
 function splitList(value: string | undefined): string[] {

@@ -19,7 +19,10 @@ export class ClaimBoundaryService {
     missingValidation: string[] = [],
   ): ClaimBoundaryArtifact {
     const provider: ReasoningProvider =
-      output.metadata.actualProvider === 'vertex-gemini' || output.metadata.actualProvider === 'gemma'
+      output.metadata.actualProvider === 'vertex-gemini'
+        || output.metadata.actualProvider === 'gemini-developer-api'
+        || output.metadata.actualProvider === 'gemini-2.5-flash'
+        || output.metadata.actualProvider === 'gemma'
         ? 'vertex'
         : 'deterministic';
     return this.build({
