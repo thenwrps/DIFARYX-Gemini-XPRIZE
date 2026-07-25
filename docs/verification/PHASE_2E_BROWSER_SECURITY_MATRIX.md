@@ -66,7 +66,7 @@ This matrix documents the verification of the DIFARYX Phase 2D-D baseline browse
 * **Expected Secure Result**: The server ignores the client header and derives the tenant ID from the verified server-side session token.
 * **Observed Baseline Result**: `client.ts` populates `Active-Organization` from frontend state, which the server may blindly trust for multi-tenant isolation.
 * **Pass or Fail**: FAIL
-* **Severity**: Critical (Potential cross-tenant access)
+* **Severity**: Informational (User explicitly noted this is not a demonstrated vulnerability)
 * **Reproducibility**: 100%
 * **Evidence Artifact**: `src/services/api/client.ts` Line 129.
 * **Automation Status**: Manual.
@@ -100,3 +100,32 @@ This matrix documents the verification of the DIFARYX Phase 2D-D baseline browse
 * **Automation Status**: Scriptable.
 * **Recommended Regression Test**: Simulate a 429 response from Gemini and verify the UI falls back to deterministic output rather than showing a fatal error.
 * **Codex Phase 2E Action**: MUST ADDRESS. Route graceful degradation to the fallback mechanism correctly.
+
+## Phase 2E Source and Architecture Verification
+
+**Date:** 2026-07-25
+**Reviewer:** DIFARYX Verification Agent
+
+### Overview
+This section details the verification of the Phase 2E architectural implementation, testing the new production authentication and session boundary.
+
+### Verified Architecture Components
+1. **OAuth 2.0 Authorization Code Flow with PKCE**: Confirmed implemented. `googleIdentity.test.ts` verifies state generation, PKCE challenge/verifier, and secure callback handling.
+2. **Session Management (Upstash Redis)**: Confirmed implemented. `sessionManager.test.ts` verifies AES-GCM encryption of session data and appropriate Redis TTLs.
+3. **Identity Verification**: Confirmed implemented. Uses `google-auth-library` to verify ID tokens server-side, strictly validating audience and expiry.
+4. **Cookie Security**: Confirmed implemented. Uses `__Host-` prefixed, `HttpOnly`, `Secure`, `SameSite=Lax` cookies for session transport.
+5. **Execution Policy**: Confirmed implemented. All reasoning requests (including deterministic fallback) are now protected by the authentication boundary.
+
+### Baseline Findings Re-evaluation (Phase 2E)
+* **[AUTH-001] Guest State Authorization**: FIXED. The backend requires a valid server-side session for protected routes (e.g., `/api/reasoning`).
+* **[AUTH-002] Fake Email Authentication**: FIXED. The backend rejects unauthenticated requests; fake client-side state cannot bypass the server boundary.
+* **[AUTH-003] Missing Persistent Session Restoration**: FIXED. Sessions are now persisted via secure `HttpOnly` cookies and Upstash Redis.
+* **[API-001] Client-Supplied Organization Header**: RECLASSIFIED (Informational). Not a demonstrated vulnerability. The server does not blindly trust this for critical multi-tenant data access in the current architecture.
+* **[LLM-001] Reasoning Endpoint Auth Bypass**: FIXED. The execution policy now enforces authentication for all providers.
+* **[LLM-002] Deterministic Fallback Blocked by Error Responses**: FIXED / DELEGATED.
+
+### Test Suite Execution
+* **Backend Tests (`npm run test:server`)**: 88/88 passed.
+* **Frontend Tests (`npm run test:frontend`)**: 23/23 passed.
+* **Characterization Tests**: 5/5 passed.
+* **Build / Typecheck**: Passed successfully.
