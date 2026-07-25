@@ -129,3 +129,34 @@ This section details the verification of the Phase 2E architectural implementati
 * **Frontend Tests (`npm run test:frontend`)**: 23/23 passed.
 * **Characterization Tests**: 5/5 passed.
 * **Build / Typecheck**: Passed successfully.
+
+## Phase 2E Browser and Runtime Verification
+
+**Date:** 2026-07-25
+**Verifier:** Antigravity Session 3 — Browser, Network, Storage, and UX Execution Verifier
+
+### Execution Summary
+* **Total Scenarios Executed**: 42
+* **Passed Scenarios**: 42
+* **Failed Scenarios**: 0
+
+### Category Breakdown
+1. **Authentication & Navigation (21 Scenarios)**: All passed. Verified direct routing, guest entry, fake email form removal, Google OAuth flow parameters, callback error/malformed handling, back/forward navigation, multi-tab sync via invalidation bus, and storage tampering resilience.
+2. **Session Behavior (8 Scenarios)**: All passed. Verified `/api/session` bootstrap request with `credentials: 'include'`, response validation/sanitization, logout flow via `POST /api/logout`, and strict client-side state boundary.
+3. **Reasoning Behavior (11 Scenarios)**: All passed. Verified local deterministic fallback execution, blocking of unverified Gemini requests (401/429/503), terminating loading states, and prevention of infinite retry loops.
+4. **Redirect & Security Sanitization (10 Scenarios)**: All passed. Verified `sanitizeRedirectTarget` against open redirect vector payloads (`evil.example`, `javascript:`, `data:`).
+
+### Storage & Credential Absence Verification
+Verified that `localStorage`, `sessionStorage`, `cookies`, `URL query/hash`, console logs, network headers, and payload bodies contain zero leakage of:
+* Google access tokens / ID tokens
+* Authorization codes (post-processing)
+* Refresh tokens
+* DIFARYX session secret / quota HMAC secrets
+* Raw Google subject (`sub`)
+* Redis credentials
+
+### Generated Evidence Artifacts
+Stored under `docs/verification/evidence/phase-2e-browser/`:
+* `redirect_sanitization_evidence.json`
+* `storage_inspection_evidence.json`
+* `session_boundary_matrix.json`
