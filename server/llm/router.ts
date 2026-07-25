@@ -56,7 +56,11 @@ export async function routeReasoning(
     }
 
     // Gemini mode (Developer API by default; Vertex AI when explicitly enabled)
-    if (provider === 'vertex-gemini' || provider === 'gemini-2.5-flash') {
+    if (
+      provider === 'vertex-gemini'
+      || provider === 'gemini-2.5-flash'
+      || provider === 'gemini-developer-api'
+    ) {
       if (executionPolicy.mode !== 'real_gemini') {
         const output = generateDeterministicReasoning(packet);
         return {
@@ -154,7 +158,11 @@ export function getProviderStatus(provider: ModelProvider): {
     };
   }
 
-  if (provider === 'vertex-gemini' || provider === 'gemini-2.5-flash') {
+  if (
+    provider === 'vertex-gemini'
+    || provider === 'gemini-2.5-flash'
+    || provider === 'gemini-developer-api'
+  ) {
     return {
       provider,
       configured: isGeminiConfigured(),

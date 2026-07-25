@@ -6,7 +6,7 @@ import type {
 } from '../../src/agent/mcp/types';
 import { generateDeterministicReasoning } from '../../src/services/api/deterministicReasoning';
 import { createApp } from '../app';
-import type { GoogleIdentityVerifier } from '../auth/types';
+import type { GoogleIdentityVerifier, SessionManager } from '../auth/types';
 import { loadServerConfig } from '../config';
 import type {
   GeminiQuotaDecision,
@@ -42,6 +42,10 @@ function productionConfig(overrides: NodeJS.ProcessEnv = {}) {
     GEMINI_API_KEY: 'synthetic-provider-key',
     GEMINI_MODEL: 'gemini-2.5-flash',
     GOOGLE_OAUTH_CLIENT_ID: 'synthetic-client-id',
+    GOOGLE_OAUTH_CLIENT_SECRET: 'synthetic-client-secret',
+    GOOGLE_OAUTH_REDIRECT_URI: 'https://api.example.test/api/auth/google/callback',
+    APP_BASE_URL: 'https://app.example.test',
+    DIFARYX_SESSION_SECRET: 'synthetic-session-secret-at-least-32-characters',
     UPSTASH_REDIS_REST_URL: 'https://synthetic-quota.upstash.io',
     UPSTASH_REDIS_REST_TOKEN: 'synthetic-rest-token',
     QUOTA_ID_HASH_SECRET: 'synthetic-independent-hmac-secret',
@@ -58,9 +62,30 @@ function verifiedIdentityVerifier(
     verifyIdentityToken: vi.fn(async () => ({
       provider: 'google' as const,
       subject,
+      displayName: 'Verified Researcher',
     })),
   };
 }
+
+function verifiedSessionManager(
+  subject = 'canonical-verified-google-subject',
+): SessionManager {
+  return {
+    create: vi.fn(),
+    read: vi.fn(async () => ({
+      identity: {
+        provider: 'google' as const,
+        subject,
+        displayName: 'Verified Researcher',
+      },
+      user: { provider: 'google' as const, displayName: 'Verified Researcher' },
+      expiresAt: '2026-07-26T00:00:00.000Z',
+    })),
+    revoke: vi.fn(),
+  };
+}
+
+const SESSION_COOKIE = '__Host-difaryx_session=synthetic-session-token';
 
 function quotaService(decision: GeminiQuotaDecision): GeminiQuotaService {
   return {
@@ -134,6 +159,7 @@ describe('Gemini quota route enforcement', () => {
     const response = await request(createApp({
       config: productionConfig(),
       identityVerifier: verifiedIdentityVerifier(),
+      sessionManager: verifiedSessionManager(),
       quotaService: quota,
       reasoningHandler: provider,
       logger: () => undefined,
@@ -152,12 +178,13 @@ describe('Gemini quota route enforcement', () => {
     const response = await request(createApp({
       config: productionConfig({ GEMINI_GLOBAL_DAILY_LIMIT: undefined }),
       identityVerifier: verifiedIdentityVerifier(),
+      sessionManager: verifiedSessionManager(),
       quotaService: quota,
       reasoningHandler: provider,
       logger: () => undefined,
     }))
       .post('/api/reasoning')
-      .set('Authorization', 'Bearer synthetic-identity-credential')
+      .set('Cookie', SESSION_COOKIE)
       .send({ packet, provider: 'gemini-2.5-flash' });
 
     expect(response.status).toBe(503);
@@ -176,12 +203,13 @@ describe('Gemini quota route enforcement', () => {
     const response = await request(createApp({
       config: productionConfig(),
       identityVerifier: verifiedIdentityVerifier(),
+      sessionManager: verifiedSessionManager(),
       quotaService: quota,
       reasoningHandler: provider,
       logger: () => undefined,
     }))
       .post('/api/reasoning')
-      .set('Authorization', 'Bearer synthetic-identity-credential')
+      .set('Cookie', SESSION_COOKIE)
       .send({ packet, provider: 'gemini-2.5-flash' });
 
     expect(response.status).toBe(503);
@@ -200,12 +228,13 @@ describe('Gemini quota route enforcement', () => {
     const response = await request(createApp({
       config: productionConfig(),
       identityVerifier: verifiedIdentityVerifier(),
+      sessionManager: verifiedSessionManager(),
       quotaService: quota,
       reasoningHandler: provider,
       logger: () => undefined,
     }))
       .post('/api/reasoning')
-      .set('Authorization', 'Bearer synthetic-identity-credential')
+      .set('Cookie', SESSION_COOKIE)
       .send({ packet, provider: 'gemini-2.5-flash' });
 
     expect(response.status).toBe(429);
@@ -231,17 +260,21 @@ describe('Gemini quota route enforcement', () => {
     const response = await request(createApp({
       config: productionConfig(),
       identityVerifier: verifiedIdentityVerifier(),
+      sessionManager: verifiedSessionManager(),
       quotaService: quota,
       reasoningHandler: provider,
       logger: () => undefined,
     }))
       .post('/api/reasoning')
-      .set('Authorization', 'Bearer synthetic-identity-credential')
+      .set('Cookie', SESSION_COOKIE)
       .send({ packet, provider: 'gemini-2.5-flash' });
 
     expect(response.status).toBe(200);
     expect(quota.consume).toHaveBeenCalledOnce();
     expect(provider).toHaveBeenCalledOnce();
+    expect(vi.mocked(quota.consume).mock.invocationCallOrder[0]).toBeLessThan(
+      provider.mock.invocationCallOrder[0],
+    );
     expect(provider.mock.calls[0][1]).toMatchObject({
       geminiQuotaConsumed: true,
       executionPolicy: { mode: 'real_gemini' },
@@ -254,12 +287,13 @@ describe('Gemini quota route enforcement', () => {
     const response = await request(createApp({
       config: productionConfig(),
       identityVerifier: verifiedIdentityVerifier(),
+      sessionManager: verifiedSessionManager(),
       quotaService: quota,
       reasoningHandler: provider,
       logger: () => undefined,
     }))
       .post('/api/reasoning')
-      .set('Authorization', 'Bearer synthetic-identity-credential')
+      .set('Cookie', SESSION_COOKIE)
       .send({ packet, provider: 'gemini-2.5-flash' });
 
     expect(response.status).toBe(200);
@@ -303,12 +337,13 @@ describe('Gemini quota route enforcement', () => {
     const response = await request(createApp({
       config: productionConfig(),
       identityVerifier: verifiedIdentityVerifier(),
+      sessionManager: verifiedSessionManager(),
       quotaService: quota,
       reasoningHandler: provider,
       logger: () => undefined,
     }))
       .post(path)
-      .set('Authorization', 'Bearer synthetic-identity-credential')
+      .set('Cookie', SESSION_COOKIE)
       .send(body);
 
     expect(response.status).toBe(503);
@@ -348,11 +383,12 @@ describe('Gemini quota route enforcement', () => {
     const response = await request(createApp({
       config: productionConfig(),
       identityVerifier: verifiedIdentityVerifier(rawSubject),
+      sessionManager: verifiedSessionManager(rawSubject),
       quotaService: quota,
       logger: (entry) => entries.push(entry),
     }))
       .post('/api/reasoning')
-      .set('Authorization', `Bearer ${identityCredential}`)
+      .set('Cookie', SESSION_COOKIE)
       .send({
         packet,
         provider: 'gemini-2.5-flash',

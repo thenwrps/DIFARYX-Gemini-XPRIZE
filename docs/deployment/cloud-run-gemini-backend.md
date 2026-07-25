@@ -24,6 +24,11 @@ Required server variables:
 - `PORT`: local default is `3001`.
 - `GEMINI_REQUEST_TIMEOUT_MS`: request timeout from 1000 to 120000 ms.
 - `JSON_BODY_LIMIT`: Express JSON body limit; defaults to `8mb`.
+- `APP_BASE_URL`: same-site browser application origin.
+- `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`: Google Web OAuth client.
+- `GOOGLE_OAUTH_REDIRECT_URI`: exact server callback URI.
+- `DIFARYX_SESSION_SECRET`: independent secret of at least 32 characters.
+- Upstash REST settings: shared encrypted session and quota storage.
 
 Copy `.env.example` to the ignored `.env` file for local use. Never commit the
 populated file. The API key is not a frontend variable and is not embedded in
@@ -85,10 +90,13 @@ The container starts with `npm start`, binds to `0.0.0.0`, and reads the Cloud
 Run `PORT`. Liveness is available at `/health`; safe readiness metadata is at
 `/api/health`.
 
-Set the frontend build variable `VITE_AGENT_API_URL` to the Cloud Run service
-origin. This is a public API base URL only; never put credentials, tokens,
-service-account JSON, or private keys in frontend variables, source, images, or
-build arguments.
+The production session uses a SameSite=Lax cookie. A `run.app` API origin and a
+separately hosted unrelated frontend origin are therefore not a supported
+production cookie topology. Put Cloud Run behind a same-site custom domain or
+gateway before setting `VITE_AGENT_API_URL`, then revalidate OAuth callback,
+credentialed CORS, cookie, logout, and reasoning behavior. Never put
+credentials, tokens, service-account JSON, or private keys in frontend
+variables, source, images, or build arguments.
 
 ## Rollback
 

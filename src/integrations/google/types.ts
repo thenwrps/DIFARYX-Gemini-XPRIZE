@@ -1,15 +1,3 @@
-export interface GoogleUser {
-  id: string;
-  email: string;
-  name: string;
-  organization?: string;
-}
-
-export interface GoogleAuthState {
-  isAuthenticated: boolean;
-  user: GoogleUser | null;
-}
-
 /**
  * DIFARYX → Google Drive export artifact
  */

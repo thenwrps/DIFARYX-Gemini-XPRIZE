@@ -2,27 +2,24 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvidencePacket } from '../../agent/mcp/types';
-import {
-  clearIdentitySession,
-  establishIdentitySession,
-  getIdentityToken,
-  invalidateLegacyBrowserAuthState,
-} from '../auth/identitySession';
 import { callReasoningAPI } from '../api/reasoningClient';
 import {
+  createGoogleSignInUrl,
+  fetchCurrentSession,
+  revokeCurrentSession,
+  sanitizeRedirectTarget,
+  subscribeSessionInvalidation,
+  validateSessionResponse,
+} from '../auth/serverSession';
+import {
   clearGoogleApiAccessSession,
-  getGoogleApiAccessToken,
   requestGoogleApiAccess,
-  type GoogleApiAuthorizationOptions,
 } from '../google/googleApiAuthorization';
 import type { GoogleAccounts } from '../google/googleIdentityServices';
-import {
-  asGoogleIdentityToken,
-} from '../google/tokenTypes';
 
 const packet: AgentEvidencePacket = {
   context: 'xrd',
-  datasetId: 'frontend-identity-test',
+  datasetId: 'frontend-session-test',
   datasetName: 'synthetic-public-data.csv',
   materialSystem: 'synthetic test material',
   signalSummary: { featureCount: 1, signalQuality: 'medium' },
@@ -42,9 +39,9 @@ const packet: AgentEvidencePacket = {
 };
 
 afterEach(() => {
-  clearIdentitySession();
   clearGoogleApiAccessSession();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 function successfulReasoningResponse() {
@@ -56,28 +53,13 @@ function successfulReasoningResponse() {
       fallbackUsed: true,
       output: {
         primaryResult: 'Candidate A',
-        claims: [],
-        supportingEvidence: [],
-        contradictingEvidence: [],
-        interpretation: '',
-        validationStatus: 'validation_limited',
-        validationGap: [],
-        confidence: { measurementQuality: 0.8, interpretation: 0.7 },
-        missingInformation: [],
-        requiredNextAction: [],
-        metadata: {
-          provider: 'deterministic',
-          model: 'deterministic-v1',
-          timestamp: new Date(0).toISOString(),
-        },
+        metadata: { provider: 'deterministic' },
       },
     }),
   };
 }
 
-function fakeGoogleAccounts(
-  accessCredential = 'synthetic-google-api-access',
-): GoogleAccounts {
+function fakeGoogleAccounts(accessCredential = 'synthetic-google-api-access'): GoogleAccounts {
   return {
     id: {
       initialize: vi.fn(),
@@ -98,193 +80,175 @@ function fakeGoogleAccounts(
   };
 }
 
-describe('DIFARYX identity-token request boundary', () => {
-  it('attaches only the in-memory identity credential to Gemini requests', async () => {
-    const fetchMock = vi.fn(async () => successfulReasoningResponse());
-    vi.stubGlobal('fetch', fetchMock);
-    establishIdentitySession(
-      asGoogleIdentityToken('synthetic-google-id-credential'),
-      Date.now() + 60_000,
-    );
-
-    await callReasoningAPI({
-      packet,
-      provider: 'gemini-2.5-flash',
-    });
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer synthetic-google-id-credential',
-      },
-    });
-  });
-
-  it('never attaches a Google API access credential to DIFARYX reasoning', async () => {
-    const accounts = fakeGoogleAccounts();
-    const options: GoogleApiAuthorizationOptions = {
-      clientId: 'synthetic-client-id',
-      scopes: ['https://www.googleapis.com/auth/drive.file'],
-      accounts,
-    };
-    await requestGoogleApiAccess(options);
-    const fetchMock = vi.fn(async () => successfulReasoningResponse());
-    vi.stubGlobal('fetch', fetchMock);
-
-    await callReasoningAPI({
-      packet,
-      provider: 'gemini-2.5-flash',
-    });
-
-    expect(getGoogleApiAccessToken()).toBe('synthetic-google-api-access');
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Authorization');
-  });
-
-  it('does not expose an identity credential as Google API authorization', () => {
-    establishIdentitySession(
-      asGoogleIdentityToken('synthetic-google-id-credential'),
-      Date.now() + 60_000,
-    );
-
-    expect(getIdentityToken()).toBe('synthetic-google-id-credential');
-    expect(getGoogleApiAccessToken()).toBeNull();
-  });
-
-  it('clears stale identity after one 401 without retrying', async () => {
-    establishIdentitySession(
-      asGoogleIdentityToken('synthetic-stale-id-credential'),
-      Date.now() + 60_000,
-    );
+describe('server-session frontend boundary', () => {
+  it('bootstraps and validates the current server session with credentials', async () => {
     const fetchMock = vi.fn(async () => ({
-      ok: false,
-      status: 401,
-    }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const response = await callReasoningAPI({
-      packet,
-      provider: 'gemini-2.5-flash',
-    });
-
-    expect(response).toEqual({
-      success: false,
-      error: 'Sign in with Google to use Gemini reasoning',
-    });
-    expect(getIdentityToken()).toBeNull();
-    expect(fetchMock).toHaveBeenCalledOnce();
-  });
-
-  it('surfaces a 429 beta limit without retrying or clearing identity', async () => {
-    establishIdentitySession(
-      asGoogleIdentityToken('synthetic-google-id-credential'),
-      Date.now() + 60_000,
-    );
-    const fetchMock = vi.fn(async () => ({
-      ok: false,
-      status: 429,
+      ok: true,
       json: async () => ({
-        errorCode: 'GEMINI_QUOTA_EXCEEDED',
-        quota: {
-          dimension: 'user_burst',
-          retryAfterSeconds: 30,
+        authenticated: true,
+        user: {
+          provider: 'google',
+          displayName: 'Verified Researcher',
+          email: 'verified@example.test',
         },
+        expiresAt: '2026-07-26T00:00:00.000Z',
       }),
     }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const response = await callReasoningAPI({
-      packet,
-      provider: 'gemini-2.5-flash',
+    await expect(fetchCurrentSession()).resolves.toMatchObject({
+      authenticated: true,
+      user: { provider: 'google', displayName: 'Verified Researcher' },
     });
-
-    expect(response).toEqual({
-      success: false,
-      error: 'Gemini beta limit reached. Please try again after the reset, or use Scientific Baseline Mode now.',
-      errorCode: 'GEMINI_QUOTA_EXCEEDED',
-    });
-    expect(getIdentityToken()).toBe('synthetic-google-id-credential');
-    expect(fetchMock).toHaveBeenCalledOnce();
-  });
-
-  it('surfaces quota-related 503 without retrying', async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: false,
-      status: 503,
-      json: async () => ({
-        errorCode: 'GEMINI_QUOTA_UNAVAILABLE',
-      }),
-    }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const response = await callReasoningAPI({
-      packet,
-      provider: 'gemini-2.5-flash',
-    });
-
-    expect(response).toEqual({
-      success: false,
-      error: 'Gemini beta usage is temporarily unavailable. Scientific Baseline Mode is still available.',
-      errorCode: 'GEMINI_QUOTA_UNAVAILABLE',
-    });
-    expect(fetchMock).toHaveBeenCalledOnce();
-  });
-
-  it('does not attach identity to deterministic requests', async () => {
-    establishIdentitySession(
-      asGoogleIdentityToken('synthetic-google-id-credential'),
-      Date.now() + 60_000,
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/session'),
+      expect.objectContaining({ credentials: 'include', cache: 'no-store' }),
     );
-    const fetchMock = vi.fn(async () => successfulReasoningResponse());
-    vi.stubGlobal('fetch', fetchMock);
-
-    await callReasoningAPI({ packet, provider: 'deterministic' });
-
-    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Authorization');
-  });
-});
-
-describe('in-memory credential lifecycle', () => {
-  it('invalidates only obsolete authentication storage keys', () => {
-    const values = new Map([
-      ['demoAuth', 'true'],
-      ['demoProfile', 'profile'],
-      ['difaryx_google_demo_user', 'legacy-profile'],
-      ['difaryx_google_user_token', 'legacy-access'],
-      ['difaryx-project-data', 'preserve'],
-    ]);
-    invalidateLegacyBrowserAuthState({
-      removeItem: (key) => values.delete(key),
-    });
-
-    expect(values).toEqual(new Map([['difaryx-project-data', 'preserve']]));
   });
 
-  it('contains no active callback-fragment or credential persistence code', () => {
+  it('rejects malformed current-session responses at runtime', () => {
+    expect(() => validateSessionResponse({
+      authenticated: true,
+      user: { provider: 'google', subject: 'raw-subject' },
+    })).toThrow('Invalid session response');
+  });
+
+  it('cannot create a verified session from localStorage or a fake browser profile', () => {
+    const authContextPath = fileURLToPath(new URL('../../contexts/AuthContext.tsx', import.meta.url));
+    const authSource = readFileSync(authContextPath, 'utf8');
+
+    expect(authSource).not.toContain('localStorage.getItem');
+    expect(authSource).not.toContain('signInWithGoogleCredential');
+    expect(authSource).not.toContain('getIdentityToken');
+    expect(authSource).toContain("user.provider !== 'guest'");
+    expect(authSource).toContain('fetchCurrentSession');
+  });
+
+  it('keeps guest state explicitly demo-only in the sign-in UI', () => {
     const signInPath = fileURLToPath(
       new URL('../../features/auth/pages/SignIn.tsx', import.meta.url),
     );
-    const authContextPath = fileURLToPath(
-      new URL('../../contexts/AuthContext.tsx', import.meta.url),
-    );
-    const workspaceHookPath = fileURLToPath(
-      new URL('../../hooks/useX7UniversalHook.ts', import.meta.url),
-    );
-    const activeSource = [
-      readFileSync(signInPath, 'utf8'),
-      readFileSync(authContextPath, 'utf8'),
-      readFileSync(workspaceHookPath, 'utf8'),
-    ].join('\n');
+    const source = readFileSync(signInPath, 'utf8');
 
-    expect(activeSource).not.toContain('response_type=token');
-    expect(activeSource).not.toContain('window.location.hash');
-    expect(activeSource).not.toContain('localStorage.setItem("difaryx_google_user_token"');
-    expect(activeSource).not.toContain("localStorage.setItem('difaryx_google_user_token'");
-    expect(activeSource).not.toContain('[AuthCallback] Full URL');
+    expect(source).toContain("provider: 'guest'");
+    expect(source).toContain('cannot authorize Gemini');
+    expect(source).toContain('Email/password account simulation is disabled');
+  });
+
+  it('logs out through the server and invalidates frontend authenticated state', async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeSessionInvalidation(listener);
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await revokeCurrentSession();
+    unsubscribe();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/logout'),
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    );
+    expect(listener).toHaveBeenCalledOnce();
+  });
+});
+
+describe('protected reasoning client behavior', () => {
+  it('uses only the HttpOnly server session boundary for Gemini requests', async () => {
+    const fetchMock = vi.fn(async () => successfulReasoningResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callReasoningAPI({ packet, provider: 'gemini-2.5-flash' });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Authorization');
+  });
+
+  it('maps 401 to sign-in-required state without retrying', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callReasoningAPI({ packet, provider: 'gemini-2.5-flash' }))
+      .resolves.toEqual({
+        success: false,
+        error: 'Sign in with Google to use Gemini reasoning',
+        errorCode: 'AUTH_REQUIRED',
+      });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('maps 429 to beta-limit state without retry loops', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 429 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callReasoningAPI({ packet, provider: 'gemini-2.5-flash' }))
+      .resolves.toMatchObject({ success: false, errorCode: 'GEMINI_QUOTA_EXCEEDED' });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('maps quota 503 to temporarily-unavailable state without retry loops', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({ errorCode: 'GEMINI_QUOTA_UNAVAILABLE' }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callReasoningAPI({ packet, provider: 'gemini-2.5-flash' }))
+      .resolves.toMatchObject({ success: false, errorCode: 'GEMINI_QUOTA_UNAVAILABLE' });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('maps authentication 503 without retrying or local fallback', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'Authentication service unavailable' }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callReasoningAPI({ packet, provider: 'gemini-2.5-flash' }))
+      .resolves.toMatchObject({ success: false, errorCode: 'AUTH_SERVICE_UNAVAILABLE' });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('redirect and credential-storage safety', () => {
+  it('restores only safe same-origin route targets', () => {
+    expect(sanitizeRedirectTarget('/workspace/xrd?run=1#result')).toBe(
+      '/workspace/xrd?run=1#result',
+    );
+    expect(createGoogleSignInUrl('/workspace/xrd')).toContain(
+      'returnTo=%2Fworkspace%2Fxrd',
+    );
+  });
+
+  it.each([
+    'https://attacker.invalid/path',
+    '//attacker.invalid/path',
+    '/\\attacker.invalid/path',
+    'javascript:alert(1)',
+  ])('rejects invalid redirect target %s', (target) => {
+    expect(sanitizeRedirectTarget(target)).toBe('/dashboard');
+  });
+
+  it('never writes Google API access tokens to localStorage', async () => {
+    const localStorage = {
+      getItem: vi.fn(),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    };
+    vi.stubGlobal('localStorage', localStorage);
+
+    await requestGoogleApiAccess({
+      clientId: 'synthetic-client-id',
+      scopes: ['https://www.googleapis.com/auth/drive.file'],
+      accounts: fakeGoogleAccounts(),
+    });
+
+    expect(localStorage.setItem).not.toHaveBeenCalled();
   });
 });

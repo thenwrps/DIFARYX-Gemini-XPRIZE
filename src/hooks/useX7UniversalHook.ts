@@ -618,14 +618,14 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
       }
     }
     return {
-      serviceAccount: 'difaryx-storage@difaryx-enterprise.iam.gserviceaccount.com',
+      serviceAccount: 'demo-storage@difaryx.invalid',
       connected: true,
       storageUsageBytes: 34521098, // Start with ~32MB default mock files
       storageLimitBytes: 10 * 1024 * 1024 * 1024, // 10 GB
     };
   });
 
-  // 3. Gmail OAuth connection based on localStorage token presence
+  // 3. Optional Google API authorization is memory-only and separate from login.
   const [gmailConnected, setGmailConnected] = useState<boolean>(() => {
     return hasGoogleApiAccess();
   });
@@ -644,7 +644,7 @@ export function useX7UniversalHook(): UseX7UniversalHookResult {
   });
 
   // 5. Dynamic Profile State and Error handlers
-  const [connectedEmail, setConnectedEmail] = useState<string>('nwrps.yingyuen@gmail.com');
+  const [connectedEmail, setConnectedEmail] = useState<string>('demo@difaryx.local');
   const [brightDataError, setBrightDataError] = useState<string | null>(null);
   const clearBrightDataError = () => setBrightDataError(null);
 

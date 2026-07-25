@@ -138,10 +138,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   );
 
   const handleSignOut = () => {
-    signOut();
-    clearWorkspaceMode();
-    setIsProfileOpen(false);
-    navigate('/dashboard', { replace: true });
+    void signOut().then(() => {
+      clearWorkspaceMode();
+      setIsProfileOpen(false);
+      navigate('/signin', { replace: true });
+    }).catch(() => {
+      setIsProfileOpen(false);
+    });
   };
 
   return (

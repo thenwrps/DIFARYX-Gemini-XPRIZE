@@ -38,5 +38,7 @@ export function resolveReasoningExecutionPolicy(
 }
 
 export function isGeminiRequestProvider(provider: ModelProvider): boolean {
-  return provider === 'vertex-gemini' || provider === 'gemini-2.5-flash';
+  return provider === 'vertex-gemini'
+    || provider === 'gemini-2.5-flash'
+    || provider === 'gemini-developer-api';
 }
