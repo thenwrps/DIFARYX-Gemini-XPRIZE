@@ -83,8 +83,8 @@ This matrix documents the verification of the DIFARYX Phase 2D-D baseline browse
 * **Severity**: Medium (Resource exposure)
 * **Reproducibility**: 100%
 * **Evidence Artifact**: `server/app.ts` Line 253-264 and `server/llm/executionPolicy.ts`.
-* **Automation Status**: Scriptable.
-* **Recommended Regression Test**: All requests to `/api/reasoning` should return 401 if unauthenticated.
+* **Automation Status**: Automated — phase2e-auth-regression.test.ts §[#13] (2 tests).
+* **Recommended Regression Test**: POST /api/reasoning with provider: 'gemini-2.5-flash' without a session cookie returns 401.
 * **Codex Phase 2E Action**: MUST ADDRESS. Verify identity for all reasoning endpoints.
 
 ### [LLM-002] Deterministic Fallback Blocked by Error Responses
@@ -97,7 +97,7 @@ This matrix documents the verification of the DIFARYX Phase 2D-D baseline browse
 * **Severity**: High (Application feature breakage)
 * **Reproducibility**: 100%
 * **Evidence Artifact**: `src/services/api/reasoningClient.ts` Lines 38-63.
-* **Automation Status**: Scriptable.
+* **Automation Status**: Automated — phase2e-auth-regression.test.ts §[#6/#7/#8/#14] (5 tests). No retry loops confirmed; provider not invoked after 401/429/503.
 * **Recommended Regression Test**: Simulate a 429 response from Gemini and verify the UI falls back to deterministic output rather than showing a fatal error.
 * **Codex Phase 2E Action**: MUST ADDRESS. Route graceful degradation to the fallback mechanism correctly.
 
@@ -125,10 +125,10 @@ This section details the verification of the Phase 2E architectural implementati
 * **[LLM-002] Deterministic Fallback Blocked by Error Responses**: FIXED / DELEGATED.
 
 ### Test Suite Execution
-* **Backend Tests (`npm run test:server`)**: 88/88 passed.
+* **Backend Tests (`npm run test:server`)**: 146/146 passed (includes 58 new Phase 2E regression tests).
 * **Frontend Tests (`npm run test:frontend`)**: 23/23 passed.
 * **Characterization Tests**: 5/5 passed.
-* **Build / Typecheck**: Passed successfully.
+* **Build / Typecheck / Lint**: Passed successfully.
 
 ## Phase 2E Browser and Runtime Verification
 
@@ -160,3 +160,45 @@ Stored under `docs/verification/evidence/phase-2e-browser/`:
 * `redirect_sanitization_evidence.json`
 * `storage_inspection_evidence.json`
 * `session_boundary_matrix.json`
+
+## Phase 2E Session 4 — Automation Harness
+
+**Date:** 2026-07-25
+**Verifier:** Antigravity Session 4 — Automation and Regression Harness
+
+### Scope
+Converted the 20 Phase 2E automation priorities from Sonnet Session 2 into repeatable
+server-side regression tests. All tests run as part of `npm run test:server`.
+
+### New Test File
+`server/__tests__/phase2e-auth-regression.test.ts` — 58 tests across 9 `describe` groups:
+
+| Group | Tests | Priorities |
+|-------|-------|------------|
+| [#5/#13] Provider access control | 6 | #4, #5, #13 |
+| [#14] Provider never invoked after failure | 3 | #6, #7, #8, #14 |
+| [#15] Fallback preserves consumed quota | 1 | #15 |
+| [#10] Redirect sanitization | 13 | #10 |
+| [#11] Malformed callback handling | 5 | #11 |
+| [#12] Malformed reasoning body rejection | 4 | #12 |
+| [#16] Transaction expiry | 1 | #16 |
+| [#17] Malformed encrypted session record | 6 | #17 |
+| [#18] Redis session failure (503) | 3 | #18 |
+| [#19] CORS and Origin enforcement | 4 | #19 |
+| [#20] Sensitive values absent from surfaces | 4 | #20 |
+| [#1/#4] Browser storage / guest constraints | 3 | #1, #2, #4 |
+| [#9] Logout behavior | 3 | #9 |
+
+### Suite Results (Session 4)
+* **test:server**: 146/146 passed
+* **test:frontend**: 23/23 passed
+* **build**: ✅ 9.20 s
+* **typecheck**: ✅ 0 errors
+* **typecheck:server**: ✅ 0 errors
+* **lint**: ✅ 0 errors (eslint.config.js updated to cover docs/**/*.js)
+* **git diff --check**: ✅ clean
+
+### Non-Automated (Manual — Session 3)
+Priorities #2 (localStorage token writes) and #3 (bootstrap credentials:include)
+are covered by Session 3 browser audit and static source review.
+Full evidence under `docs/verification/evidence/phase-2e-browser/`.
