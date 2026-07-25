@@ -878,11 +878,14 @@ describe('[#1/#4] Browser storage / guest cannot create verified authentication'
         'git -C . grep -r "tokenProvider" -- "src/" "server/"',
         { encoding: 'utf8', cwd: 'C:\\DIFARYX-Verify-Auth' },
       );
-    } catch {
+    } catch (e: any) {
       // grep exits 1 when no matches found — that is the expected/passing case
-      output = '';
+      output = e.stdout || '';
     }
-    expect(output.trim()).toBe('');
+    const filtered = output.split('\n')
+      .filter(line => line.trim() && !line.includes('phase2e-auth-regression.test.ts'))
+      .join('\n');
+    expect(filtered.trim()).toBe('');
   });
 
   it('guest signIn produces provider:guest (not provider:google)', async () => {
