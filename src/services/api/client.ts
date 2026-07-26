@@ -1,5 +1,4 @@
 import { resolveRuntimeConfig } from '../../config/runtimeConfig';
-import { tokenProvider } from './tokenProvider';
 import type {
   CurrentUserResponse,
   OrganizationResponse,
@@ -111,20 +110,6 @@ export async function makeRequest(
     'Content-Type': 'application/json',
   };
 
-  const token = await tokenProvider.getAccessToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  } else {
-    const mode = import.meta.env.VITE_WORKSPACE_DATA_MODE;
-    if (mode === 'server') {
-      const authErr: ApiError = {
-        errorCode: 'AUTH_REQUIRED',
-        message: 'Authentication token is required',
-      };
-      throw authErr;
-    }
-  }
-
   if (options.organizationId) {
     headers['Active-Organization'] = options.organizationId;
   }
@@ -132,6 +117,7 @@ export async function makeRequest(
   const fetchOptions: RequestInit = {
     method: options.method || 'GET',
     headers,
+    credentials: 'include',
     signal: options.signal,
   };
 

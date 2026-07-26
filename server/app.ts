@@ -1,12 +1,9 @@
 import express, {
-  type Request,
   type RequestHandler,
   type Response,
 } from 'express';
 import cors from 'cors';
 import type {
-  AgentEvidencePacket,
-  ModelProvider,
   ReasoningRequest,
   ReasoningResponse,
 } from '../src/agent/mcp/types';
@@ -15,9 +12,16 @@ import {
   type ReasoningRequestContext,
 } from './api/reasoning';
 import { createGoogleIdentityVerifier } from './auth/googleIdentityVerifier';
-import { requireGoogleIdentity } from './auth/requireGoogleIdentity';
+import { createGoogleOAuthClient } from './auth/googleOAuthClient';
+import {
+  registerAuthRoutes,
+  requireAuthenticatedSession,
+} from './auth/sessionBoundary';
+import { createSessionManager } from './auth/sessionManager';
 import type {
+  GoogleOAuthClient,
   GoogleIdentityVerifier,
+  SessionManager,
   VerifiedGoogleIdentity,
 } from './auth/types';
 import { loadServerConfig, type ServerConfig } from './config';
@@ -37,8 +41,8 @@ import { createGeminiQuotaService } from './quota/geminiQuotaService';
 import type { GeminiQuotaConfig } from './quota/quotaConfig';
 import type { GeminiQuotaService } from './quota/types';
 import { createUpstashGeminiQuotaStore } from './quota/upstashGeminiQuotaStore';
+import { parseReasoningRequest } from './validation/reasoningRequest';
 
-type PublicProvider = ModelProvider | 'gemini';
 interface ReasoningContext extends ReasoningRequestContext {
   identity?: VerifiedGoogleIdentity;
 }
@@ -51,19 +55,11 @@ export interface CreateAppOptions {
   config?: ServerConfig;
   reasoningHandler?: ReasoningHandler;
   identityVerifier?: GoogleIdentityVerifier;
+  oauthClient?: GoogleOAuthClient;
+  sessionManager?: SessionManager;
   quotaService?: GeminiQuotaService;
   logger?: StructuredLogger;
 }
-
-const SUPPORTED_PROVIDERS = new Set<PublicProvider>([
-  'scientific-baseline',
-  'gpt-5.6',
-  'gemini-2.5-flash',
-  'deterministic',
-  'vertex-gemini',
-  'gemini',
-  'gemma',
-]);
 
 export function createApp(options: CreateAppOptions = {}) {
   const config = options.config ?? loadServerConfig();
@@ -89,6 +85,19 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use(createCorsMiddleware(config));
   app.use(express.json({ limit: config.jsonLimit }));
 
+  let sessionManager = options.sessionManager;
+  if (config.auth.ok) {
+    sessionManager ??= createSessionManager(config.auth.value);
+    registerAuthRoutes(app, {
+      config: config.auth.value,
+      identityVerifier,
+      oauthClient: options.oauthClient ?? createGoogleOAuthClient(config.auth.value),
+      sessionManager,
+    });
+  } else {
+    registerUnavailableAuthRoutes(app);
+  }
+
   app.get('/health', (_request, response) => {
     response.json({
       ok: true,
@@ -112,10 +121,11 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/api/reasoning', async (request, response, next) => {
     try {
-      const body = readObjectBody(request.body);
-      const packet = readPacket(body.packet, 'Missing evidence packet');
-      const provider = readProvider(body.provider, true);
-      const model = readOptionalModel(body.model);
+      const { packet, provider, model } = parseReasoningRequest(
+        request.body,
+        'reasoning',
+        config,
+      );
       response.locals.selectedProvider = provider;
       response.locals.selectedModel = model ?? (
         isGeminiRequestProvider(provider) ? config.geminiModel : null
@@ -126,7 +136,8 @@ export function createApp(options: CreateAppOptions = {}) {
         request,
         response,
         executionPolicy,
-        identityVerifier,
+        config,
+        sessionManager,
       );
       await consumeGeminiQuota(
         response,
@@ -155,9 +166,11 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/api/llm/reason', async (request, response, next) => {
     try {
-      const body = readObjectBody(request.body);
-      const packet = readPacket(body.packet, 'Missing packet in request body');
-      const provider = readProvider(body.modelMode, false);
+      const { packet, provider } = parseReasoningRequest(
+        request.body,
+        'legacy',
+        config,
+      );
       response.locals.selectedProvider = provider;
       response.locals.selectedModel = isGeminiRequestProvider(provider)
         ? config.geminiModel
@@ -168,7 +181,8 @@ export function createApp(options: CreateAppOptions = {}) {
         request,
         response,
         executionPolicy,
-        identityVerifier,
+        config,
+        sessionManager,
       );
       await consumeGeminiQuota(
         response,
@@ -205,7 +219,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
 function createCorsMiddleware(config: ServerConfig): RequestHandler {
   return cors({
-    credentials: false,
+    credentials: true,
     origin(origin, callback) {
       if (!origin || config.allowedOrigins.includes(origin)) {
         callback(null, true);
@@ -216,51 +230,37 @@ function createCorsMiddleware(config: ServerConfig): RequestHandler {
   });
 }
 
-function readObjectBody(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new HttpError(400, 'Request body must be a JSON object');
-  }
-  return value as Record<string, unknown>;
-}
-
-function readPacket(value: unknown, missingMessage: string): AgentEvidencePacket {
-  if (value === undefined || value === null) throw new HttpError(400, missingMessage);
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new HttpError(400, 'Evidence packet must be a JSON object');
-  }
-  return value as AgentEvidencePacket;
-}
-
-function readProvider(value: unknown, required: boolean): ModelProvider {
-  if (value === undefined || value === null || value === '') {
-    if (required) throw new HttpError(400, 'Missing provider');
-    return 'deterministic';
-  }
-  if (typeof value !== 'string' || !SUPPORTED_PROVIDERS.has(value as PublicProvider)) {
-    throw new HttpError(400, 'Unsupported provider');
-  }
-  return value === 'gemini' ? 'vertex-gemini' : value as ModelProvider;
-}
-
-function readOptionalModel(value: unknown): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== 'string') throw new HttpError(400, 'Model must be a string');
-  const model = value.trim();
-  if (!model || model.length > 128) throw new HttpError(400, 'Invalid model');
-  return model;
-}
-
 async function authenticateForExecutionPolicy(
-  request: Request,
+  request: express.Request,
   response: Response,
   executionPolicy: ReasoningExecutionPolicy,
-  identityVerifier: GoogleIdentityVerifier,
+  config: ServerConfig,
+  sessionManager: SessionManager | undefined,
 ): Promise<VerifiedGoogleIdentity | undefined> {
   if (!executionPolicy.requiresGoogleIdentity) {
     response.locals.authOutcome = 'not_required';
     return undefined;
   }
-  return requireGoogleIdentity(request, response, identityVerifier);
+  if (!config.auth.ok || !sessionManager) {
+    response.locals.authOutcome = 'unavailable';
+    throw new HttpError(503, 'Authentication service unavailable');
+  }
+  return requireAuthenticatedSession(
+    request,
+    response,
+    config.auth.value,
+    sessionManager,
+  );
+}
+
+function registerUnavailableAuthRoutes(app: express.Express): void {
+  const unavailable = (_request: express.Request, _response: Response, next: express.NextFunction) => {
+    next(new HttpError(503, 'Authentication service unavailable'));
+  };
+  app.get('/api/auth/google/start', unavailable);
+  app.get('/api/auth/google/callback', unavailable);
+  app.get('/api/session', unavailable);
+  app.post('/api/logout', unavailable);
 }
 
 async function consumeGeminiQuota(

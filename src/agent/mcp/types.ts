@@ -203,6 +203,10 @@ export interface ReasoningResponse {
   success: boolean;
   output?: ReasoningOutput;
   error?: string;
-  errorCode?: 'GEMINI_QUOTA_EXCEEDED' | 'GEMINI_QUOTA_UNAVAILABLE';
+  errorCode?:
+    | 'AUTH_REQUIRED'
+    | 'AUTH_SERVICE_UNAVAILABLE'
+    | 'GEMINI_QUOTA_EXCEEDED'
+    | 'GEMINI_QUOTA_UNAVAILABLE';
   fallbackUsed?: boolean;
 }

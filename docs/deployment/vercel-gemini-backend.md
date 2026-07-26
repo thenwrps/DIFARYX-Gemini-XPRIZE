@@ -1,7 +1,8 @@
 # Vercel Gemini backend adapter
 
-Phase 2D-D keeps the local Vercel Node.js Function adapter for the existing
-Express application and adds the durable Gemini quota boundary. It does not
+Phase 2E keeps the local Vercel Node.js Function adapter for the existing
+Express application and adds the production authentication/session boundary.
+It does not
 deploy a preview or production environment or provision an external resource.
 The function entrypoint is `api/index.ts`, which exports the application
 created by `server/app.ts`. `server/index.ts` remains the local and container
@@ -20,6 +21,10 @@ The adapter preserves:
 
 - `POST /api/reasoning`
 - `POST /api/llm/reason`
+- `GET /api/auth/google/start`
+- `GET /api/auth/google/callback`
+- `GET /api/session`
+- `POST /api/logout`
 - `GET /api/health`
 - `GET /health`
 
@@ -39,9 +44,11 @@ The Phase 2D-D code boundary can satisfy **Classification A** only after the
 matching Google Web client ID and complete private quota configuration are
 configured and validated in a controlled deployment.
 
-- Gemini-capable Express requests require a Google ID token.
-- The server verifies signature, Google issuer, configured audience, expiry,
-  and the stable `sub` claim using `google-auth-library`.
+- Gemini-capable Express requests require a valid DIFARYX session cookie.
+- The server exchanges a Google authorization code with PKCE, verifies the ID
+  token signature, Google issuer, configured audience, expiry, and stable `sub`.
+- The browser never receives or stores that ID token. An opaque, Secure,
+  HttpOnly, SameSite=Lax cookie maps to an encrypted Redis session record.
 - Browser profile data is display-only and cannot override verified identity.
 - Verified `sub` is pseudonymized with HMAC-SHA256 before quota keys are built.
 - One atomic Upstash Redis Lua operation checks and conditionally increments
@@ -89,14 +96,15 @@ stored in Redis. The digest and Redis keys are not returned to the browser.
 Rotating it changes effective user quota identities and therefore resets their
 application-visible user counters.
 
-## Dual-token boundary
+## Authentication and optional Google API authorization
 
-Google Identity Services supplies two intentionally separate credentials:
+Google login and optional Google API access are intentionally separate:
 
-- The Sign in with Google `credential` is an ID token. DIFARYX keeps it only in
-  browser memory, attaches it only to Gemini-capable DIFARYX requests, and
-  requires a fresh GIS sign-in after reload or expiry.
-- `google.accounts.oauth2.initTokenClient()` supplies a Google API access token.
+- The server-owned Authorization Code + PKCE flow exchanges and verifies the
+  Google identity credential without returning it to browser JavaScript.
+- The DIFARYX browser receives only an opaque HttpOnly session cookie and a
+  sanitized `GET /api/session` representation.
+- `google.accounts.oauth2.initTokenClient()` may supply a Google API access token.
   DIFARYX keeps it only in browser memory and uses it only for explicitly
   authorized Google APIs. Current live scopes cover Gmail read/send, Drive file
   access, user profile, and the legacy direct Vertex action. The existing
@@ -116,7 +124,12 @@ Configure only these backend variables in Vercel project settings:
 GEMINI_PROVIDER_MODE=developer
 GEMINI_API_KEY=<configure as a sensitive server-only value>
 GEMINI_MODEL=gemini-2.5-flash
-GOOGLE_OAUTH_CLIENT_ID=<same Google Web client ID used by the browser>
+GOOGLE_OAUTH_CLIENT_ID=<Google Web OAuth client ID>
+GOOGLE_OAUTH_CLIENT_SECRET=<sensitive Google Web client secret>
+GOOGLE_OAUTH_REDIRECT_URI=https://difaryx.dfryxlab.xyz/api/auth/google/callback
+APP_BASE_URL=https://difaryx.dfryxlab.xyz
+DIFARYX_SESSION_SECRET=<independent random secret of at least 32 characters>
+DIFARYX_SESSION_TTL_SECONDS=28800
 UPSTASH_REDIS_REST_URL=<private Upstash REST URL>
 UPSTASH_REDIS_REST_TOKEN=<private Upstash REST token>
 QUOTA_ID_HASH_SECRET=<independent private HMAC secret>
@@ -129,15 +142,10 @@ GEMINI_REQUEST_TIMEOUT_MS=30000
 JSON_BODY_LIMIT=4mb
 ```
 
-Configure the same non-secret Web client ID in the frontend build:
-
-```text
-VITE_GOOGLE_CLIENT_ID=<same Google Web client ID used by the server>
-```
-
 Do not put `GEMINI_API_KEY` in a `VITE_*` variable, source file, build argument,
 log, screenshot, or chat. Apply the same rule to the Redis token and quota HMAC
-secret. Upstash database creation and configuration remain external manual
+secret, Google client secret, and DIFARYX session secret. Upstash database
+creation and configuration remain external manual
 steps; this repository does not establish that a database currently exists.
 The recommended `JSON_BODY_LIMIT` remains below
 Vercel's documented
@@ -176,7 +184,7 @@ quota.
 
 ## Serverless compatibility
 
-- The Express application is stateless for reasoning requests.
+- The Express application keeps no authoritative in-memory session state.
 - Warm-instance Gemini client caching is an optimization and is not required
   for correctness.
 - Deterministic fallback does not depend on instance persistence.
@@ -184,8 +192,8 @@ quota.
   not warm-instance memory.
 - Request IDs and structured logs contain no prompts, evidence packets, keys,
   or full model output.
-- The TypeScript backend keeps no durable authentication session and stores
-  only pseudonymous quota counters in Redis.
+- Durable authentication records are encrypted and TTL-bound in Redis under a
+  separate `difaryx:auth:v1` namespace. Logout deletes the shared record.
 - The Python backend, local databases, and filesystem workflows are not
   imported by the Vercel function.
 
@@ -195,7 +203,8 @@ Local build, typecheck, route, adapter, deterministic, and fake-store tests may
 establish code readiness only. Production readiness still requires manually
 creating and configuring an Upstash Redis database, setting private Vercel
 variables, choosing an explicit global daily limit, configuring the Google Web
-OAuth client ID, and completing one controlled synthetic live smoke test.
+OAuth client and exact callback URI, and completing one controlled synthetic
+live sign-in and Gemini smoke test.
 
 No Vercel deployment, Google Cloud deployment, billing change, DNS change, or
 production environment update occurred in Phase 2D-A, Phase 2D-C, or Phase

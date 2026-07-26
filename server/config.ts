@@ -2,6 +2,7 @@ import {
   loadGeminiQuotaConfig,
   type GeminiQuotaConfigResult,
 } from './quota/quotaConfig';
+import { loadAuthConfig, type AuthConfigResult } from './auth/authConfig';
 
 export type GeminiProviderMode = 'developer' | 'vertex';
 
@@ -14,6 +15,7 @@ export interface ServerConfig {
   serviceVersion: string;
   allowedOrigins: string[];
   googleOAuthClientId?: string;
+  auth: AuthConfigResult;
   geminiProviderMode: GeminiProviderMode;
   geminiApiKey?: string;
   googleCloudProject?: string;
@@ -49,6 +51,7 @@ export function loadServerConfig(
     serviceVersion: environment.npm_package_version?.trim() || '0.0.0',
     allowedOrigins,
     googleOAuthClientId: environment.GOOGLE_OAUTH_CLIENT_ID?.trim() || undefined,
+    auth: loadAuthConfig(environment, nodeEnv),
     geminiProviderMode: parseGeminiProviderMode(environment.GEMINI_PROVIDER_MODE),
     geminiApiKey: environment.GEMINI_API_KEY?.trim() || undefined,
     googleCloudProject: environment.GOOGLE_CLOUD_PROJECT?.trim() || undefined,

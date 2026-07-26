@@ -15,6 +15,9 @@ interface GoogleLoginTicket {
     iss?: string;
     sub?: string;
     exp?: number;
+    name?: string;
+    email?: string;
+    email_verified?: boolean;
   } | undefined;
 }
 
@@ -68,6 +71,10 @@ export function createGoogleIdentityVerifier(
         return {
           provider: 'google',
           subject: payload.sub,
+          displayName: readDisplayName(payload.name),
+          ...(payload.email && payload.email_verified === true
+            ? { email: readEmail(payload.email) }
+            : {}),
         };
       } catch (error) {
         if (error instanceof IdentityVerificationError) throw error;
@@ -75,4 +82,14 @@ export function createGoogleIdentityVerifier(
       }
     },
   };
+}
+
+function readDisplayName(value: string | undefined): string {
+  const normalized = value?.trim();
+  return normalized && normalized.length <= 200 ? normalized : 'Google user';
+}
+
+function readEmail(value: string): string | undefined {
+  const normalized = value.trim();
+  return normalized && normalized.length <= 320 ? normalized : undefined;
 }

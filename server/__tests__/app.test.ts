@@ -107,6 +107,27 @@ describe('DIFARYX server boundary', () => {
     expect(response.body.error).toBe('Unsupported provider');
   });
 
+  it('rejects a malformed evidence packet at runtime', async () => {
+    const response = await request(testApp())
+      .post('/api/reasoning')
+      .send({
+        packet: { ...packet, detectedFeatures: 'browser-cast-is-not-validation' },
+        provider: 'deterministic',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('Invalid detected features');
+  });
+
+  it('rejects an unconfigured Gemini model value', async () => {
+    const response = await request(testApp())
+      .post('/api/reasoning')
+      .send({ packet, provider: 'gemini-2.5-flash', model: 'untrusted-model' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('Unsupported model');
+  });
+
   it('preserves the deterministic success response shape', async () => {
     const response = await request(testApp())
       .post('/api/reasoning')

@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { getOrganizations } from '../services/api/organizations';
 import type { OrganizationResponse, ApiError } from '../services/api/types';
 import { useAuth } from './AuthContext';
-import { tokenProvider } from '../services/api/tokenProvider';
 
 export interface OrganizationContextType {
   organizations: OrganizationResponse[];
@@ -18,7 +17,7 @@ const OrganizationContext = createContext<OrganizationContextType | undefined>(u
 const ORG_STORAGE_KEY = 'difaryx-active-organization-id:v1';
 
 export function OrganizationProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, status: authStatus } = useAuth();
+  const { isVerified, status: authStatus } = useAuth();
   const [organizations, setOrganizations] = useState<OrganizationResponse[]>([]);
   const [activeOrganizationId, setActiveOrgState] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'selection_required' | 'ready' | 'error'>('idle');
@@ -34,7 +33,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       return;
     }
 
-    if (!isAuthenticated) {
+    if (!isVerified) {
       setStatus('idle');
       setOrganizations([]);
       setActiveOrgState(null);
@@ -89,12 +88,12 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       setError(err);
       setStatus('error');
     }
-  }, [isAuthenticated]);
+  }, [isVerified]);
 
   useEffect(() => {
-    if (authStatus === 'authenticated' || authStatus === 'guest') {
+    if (authStatus === 'authenticated') {
       loadOrganizations();
-    } else if (authStatus === 'unauthenticated') {
+    } else if (authStatus === 'unauthenticated' || authStatus === 'guest') {
       setOrganizations([]);
       setActiveOrgState(null);
       setStatus('idle');
@@ -102,15 +101,6 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       localStorage.removeItem(ORG_STORAGE_KEY);
     }
   }, [authStatus, loadOrganizations]);
-
-  useEffect(() => {
-    if (tokenProvider.subscribe) {
-      const unsubscribe = tokenProvider.subscribe(() => {
-        loadOrganizations();
-      });
-      return unsubscribe;
-    }
-  }, [loadOrganizations]);
 
   const setActiveOrganizationId = useCallback((id: string | null) => {
     if (id) {
