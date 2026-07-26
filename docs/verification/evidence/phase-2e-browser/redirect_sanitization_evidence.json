@@ -1,0 +1,65 @@
+{
+  "timestamp": "2026-07-25T05:20:53.836Z",
+  "results": [
+    {
+      "payload": "https://evil.example",
+      "expected": "/dashboard",
+      "actual": "/dashboard",
+      "pass": true
+    },
+    {
+      "payload": "//evil.example",
+      "expected": "/dashboard",
+      "actual": "/dashboard",
+      "pass": true
+    },
+    {
+      "payload": "\\evil.example",
+      "expected": "/dashboard",
+      "actual": "/dashboard",
+      "pass": true
+    },
+    {
+      "payload": "/\\evil.example",
+      "expected": "/dashboard",
+      "actual": "/dashboard",
+      "pass": true
+    },
+    {
+      "payload": "%2F%2Fevil.example",
+      "expected": "/dashboard",
+      "actual": "/dashboard",
+      "pass": true
+    },
+    {
+      "payload": "javascript:alert(1)",
+      "expected": "/dashboard",
+      "actual": "/dashboard",
+      "pass": true
+    },
+    {
+      "payload": "data:text/html,test",
+      "expected": "/dashboard",
+      "actual": "/dashboard",
+      "pass": true
+    },
+    {
+      "payload": "/dashboard",
+      "expected": "/dashboard",
+      "actual": "/dashboard",
+      "pass": true
+    },
+    {
+      "payload": "/agent",
+      "expected": "/agent",
+      "actual": "/agent",
+      "pass": true
+    },
+    {
+      "payload": "/projects/example",
+      "expected": "/projects/example",
+      "actual": "/projects/example",
+      "pass": true
+    }
+  ]
+}

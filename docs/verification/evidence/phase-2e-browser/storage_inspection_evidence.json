@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-07-25T05:20:53.839Z",
+  "purgedLegacyKeys": [
+    "demoAuth",
+    "demoProfile",
+    "difaryx_google_demo_user",
+    "difaryx_google_user_token"
+  ],
+  "prohibitedTokensInBrowserStorage": [
+    "Google access token",
+    "Google ID token",
+    "authorization code",
+    "refresh token",
+    "DIFARYX session secret",
+    "raw Google sub",
+    "quota HMAC secret",
+    "Redis credentials"
+  ],
+  "status": "VERIFIED_CLEAN",
+  "notes": "AuthContext purges legacy keys on mount. No tokens, secrets, or raw subjects are stored in localStorage/sessionStorage."
+}
