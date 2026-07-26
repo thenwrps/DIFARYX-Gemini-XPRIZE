@@ -40,5 +40,8 @@ jobs:
       - name: Server tests
         run: npm run test:server
 
+      - name: Frontend service tests
+        run: npm run test:frontend
+
       - name: Run targeted characterization tests
         run: npx vitest run src/scientificReview/__tests__/agentDemo.characterization.test.ts src/scientificReview/__tests__/evidenceStacks.characterization.test.ts

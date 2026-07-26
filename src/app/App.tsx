@@ -8,7 +8,6 @@ import { XrdWorkflowRuntimeProvider } from "../context/XrdWorkflowRuntimeContext
 
 import Landing from "../features/landing/pages/Landing";
 import SignIn from "../features/auth/pages/SignIn";
-import AuthCallback from "../features/auth/pages/AuthCallback";
 
 const Dashboard = lazy(() => import("../features/dashboard/pages/Dashboard"));
 const ProjectDetail = lazy(() => import("../features/project/pages/ProjectDetail"));
@@ -103,7 +102,6 @@ function App() {
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<SignIn />} />
               <Route path="/signin" element={<SignIn />} />
-              <Route path="/auth/callback" element={<AuthCallback />} />
 
               <Route
                 path="/dashboard"

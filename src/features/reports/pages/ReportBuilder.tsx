@@ -10,6 +10,7 @@ import { Card } from '../../../shared/ui/Card';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useXrdWorkflowRuntime } from '../../../context/XrdWorkflowRuntimeContext';
 import { useX7UniversalHook } from '../../../hooks/useX7UniversalHook';
+import { hasGoogleApiAccess } from '../../../services/google/googleApiAuthorization';
 import { getProject, getWorkspaceRoute } from '../../../data/demoProjects';
 import {
   claimStatusColorClass,
@@ -1134,7 +1135,7 @@ function ReportBuilderContent({ routeContext }: { routeContext: EvidenceRouteCon
   };
 
   const handleDraftWithAI = async () => {
-    if (!localStorage.getItem('difaryx_google_user_token')) {
+    if (!hasGoogleApiAccess()) {
       setShareError('OAuth Connection Required: Please connect your Google account in Settings to enable Vertex AI report drafting.');
       return;
     }

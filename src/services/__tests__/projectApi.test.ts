@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { resolveRuntimeConfig } from '../../config/runtimeConfig';
 import { makeRequest } from '../api/client';
-import { tokenProvider } from '../api/tokenProvider';
 import { getCurrentProfile } from '../api/currentUser';
 import { getOrganizations } from '../api/organizations';
 import { listProjects, updateProject } from '../api/projects';
@@ -9,17 +8,6 @@ import { listProjects, updateProject } from '../api/projects';
 // Mock global fetch
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
-
-// Mock localStorage globally for Node/Vitest env
-const storage: Record<string, string> = {};
-global.localStorage = {
-  getItem: (key: string) => storage[key] || null,
-  setItem: (key: string, value: string) => { storage[key] = value; },
-  removeItem: (key: string) => { delete storage[key]; },
-  clear: () => { for (const k in storage) delete storage[k]; },
-  length: 0,
-  key: (index: number) => null,
-};
 
 describe('Runtime Mode Resolution & Env Validation', () => {
   let originalNodeEnv: string | undefined;
@@ -68,17 +56,13 @@ describe('API Client Request Boundaries & Headers', () => {
     vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000');
     vi.stubEnv('VITE_AUTH_PROVIDER', 'test');
     mockFetch.mockReset();
-    localStorage.clear();
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
-    localStorage.clear();
   });
 
-  it('injects mock token based on logged-in user profile', async () => {
-    localStorage.setItem('demoProfile', JSON.stringify({ email: 'a1@test.com', name: 'User A1' }));
-    
+  it('uses the server session cookie boundary without browser bearer tokens', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -86,24 +70,18 @@ describe('API Client Request Boundaries & Headers', () => {
       json: async () => ({ id: '123', title: 'Test Project' })
     });
 
-    const token = await tokenProvider.getAccessToken();
-    expect(token).toBe('mock:firebase|sub-a1|a1@test.com');
-
     await makeRequest('/api/v1/projects/123');
     
     expect(mockFetch).toHaveBeenCalledWith(
       'http://localhost:8000/api/v1/projects/123',
       expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: 'Bearer mock:firebase|sub-a1|a1@test.com'
-        })
+        credentials: 'include',
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) }),
       })
     );
   });
 
   it('attaches Active-Organization header for tenant-scoped calls only', async () => {
-    localStorage.setItem('demoProfile', JSON.stringify({ email: 'a1@test.com' }));
-    
     // 1. Bootstrap request (/me)
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -142,8 +120,6 @@ describe('API Client Request Boundaries & Headers', () => {
   });
 
   it('handles and parses structured JSON API errors correctly', async () => {
-    localStorage.setItem('demoProfile', JSON.stringify({ email: 'a1@test.com' }));
-    
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 409,

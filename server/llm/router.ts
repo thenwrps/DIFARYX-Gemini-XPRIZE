@@ -20,6 +20,17 @@ import type {
 import { callGemini, isGeminiConfigured } from './providers/geminiProvider';
 import { callGemma, isGemmaConfigured } from './providers/gemmaProvider';
 import { generateDeterministicReasoning } from '../../src/services/api/deterministicReasoning';
+import { loadServerConfig, type ServerConfig } from '../config';
+import {
+  resolveReasoningExecutionPolicy,
+  type ReasoningExecutionPolicy,
+} from './executionPolicy';
+
+export interface RouteReasoningOptions {
+  config?: ServerConfig;
+  executionPolicy?: ReasoningExecutionPolicy;
+  geminiQuotaConsumed?: boolean;
+}
 
 /**
  * Route reasoning request to appropriate provider.
@@ -28,7 +39,11 @@ export async function routeReasoning(
   packet: AgentEvidencePacket,
   provider: ModelProvider,
   model?: string,
+  options: RouteReasoningOptions = {},
 ): Promise<ReasoningResponse> {
+  const config = options.config ?? loadServerConfig();
+  const executionPolicy = options.executionPolicy
+    ?? resolveReasoningExecutionPolicy(provider, config);
   try {
     // Deterministic mode
     if (provider === 'deterministic' || provider === 'scientific-baseline') {
@@ -41,8 +56,12 @@ export async function routeReasoning(
     }
 
     // Gemini mode (Developer API by default; Vertex AI when explicitly enabled)
-    if (provider === 'vertex-gemini' || provider === 'gemini-2.5-flash') {
-      if (!isGeminiConfigured()) {
+    if (
+      provider === 'vertex-gemini'
+      || provider === 'gemini-2.5-flash'
+      || provider === 'gemini-developer-api'
+    ) {
+      if (executionPolicy.mode !== 'real_gemini') {
         const output = generateDeterministicReasoning(packet);
         return {
           success: true,
@@ -50,9 +69,15 @@ export async function routeReasoning(
           fallbackUsed: true,
         };
       }
+      if (!options.geminiQuotaConsumed) {
+        return {
+          success: false,
+          error: 'Gemini execution authorization unavailable',
+        };
+      }
 
       try {
-        const output = await callGemini(packet, model);
+        const output = await callGemini(packet, model, { config });
         return {
           success: true,
           output,
@@ -133,7 +158,11 @@ export function getProviderStatus(provider: ModelProvider): {
     };
   }
 
-  if (provider === 'vertex-gemini' || provider === 'gemini-2.5-flash') {
+  if (
+    provider === 'vertex-gemini'
+    || provider === 'gemini-2.5-flash'
+    || provider === 'gemini-developer-api'
+  ) {
     return {
       provider,
       configured: isGeminiConfigured(),

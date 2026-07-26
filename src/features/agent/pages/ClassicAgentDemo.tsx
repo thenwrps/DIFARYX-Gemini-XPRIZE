@@ -250,6 +250,7 @@ type AgentDemoState = {
     output: ReasoningOutput | null;
     usedLlm: boolean;
     fallbackUsed: boolean;
+    statusMessage: string | null;
   };
   /** Structured literature citations rendered by the Research Evidence Card. */
   researchEvidence: ResearchEvidenceItem[];
@@ -876,6 +877,7 @@ function makeInitialState(
       output: null,
       usedLlm: false,
       fallbackUsed: false,
+      statusMessage: null,
     },
     researchEvidence: [],
     provenance: null,
@@ -953,6 +955,7 @@ function resetRunState(
       output: null,
       usedLlm: false,
       fallbackUsed: false,
+      statusMessage: null,
     },
     researchEvidence: [],
     provenance: null,
@@ -2308,9 +2311,13 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
     project: DemoProject,
     xrdAnalysis: ReturnType<typeof runXrdPhaseIdentificationAgent> | null,
     toolTrace: ToolTraceEntry[],
-  ): Promise<{ output: ReasoningOutput | null; fallbackUsed: boolean }> {
+  ): Promise<{
+    output: ReasoningOutput | null;
+    fallbackUsed: boolean;
+    statusMessage: string | null;
+  }> {
     if (modelMode === 'scientific-baseline') {
-      return { output: null, fallbackUsed: false };
+      return { output: null, fallbackUsed: false, statusMessage: null };
     }
 
     try {
@@ -2374,16 +2381,22 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
 
       if (!response.success) {
         console.error('LLM reasoning failed:', response.error);
-        return { output: null, fallbackUsed: true };
+        return {
+          output: null,
+          fallbackUsed: true,
+          statusMessage: response.error
+            ?? 'Gemini reasoning is unavailable. Scientific Baseline Mode remains available.',
+        };
       }
 
       return {
         output: response.output ?? null,
         fallbackUsed: response.fallbackUsed ?? false,
+        statusMessage: null,
       };
     } catch (error) {
       console.error('LLM reasoning error:', error);
-      return { output: null, fallbackUsed: true };
+      return { output: null, fallbackUsed: true, statusMessage: null };
     }
   }
 
@@ -2454,6 +2467,7 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
     ramanResult: ReturnType<typeof runRamanProcessing> | null = null,
     xpsRunResult: ReturnType<typeof runXpsProcessing> | null = null,
     ftirResult: ReturnType<typeof runFtirProcessing> | null = null,
+    llmStatusMessage: string | null = null,
   ) => {
     // XPS element-focused evidence (persisted from the Element Selection
     // Analysis view) feeds fusion scoring + contradiction detection.
@@ -2695,6 +2709,7 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
           output: llmOutput || null,
           usedLlm: !!llmOutput,
           fallbackUsed: fallbackUsed,
+          statusMessage: llmStatusMessage,
         },
         ...(lit ? { researchEvidence: lit.items, literatureTrace: lit.trace } : {}),
         provenance: { ...baseProvenance, reasoningProvider },
@@ -2932,6 +2947,7 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
 
       let llmOutput: ReasoningOutput | null = null;
       let fallbackUsed = false;
+      let llmStatusMessage: string | null = null;
 
       if (agentState.modelMode !== 'scientific-baseline') {
         appendLog({
@@ -2951,6 +2967,7 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
 
         llmOutput = llmResult.output;
         fallbackUsed = llmResult.fallbackUsed;
+        llmStatusMessage = llmResult.statusMessage;
 
         if (llmOutput) {
           appendLog({
@@ -2961,13 +2978,25 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
         } else if (fallbackUsed) {
           appendLog({
             stamp: `[${formatStamp(config.stages.length)}]`,
-            message: 'LLM provider offline or unauthorized, using simulated reasoning fallback',
+            message: llmStatusMessage
+              ?? 'LLM provider offline or unauthorized, using simulated reasoning fallback',
             type: 'info',
           });
         }
       }
 
-      finalizeRun(context, option, xrdResult, llmOutput, fallbackUsed, lit, ramanResult, xpsRunResult, ftirResult);
+      finalizeRun(
+        context,
+        option,
+        xrdResult,
+        llmOutput,
+        fallbackUsed,
+        lit,
+        ramanResult,
+        xpsRunResult,
+        ftirResult,
+        llmStatusMessage,
+      );
     } finally {
       if (runTokenRef.current === token) {
         runningGuardRef.current = false;
@@ -3095,6 +3124,7 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
 
         let llmOutput: ReasoningOutput | null = null;
         let fallbackUsed = false;
+        let llmStatusMessage: string | null = null;
 
         if (agentState.modelMode !== 'scientific-baseline') {
           appendLog({
@@ -3114,6 +3144,7 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
 
           llmOutput = llmResult.output;
           fallbackUsed = llmResult.fallbackUsed;
+          llmStatusMessage = llmResult.statusMessage;
 
           if (llmOutput) {
             appendLog({
@@ -3124,7 +3155,8 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
           } else if (fallbackUsed) {
             appendLog({
               stamp: `[${formatStamp(stages.length)}]`,
-              message: 'LLM provider offline or unauthorized, using simulated reasoning fallback',
+              message: llmStatusMessage
+                ?? 'LLM provider offline or unauthorized, using simulated reasoning fallback',
               type: 'info',
             });
           }
@@ -3134,6 +3166,7 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
           analysisCache.current.raman,
           analysisCache.current.xps,
           analysisCache.current.ftir,
+          llmStatusMessage,
         );
       }
     } finally {
@@ -3697,6 +3730,16 @@ function AgentDemoContent({ routeContext, standaloneStart }: { routeContext: Evi
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {agentState.llmState.statusMessage && (
+        <div
+          role="status"
+          className="shrink-0 border-b border-amber-300 bg-amber-50 px-4 py-2 text-[11px] text-amber-900"
+        >
+          <span className="font-semibold">Gemini beta:</span>{' '}
+          {agentState.llmState.statusMessage}
         </div>
       )}
 

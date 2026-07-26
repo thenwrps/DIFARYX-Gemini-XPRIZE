@@ -1,7 +1,5 @@
 const GOOGLE_CLIENT_ID_ENV_KEYS = [
-  'VITE_GOOGLE_CLIENT_ID',
-  'VITE_GOOGLE_OAUTH_CLIENT_ID',
-  'VITE_GOOGLE_AUTH_CLIENT_ID',
+  'VITE_GOOGLE_API_CLIENT_ID',
 ] as const;
 
 export type GoogleClientIdEnvKey = (typeof GOOGLE_CLIENT_ID_ENV_KEYS)[number];

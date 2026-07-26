@@ -196,6 +196,26 @@ describe('Gemini provider configuration', () => {
     });
   });
 
+  it('fails closed before provider invocation without a consumed quota permit', async () => {
+    const config = loadServerConfig({
+      GEMINI_PROVIDER_MODE: 'developer',
+      GEMINI_API_KEY: 'synthetic-provider-key',
+      GEMINI_MODEL: 'gemini-2.5-flash',
+    });
+
+    const response = await routeReasoning(
+      packet,
+      'gemini-2.5-flash',
+      undefined,
+      { config },
+    );
+
+    expect(response).toEqual({
+      success: false,
+      error: 'Gemini execution authorization unavailable',
+    });
+  });
+
   it('rejects invalid application provider modes without exposing configuration values', () => {
     expect(() => loadServerConfig({
       GEMINI_PROVIDER_MODE: 'test-only-invalid-mode',

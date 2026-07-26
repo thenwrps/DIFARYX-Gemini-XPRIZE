@@ -1,6 +1,7 @@
 import React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { Loader2, CheckCircle2, AlertTriangle, CloudOff } from 'lucide-react';
+import { getAgentApiUrl } from '../services/api/agentApiUrl';
 import { checkXrdBackendHealth } from '../services/xrdBackendClient';
 
 export type XrdStatus = 'connected' | 'processing' | 'offline' | 'error';
@@ -62,27 +63,23 @@ export function useBackendStatus(
     }
 
     // 2. Agent health check
-    const agentUrl = import.meta.env.VITE_AGENT_API_URL;
-    if (agentUrl) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(`${agentUrl}/health`, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-          const data = await res.json();
-          const hasKeys = data.gemini || data.mimo;
-          if (!hasKeys || lastAgentFallback) {
-            nextAgent = 'fallback';
-          } else {
-            nextAgent = 'connected';
-          }
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(getAgentApiUrl('/api/health'), { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.providerConfigured === true && !lastAgentFallback) {
+          nextAgent = 'connected';
         } else {
-          nextAgent = 'offline';
+          nextAgent = 'fallback';
         }
-      } catch {
+      } else {
         nextAgent = 'offline';
       }
+    } catch {
+      nextAgent = 'offline';
     }
 
     setXrdStatus(nextXrd);

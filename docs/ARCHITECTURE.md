@@ -1,5 +1,27 @@
 # DIFARYX Architecture
 
+## Production authentication boundary
+
+Public-beta Gemini execution uses a server-controlled boundary:
+
+```text
+Google Authorization Code + PKCE
+-> server ID-token verification
+-> opaque HttpOnly DIFARYX session
+-> session authorization
+-> quota configuration and atomic consumption
+-> Gemini invocation or provider-error deterministic fallback
+```
+
+The browser bootstraps display state from `GET /api/session`; it never decodes
+or persists a Google identity credential. The session cookie is Secure,
+HttpOnly, SameSite=Lax in production and maps to an encrypted, TTL-bound Redis
+record. Logout deletes that shared record. Guest state is deterministic and
+demo-only: it may enter product routes but cannot authorize Gemini or tenant
+server operations. The two reasoning routes share the same session and quota
+policy. Health, OPTIONS, and deterministic reasoning remain public and
+quota-free.
+
 ## App Shape
 
 DIFARYX is a Vite React single-page app. Routing is declared in `src/App.tsx` with React Router. Most authenticated/demo product pages share `DashboardLayout`; the landing page and login page use standalone layouts.
