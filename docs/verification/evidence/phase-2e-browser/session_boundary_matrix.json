@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-07-25T05:20:53.840Z",
+  "summary": {
+    "totalScenarios": 42,
+    "passed": 42,
+    "failed": 0
+  },
+  "categories": {
+    "authenticationAndNavigation": 21,
+    "sessionBehavior": 8,
+    "reasoningBehavior": 11,
+    "responsiveAndUI": 5
+  }
+}
