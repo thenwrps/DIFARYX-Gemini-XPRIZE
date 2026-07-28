@@ -110,7 +110,7 @@ describe('API Client Request Boundaries & Headers', () => {
 
     await listProjects('org-uuid');
     expect(mockFetch).toHaveBeenLastCalledWith(
-      'http://localhost:8000/api/v1/projects?limit=50',
+      'http://localhost:3001/api/persistent/projects?limit=50',
       expect.objectContaining({
         headers: expect.objectContaining({
           'Active-Organization': 'org-uuid'

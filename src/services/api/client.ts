@@ -1,4 +1,5 @@
 import { resolveRuntimeConfig } from '../../config/runtimeConfig';
+import { getAgentApiUrl } from './agentApiUrl';
 import type {
   CurrentUserResponse,
   OrganizationResponse,
@@ -104,7 +105,9 @@ export async function makeRequest(
   } = {}
 ): Promise<any> {
   const baseUrl = getApiBaseUrl();
-  const url = `${baseUrl}${path}`;
+  const url = path.startsWith('/api/persistent/')
+    ? getAgentApiUrl(path)
+    : `${baseUrl}${path}`;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -176,6 +179,12 @@ export async function makeRequest(
       } else {
         message = detail;
       }
+    }
+    if (responseData && typeof responseData.errorCode === 'string') {
+      errorCode = responseData.errorCode;
+    }
+    if (responseData && typeof responseData.error === 'string') {
+      message = responseData.error;
     }
     requestId = res.headers.get('X-Request-ID') || responseData?.requestId || undefined;
 

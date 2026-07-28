@@ -25,17 +25,20 @@ class UploadSessionRepository:
         quota_reservation_id: UUID,
         expires_at: datetime,
         created_by: UUID,
+        original_filename: Optional[str] = None,
     ) -> Dict[str, Any]:
         result = await session.execute(
             sa.text("""
                 INSERT INTO science.upload_sessions (
                     organization_id, dataset_id, object_key, expected_byte_size,
                     client_checksum_sha256, storage_provider, idempotency_key,
-                    request_fingerprint, quota_reservation_id, expires_at, created_by
+                    request_fingerprint, quota_reservation_id, expires_at, created_by,
+                    original_filename
                 ) VALUES (
                     :organization_id, :dataset_id, :object_key, :expected_byte_size,
                     :client_checksum_sha256, :storage_provider, :idempotency_key,
-                    :request_fingerprint, :quota_reservation_id, :expires_at, :created_by
+                    :request_fingerprint, :quota_reservation_id, :expires_at, :created_by,
+                    :original_filename
                 )
                 RETURNING *
             """),
@@ -51,6 +54,7 @@ class UploadSessionRepository:
                 "quota_reservation_id": quota_reservation_id,
                 "expires_at": expires_at,
                 "created_by": created_by,
+                "original_filename": original_filename,
             },
         )
         row = result.mappings().first()

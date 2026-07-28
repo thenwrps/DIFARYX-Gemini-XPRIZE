@@ -11,6 +11,96 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 class DatasetRepository:
     @staticmethod
+    async def create_xrd_dataset(
+        session: AsyncSession,
+        organization_id: UUID,
+        project_id: UUID,
+        title: str,
+        measurement_metadata_json: str,
+        processing_parameters_json: str,
+        experiment_context_json: str,
+        created_by: UUID,
+    ) -> Dict[str, Any]:
+        result = await session.execute(
+            sa.text("""
+                INSERT INTO science.datasets (
+                    organization_id, project_id, technique, title,
+                    display_filename, declared_content_type, byte_size,
+                    measurement_metadata, processing_parameters,
+                    experiment_context, created_by
+                ) VALUES (
+                    :organization_id, :project_id,
+                    CAST('xrd' AS science.technique_code), :title,
+                    'pending-xrd-upload', 'application/octet-stream', 0,
+                    CAST(:measurement_metadata AS jsonb),
+                    CAST(:processing_parameters AS jsonb),
+                    CAST(:experiment_context AS jsonb),
+                    :created_by
+                )
+                RETURNING *
+            """),
+            {
+                "organization_id": organization_id,
+                "project_id": project_id,
+                "title": title,
+                "measurement_metadata": measurement_metadata_json,
+                "processing_parameters": processing_parameters_json,
+                "experiment_context": experiment_context_json,
+                "created_by": created_by,
+            },
+        )
+        row = result.mappings().first()
+        return dict(row) if row else {}
+
+    @staticmethod
+    async def prepare_existing_dataset_upload(
+        session: AsyncSession,
+        organization_id: UUID,
+        dataset_id: UUID,
+        display_filename: str,
+        declared_content_type: str,
+        byte_size: int,
+        client_checksum_sha256: str,
+    ) -> Optional[Dict[str, Any]]:
+        result = await session.execute(
+            sa.text("""
+                UPDATE science.datasets
+                SET display_filename = :display_filename,
+                    declared_content_type = :declared_content_type,
+                    byte_size = :byte_size,
+                    client_checksum_sha256 = :client_checksum_sha256,
+                    updated_at = NOW()
+                WHERE organization_id = :organization_id
+                  AND id = :dataset_id
+                  AND technique = CAST('xrd' AS science.technique_code)
+                  AND dataset_status = CAST('allocated' AS science.dataset_status)
+                  AND original_object_id IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM science.upload_sessions us
+                      WHERE us.organization_id = science.datasets.organization_id
+                        AND us.dataset_id = science.datasets.id
+                        AND us.session_status NOT IN (
+                            CAST('cancelled' AS science.upload_session_status),
+                            CAST('expired' AS science.upload_session_status),
+                            CAST('failed' AS science.upload_session_status)
+                        )
+                  )
+                RETURNING *
+            """),
+            {
+                "organization_id": organization_id,
+                "dataset_id": dataset_id,
+                "display_filename": display_filename,
+                "declared_content_type": declared_content_type,
+                "byte_size": byte_size,
+                "client_checksum_sha256": client_checksum_sha256,
+            },
+        )
+        row = result.mappings().first()
+        return dict(row) if row else None
+
+    @staticmethod
     async def create_dataset(
         session: AsyncSession,
         organization_id: UUID,

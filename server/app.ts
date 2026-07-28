@@ -42,6 +42,8 @@ import type { GeminiQuotaConfig } from './quota/quotaConfig';
 import type { GeminiQuotaService } from './quota/types';
 import { createUpstashGeminiQuotaStore } from './quota/upstashGeminiQuotaStore';
 import { parseReasoningRequest } from './validation/reasoningRequest';
+import { Phase2fPersistenceClient } from './persistence/phase2fClient';
+import { registerPersistentXrdRoutes } from './persistence/routes';
 
 interface ReasoningContext extends ReasoningRequestContext {
   identity?: VerifiedGoogleIdentity;
@@ -58,6 +60,7 @@ export interface CreateAppOptions {
   oauthClient?: GoogleOAuthClient;
   sessionManager?: SessionManager;
   quotaService?: GeminiQuotaService;
+  persistenceClient?: Phase2fPersistenceClient;
   logger?: StructuredLogger;
 }
 
@@ -211,6 +214,14 @@ export function createApp(options: CreateAppOptions = {}) {
     } catch (error) {
       next(error);
     }
+  });
+
+  registerPersistentXrdRoutes(app, {
+    config,
+    sessionManager,
+    client: options.persistenceClient ?? new Phase2fPersistenceClient(config),
+    reasoningHandler,
+    getQuotaService,
   });
 
   app.use(errorHandler);

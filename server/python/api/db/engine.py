@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from api.db.settings import settings
 
 logger = logging.getLogger("difaryx.db.engine")
+EXPECTED_ALEMBIC_REVISION = "0017"
 
 # Create async engine configured with psycopg3 driver
 engine: AsyncEngine = create_async_engine(
@@ -45,7 +46,7 @@ async def verify_database_readiness(async_engine: AsyncEngine) -> None:
                 if super_check.scalar():
                     raise RuntimeError("Security Violation: API runtime connected using a database SUPERUSER role.")
 
-            # 3. Assert exact Alembic revision is exactly '0016'
+            # 3. Assert the exact schema revision required by this release.
             # Do not use numerical comparison; match string exactly
             try:
                 version_res = await conn.execute(sa.text("SELECT version_num FROM public.alembic_version"))
@@ -59,8 +60,12 @@ async def verify_database_readiness(async_engine: AsyncEngine) -> None:
                 raise RuntimeError(f"Database Readiness Failure: alembic_version table is missing, empty, or unreadable: {e}")
 
             logger.info(f"Current Alembic revision verified: '{active_revision}'")
-            if active_revision != "0016":
-                raise RuntimeError(f"Database Migration Mismatch: expected revision '0016', got '{active_revision}'")
+            if active_revision != EXPECTED_ALEMBIC_REVISION:
+                raise RuntimeError(
+                    "Database Migration Mismatch: "
+                    f"expected revision '{EXPECTED_ALEMBIC_REVISION}', "
+                    f"got '{active_revision}'"
+                )
 
             # 4. Check function existence
             funcs_to_check = [

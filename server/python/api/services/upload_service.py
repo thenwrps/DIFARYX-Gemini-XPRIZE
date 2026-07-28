@@ -249,6 +249,13 @@ class UploadService:
             request.byte_size,
             request.client_checksum_sha256,
         )
+        if request.dataset_id:
+            # The legacy fingerprint predates explicit dataset binding. Keep
+            # legacy uploads compatible while preventing a Phase 2F key from
+            # replaying a matching file into a different XRD dataset.
+            fingerprint = hashlib.sha256(
+                f"{fingerprint}:{request.dataset_id}".encode("utf-8")
+            ).hexdigest()
 
         async with UnitOfWork(organization_id=organization_id, user_id=user_id) as session:
             # 1. Project Visibility & Write Role Enforcement (checks RLS visibility)
@@ -306,8 +313,10 @@ class UploadService:
                     f"expire-reclaim-{expired['id']}",
                 )
 
-            # 4. Proceed with normal reservation & session creation
-            dataset_uuid = uuid4()
+            # 4. Proceed with normal reservation & session creation. Phase 2F
+            # may bind the upload to an explicitly created XRD dataset; the
+            # legacy path still creates the dataset during upload initiation.
+            dataset_uuid = request.dataset_id or uuid4()
             object_key = f"datasets/{organization_id}/{request.project_id}/{dataset_uuid}/{uuid4()}{ext}"
             expires_at = datetime.now(timezone.utc) + timedelta(seconds=UPLOAD_SESSION_TTL_SECONDS)
             reservation_key = f"upload-{dataset_uuid}"
@@ -323,17 +332,41 @@ class UploadService:
                 f"upload-reserve-{dataset_uuid}",
             )
 
-            dataset_row = await DatasetRepository.create_dataset(
-                session,
-                organization_id,
-                request.project_id,
-                request.technique,
-                request.display_filename,
-                request.declared_content_type,
-                request.byte_size,
-                request.client_checksum_sha256,
-                user_id,
-            )
+            if request.dataset_id:
+                existing_dataset = await DatasetRepository.get_dataset(
+                    session, organization_id, request.dataset_id
+                )
+                if (
+                    not existing_dataset
+                    or existing_dataset["project_id"] != request.project_id
+                    or str(existing_dataset["technique"]) != "xrd"
+                ):
+                    raise DatasetNotFoundError("Authorized XRD dataset not found")
+                dataset_row = await DatasetRepository.prepare_existing_dataset_upload(
+                    session,
+                    organization_id,
+                    request.dataset_id,
+                    request.display_filename,
+                    request.declared_content_type,
+                    request.byte_size,
+                    request.client_checksum_sha256 or "",
+                )
+                if not dataset_row:
+                    raise DatasetStateError(
+                        "Dataset is not available for a new upload intent"
+                    )
+            else:
+                dataset_row = await DatasetRepository.create_dataset(
+                    session,
+                    organization_id,
+                    request.project_id,
+                    request.technique,
+                    request.display_filename,
+                    request.declared_content_type,
+                    request.byte_size,
+                    request.client_checksum_sha256,
+                    user_id,
+                )
 
             session_row = await UploadSessionRepository.create_upload_session(
                 session,
@@ -348,6 +381,7 @@ class UploadService:
                 quota_reservation_id,
                 expires_at,
                 user_id,
+                request.original_filename or request.display_filename,
             )
 
             await _append_audit_event(

@@ -132,6 +132,8 @@ import { runWhenIdle } from '../../../utils/idle';
 import { AuditTraceWindow } from '../components/AuditTraceWindow';
 import { EvidenceVerificationTable } from '../components/EvidenceVerificationTable';
 import { sanitizeExportContent } from '../../../utils/exportSanitizer';
+import { resolveRuntimeConfig } from '../../../config/runtimeConfig';
+import { PersistentNotebook } from '../components/PersistentNotebook';
 
 const NOTEBOOK_TEMPLATE_MODES: NotebookTemplateMode[] = ['research', 'rd', 'analytical'];
 const NOTEBOOK_TABS = ['Objective / Context', 'Evidence', 'Interpretation', 'Validation Gap', 'Decision'] as const;
@@ -1114,6 +1116,12 @@ function UploadedNotebookContext({ routeContext }: { routeContext: EvidenceRoute
 }
 
 export default function NotebookLab() {
+  const { config } = resolveRuntimeConfig();
+  if (config?.mode === 'server') return <PersistentNotebook />;
+  return <LocalNotebookLab />;
+}
+
+function LocalNotebookLab() {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const requestedProjectId = searchParams.get('project');

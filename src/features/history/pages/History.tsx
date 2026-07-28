@@ -26,6 +26,8 @@ import { getApprovalLedgerEntries, type ApprovalLedgerEntry } from '../../../run
 import { deleteAnalysisSession, getAnalysisSessions, getStatusLabel, type AnalysisSession } from '../../../data/analysisSessions';
 import { deleteUploadedSignalRun } from '../../../data/uploadedSignalRuns';
 import { runWhenIdle } from '../../../utils/idle';
+import { resolveRuntimeConfig } from '../../../config/runtimeConfig';
+import { PersistentHistory } from '../components/PersistentHistory';
 
 const EVENT_TYPES: ExperimentEventType[] = [
   'dataset_loaded',
@@ -67,6 +69,12 @@ function uploadedTechniqueWorkspacePath(session: AnalysisSession) {
 }
 
 export default function HistoryPage() {
+  const { config } = resolveRuntimeConfig();
+  if (config?.mode === 'server') return <PersistentHistory />;
+  return <LocalHistoryPage />;
+}
+
+function LocalHistoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const effectiveWorkspaceMode = getEffectiveWorkspaceMode({

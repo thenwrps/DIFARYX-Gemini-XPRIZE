@@ -333,7 +333,7 @@ export function ServerWorkspaceLauncher() {
                   <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
                     <h3 className="text-xs font-bold text-amber-800">Server Integration Notice</h3>
                     <p className="mt-1 text-xs leading-relaxed text-amber-950 font-medium">
-                      Project workspace is connected to server persistence. Technique datasets and analysis runs are not yet migrated to server.
+                      XRD now uses persistent datasets, immutable evidence, reasoning history, and Notebook references. XPS, FTIR, Raman, and multi-tech fusion remain outside Phase 2F.
                     </p>
                   </div>
 
@@ -347,16 +347,27 @@ export function ServerWorkspaceLauncher() {
                     </div>
                   </Card>
 
-                  {/* Presentational placeholder cards showing available technique benches disabled */}
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {['XRD', 'XPS', 'FTIR', 'Raman'].map((tech) => (
+                    <Link
+                      to={`/workspace/xrd?project=${encodeURIComponent(activeProject.id)}`}
+                      className="rounded-md border border-primary bg-blue-50 p-4 transition-colors hover:bg-blue-100"
+                    >
+                      <div className="flex items-center gap-2 text-primary">
+                        <FlaskConical size={14} />
+                        <span className="text-xs font-bold">XRD persistent workflow</span>
+                      </div>
+                      <p className="mt-2 text-[11px] text-text-muted">
+                        Upload, validate, process, reason, and preserve provenance.
+                      </p>
+                    </Link>
+                    {['XPS', 'FTIR', 'Raman'].map((tech) => (
                       <div key={tech} className="rounded-md border border-border bg-slate-50/50 p-4 opacity-75">
                         <div className="flex items-center gap-2 text-text-muted">
                           <FlaskConical size={14} />
                           <span className="text-xs font-bold">{tech} Science Skill</span>
                         </div>
                         <p className="mt-2 text-[11px] text-text-dim">
-                          Technique datasets are not yet migrated.
+                          Technique persistence is not included in Phase 2F.
                         </p>
                       </div>
                     ))}

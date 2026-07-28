@@ -25,6 +25,10 @@ export interface ServerConfig {
   geminiModelConfigured: boolean;
   geminiRequestTimeoutMs: number;
   geminiQuota: GeminiQuotaConfigResult;
+  persistenceApiBaseUrl?: string;
+  internalServiceSecret?: string;
+  persistenceRequestTimeoutMs: number;
+  persistenceMaxUploadBytes: number;
 }
 
 const LOCAL_ORIGINS = [
@@ -66,6 +70,20 @@ export function loadServerConfig(
       120_000,
     ),
     geminiQuota: loadGeminiQuotaConfig(environment),
+    persistenceApiBaseUrl: readServiceUrl(environment.PERSISTENCE_API_BASE_URL, nodeEnv),
+    internalServiceSecret: boundedSecret(environment.DIFARYX_INTERNAL_SERVICE_SECRET),
+    persistenceRequestTimeoutMs: boundedInteger(
+      environment.PERSISTENCE_REQUEST_TIMEOUT_MS,
+      30_000,
+      1_000,
+      120_000,
+    ),
+    persistenceMaxUploadBytes: boundedInteger(
+      environment.DIFARYX_MAX_FILE_SIZE_BYTES,
+      100 * 1024 * 1024,
+      1,
+      256 * 1024 * 1024,
+    ),
   };
 }
 
@@ -96,4 +114,26 @@ function boundedInteger(
 function boundedString(value: string | undefined, fallback: string, maximumLength: number): string {
   const normalized = value?.trim();
   return normalized && normalized.length <= maximumLength ? normalized : fallback;
+}
+
+function boundedSecret(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized && normalized.length >= 32 ? normalized : undefined;
+}
+
+function readServiceUrl(value: string | undefined, nodeEnv: string): string | undefined {
+  const normalized = value?.trim().replace(/\/+$/, '');
+  if (!normalized) return undefined;
+  const parsed = new URL(normalized);
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error('Invalid PERSISTENCE_API_BASE_URL configuration');
+  }
+  if (
+    nodeEnv === 'production'
+    && parsed.protocol !== 'https:'
+    && !['localhost', '127.0.0.1'].includes(parsed.hostname)
+  ) {
+    throw new Error('Production persistence service must use HTTPS');
+  }
+  return normalized;
 }

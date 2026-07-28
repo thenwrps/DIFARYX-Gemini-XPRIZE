@@ -537,6 +537,135 @@ async def mark_passed(
     return result.scalar() is not None
 
 
+async def publish_xrd_evidence_and_mark_passed(
+    session: AsyncSession,
+    org_id: str,
+    user_id: str,
+    worker_id: str,
+    attempt_id: str,
+    dataset: dict,
+    original_object: dict,
+    checksum: str,
+    byte_size: int,
+    evidence_payload,
+) -> bool:
+    """Publish immutable XRD evidence and settle the owned attempt atomically."""
+    await _set_rls_context(session, org_id, user_id)
+    ownership = await session.execute(
+        sa.text("""
+            SELECT 1
+            FROM science.validation_attempts current_attempt
+            WHERE current_attempt.organization_id = CAST(:org_id AS uuid)
+              AND current_attempt.id = CAST(:attempt_id AS uuid)
+              AND current_attempt.dataset_id = CAST(:dataset_id AS uuid)
+              AND current_attempt.status = CAST('running' AS science.validation_attempt_status)
+              AND current_attempt.claimed_by = :worker_id
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM science.xrd_evidence_snapshots existing_evidence
+                  JOIN science.validation_attempts existing_attempt
+                    ON existing_attempt.organization_id = existing_evidence.organization_id
+                   AND existing_attempt.id = existing_evidence.validation_attempt_id
+                  WHERE existing_evidence.organization_id = current_attempt.organization_id
+                    AND existing_evidence.dataset_id = current_attempt.dataset_id
+                    AND existing_evidence.status = 'ready'
+                    AND existing_attempt.attempt_number > current_attempt.attempt_number
+              )
+            FOR UPDATE
+        """),
+        {
+            "org_id": org_id,
+            "attempt_id": attempt_id,
+            "dataset_id": str(dataset["id"]),
+            "worker_id": worker_id,
+        },
+    )
+    if not ownership.first():
+        return False
+
+    await session.execute(
+        sa.text("""
+            UPDATE science.xrd_evidence_snapshots
+            SET status = 'superseded', superseded_at = NOW()
+            WHERE organization_id = CAST(:org_id AS uuid)
+              AND dataset_id = CAST(:dataset_id AS uuid)
+              AND status = 'ready'
+        """),
+        {"org_id": org_id, "dataset_id": str(dataset["id"])},
+    )
+    version_result = await session.execute(
+        sa.text("""
+            SELECT COALESCE(MAX(version), 0) + 1
+            FROM science.xrd_evidence_snapshots
+            WHERE organization_id = CAST(:org_id AS uuid)
+              AND dataset_id = CAST(:dataset_id AS uuid)
+        """),
+        {"org_id": org_id, "dataset_id": str(dataset["id"])},
+    )
+    version = int(version_result.scalar_one())
+    inserted = await session.execute(
+        sa.text("""
+            INSERT INTO science.xrd_evidence_snapshots (
+                organization_id, project_id, dataset_id, upload_session_id,
+                validation_attempt_id, version, status, schema_version,
+                processor_version, content, content_sha256,
+                validation_warnings, scientific_limitations, provenance
+            ) VALUES (
+                CAST(:org_id AS uuid), CAST(:project_id AS uuid),
+                CAST(:dataset_id AS uuid), CAST(:upload_session_id AS uuid),
+                CAST(:attempt_id AS uuid), :version, 'ready',
+                :schema_version, :processor_version, CAST(:content AS jsonb),
+                :content_sha256, CAST(:validation_warnings AS jsonb),
+                CAST(:scientific_limitations AS jsonb), CAST(:provenance AS jsonb)
+            )
+            RETURNING id
+        """),
+        {
+            "org_id": org_id,
+            "project_id": str(dataset["project_id"]),
+            "dataset_id": str(dataset["id"]),
+            "upload_session_id": str(original_object["source_upload_session_id"]),
+            "attempt_id": attempt_id,
+            "version": version,
+            "schema_version": evidence_payload.schema_version,
+            "processor_version": evidence_payload.processor_version,
+            "content": json.dumps(evidence_payload.content, separators=(",", ":")),
+            "content_sha256": evidence_payload.content_sha256,
+            "validation_warnings": json.dumps(evidence_payload.validation_warnings),
+            "scientific_limitations": json.dumps(evidence_payload.scientific_limitations),
+            "provenance": json.dumps(evidence_payload.provenance, separators=(",", ":")),
+        },
+    )
+    evidence_id = inserted.scalar_one()
+    dataset_update = await session.execute(
+        sa.text("""
+            UPDATE science.datasets
+            SET current_evidence_id = CAST(:evidence_id AS uuid),
+                evidence_status = 'ready',
+                updated_at = NOW()
+            WHERE organization_id = CAST(:org_id AS uuid)
+              AND id = CAST(:dataset_id AS uuid)
+              AND dataset_status = CAST('validating' AS science.dataset_status)
+        """),
+        {
+            "org_id": org_id,
+            "dataset_id": str(dataset["id"]),
+            "evidence_id": str(evidence_id),
+        },
+    )
+    if (dataset_update.rowcount or 0) != 1:
+        return False
+    return await mark_passed(
+        session,
+        org_id,
+        user_id,
+        worker_id,
+        attempt_id,
+        checksum,
+        byte_size,
+    )
+
+
 async def mark_failed_with_retry(
     session: AsyncSession,
     org_id: str,
@@ -831,6 +960,7 @@ async def process_one(
     )
 
     outcome_status = "failed"
+    canonical_evidence = None
     try:
         # Load dataset and object info
         async with engine.begin() as conn:
@@ -1025,6 +1155,50 @@ async def process_one(
                             failure_details=None,
                             transient=False,
                         )
+                        if declared_technique == "xrd":
+                            from api.phase2f.processing import (
+                                XRDProcessingInputError,
+                                build_canonical_xrd_evidence,
+                            )
+
+                            try:
+                                canonical_evidence = await build_canonical_xrd_evidence(
+                                    file_path=temp_in_path,
+                                    dataset=dataset,
+                                    parser_result=dict(parser_result),
+                                    validation_attempt_id=attempt_id,
+                                    upload_session_id=str(obj["source_upload_session_id"]),
+                                    original_object_id=original_object_id,
+                                    authoritative_sha256=(
+                                        validation_result.server_checksum_sha256 or ""
+                                    ),
+                                )
+                            except XRDProcessingInputError as processing_error:
+                                validation_result = ValidationResult(
+                                    passed=False,
+                                    checks=validation_result.checks,
+                                    server_checksum_sha256=validation_result.server_checksum_sha256,
+                                    byte_size_verified=validation_result.byte_size_verified,
+                                    failure_code="XRD_PROCESSING_INPUT_INVALID",
+                                    failure_details={
+                                        "check": "xrd_processor",
+                                        "detail": _normalize_pg_text(str(processing_error)),
+                                    },
+                                    transient=False,
+                                )
+                            except Exception:
+                                validation_result = ValidationResult(
+                                    passed=False,
+                                    checks=validation_result.checks,
+                                    server_checksum_sha256=validation_result.server_checksum_sha256,
+                                    byte_size_verified=validation_result.byte_size_verified,
+                                    failure_code="XRD_PROCESSOR_UNAVAILABLE",
+                                    failure_details={
+                                        "check": "xrd_processor",
+                                        "detail": "Authorized XRD processing failed",
+                                    },
+                                    transient=True,
+                                )
                     elif parser_status == "invalid":
                         validation_result = ValidationResult(
                             passed=False,
@@ -1172,16 +1346,39 @@ async def process_one(
             session = AsyncSession(bind=conn)
             try:
                 if validation_result.passed:
-                    settled = await mark_passed(
-                        session, org_id, user_id, worker_id, attempt_id,
-                        validation_result.server_checksum_sha256 or "",
-                        validation_result.byte_size_verified or 0,
-                    )
+                    if str(dataset.get("technique") or "").lower() == "xrd":
+                        if canonical_evidence is None:
+                            raise RuntimeError(
+                                "XRD validation cannot pass without canonical evidence"
+                            )
+                        settled = await publish_xrd_evidence_and_mark_passed(
+                            session,
+                            org_id,
+                            user_id,
+                            worker_id,
+                            attempt_id,
+                            dataset,
+                            obj,
+                            validation_result.server_checksum_sha256 or "",
+                            validation_result.byte_size_verified or 0,
+                            canonical_evidence,
+                        )
+                    else:
+                        settled = await mark_passed(
+                            session, org_id, user_id, worker_id, attempt_id,
+                            validation_result.server_checksum_sha256 or "",
+                            validation_result.byte_size_verified or 0,
+                        )
                     if settled:
                         await append_audit_event(
                             session, org_id, user_id,
                             "validation.passed", "dataset", dataset_id,
                         )
+                        if canonical_evidence is not None:
+                            await append_audit_event(
+                                session, org_id, user_id,
+                                "evidence.created", "dataset", dataset_id,
+                            )
                         counters.passed += 1
                         logger.info("passed attempt=%s dataset=%s", attempt_id, dataset_id)
                         outcome_status = "passed"

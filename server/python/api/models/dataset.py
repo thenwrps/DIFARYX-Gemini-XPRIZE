@@ -23,7 +23,9 @@ class CamelModel(BaseModel):
 
 class InitiateUploadRequest(CamelModel):
     project_id: UUID
+    dataset_id: Optional[UUID] = None
     technique: str = Field(..., min_length=1, max_length=50)
+    original_filename: Optional[str] = Field(None, min_length=1, max_length=500)
     display_filename: str = Field(..., min_length=1, max_length=500)
     declared_content_type: str = Field(..., min_length=1, max_length=200)
     byte_size: int = Field(..., gt=0)

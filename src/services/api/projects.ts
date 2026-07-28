@@ -21,7 +21,7 @@ export async function listProjects(
   if (params.cursor) {
     query += `&cursor=${encodeURIComponent(params.cursor)}`;
   }
-  const data = await api.tenantRequest(`/api/v1/projects${query}`, {
+  const data = await api.tenantRequest(`/api/persistent/projects${query}`, {
     method: 'GET',
     organizationId,
     signal,
@@ -38,7 +38,7 @@ export async function createProject(
   payload: ProjectCreatePayload,
   signal?: AbortSignal
 ): Promise<ProjectResponse> {
-  const data = await api.tenantRequest('/api/v1/projects', {
+  const data = await api.tenantRequest('/api/persistent/projects', {
     method: 'POST',
     body: payload,
     organizationId,

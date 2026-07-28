@@ -79,6 +79,7 @@ from api.routes.organizations import router as org_router
 from api.routes.projects import router as project_router
 from api.routes.datasets import router as dataset_router
 from api.routes.validation import router as validation_router
+from api.phase2f.routes import router as phase2f_router
 
 # ============================================================================
 # Production-Ready Configuration (Step 5)
@@ -322,6 +323,7 @@ app.include_router(org_router, prefix="/api/v1")
 app.include_router(project_router, prefix="/api/v1")
 app.include_router(dataset_router, prefix="/api/v1")
 app.include_router(validation_router, prefix="/api/v1")
+app.include_router(phase2f_router)
 
 
 
