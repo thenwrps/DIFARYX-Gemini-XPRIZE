@@ -112,3 +112,59 @@ Both issues were confirmed to exist at base commit `c0dbc05` and do not reflect 
 The test and security matrix for Phase 2F's core persistence layer is complete. The 155 Vitest server tests and Python unit test modules provide comprehensive coverage for internal authentication boundaries, tenant context binding, upload lifecycles, worker fencing mechanics, and reasoning fallback policies.
 
 **Merge Status:** Approved for merge into `feat/vercel-gemini-backend`. Live staging deployment is required to fulfill the deferred PostgreSQL and cloud service verification items listed above prior to production release.
+
+---
+
+## 5. Live Staging Validation Update — 2026-07-28
+
+This section supersedes the earlier merge-status statement for the current
+working tree. Local-live validation found three verified defects at baseline commit
+`470fca8`: two PostgreSQL merge-blocking defects and one local object-store
+information-disclosure defect. All three have narrow fixes in the current
+branch and require review before integration. External service and browser
+gates remain blocked.
+
+| Live ID | Requirement | Evidence Type | Command / Path | Observed Result | Status | Acceptance Impact |
+|---|---|---|---|---|---|---|
+| **LIVE-2F-001** | Repository branch and baseline | local preflight | `py -3 scripts/phase2f_live_staging.py preflight` | Branch and `470fca8...` matched | PASS | Mandatory |
+| **LIVE-2F-002** | Protected patch integrity | local preflight | Preflight SHA-256 check | Locked SHA-256 matched | PASS | Mandatory |
+| **LIVE-2F-003** | External configuration readiness | local preflight | Preflight environment-name presence | All seven external groups absent | BLOCKED | External staging blocker |
+| **LIVE-2F-004** | Clean migration 0001→0017 | live PostgreSQL 15 | `alembic upgrade 0017` | Initial 0017 failed: duplicate `science.reasoning_runs`; transaction stayed at 0016 | FAIL AT BASELINE | Merge blocker |
+| **LIVE-2F-005** | Preserve old governance reasoning data | live PostgreSQL migration rerun | Migration 0017 rename + new regression assertion | Old table renamed to `ai_governance_reasoning_runs`; clean chain reached 0017 | PASS AFTER FIX | Review required |
+| **LIVE-2F-006** | FORCE RLS flags | live PostgreSQL catalog | `phase2f_live_staging.py postgres` | All three Phase 2F tables: RLS=true, FORCE=true | PASS | Mandatory |
+| **LIVE-2F-007** | Real app/worker role attributes | live PostgreSQL catalog | `phase2f_live_staging.py postgres` | Both group roles non-superuser and non-`BYPASSRLS` | PASS | Mandatory |
+| **LIVE-2F-008** | Installed app/worker policies | live PostgreSQL catalog | `phase2f_live_staging.py postgres` | Three app policies and evidence worker policy present | PASS | Mandatory |
+| **LIVE-2F-009** | Pooled connection tenant reset | live PostgreSQL pool | One-connection rollback/reuse probe | GUC empty after reuse; zero visible projects | PASS | Mandatory |
+| **LIVE-2F-010** | Cross-tenant project reads | live PostgreSQL app role | Synthetic tenants A/B | Each saw own=1, other=0 | PASS | Mandatory |
+| **LIVE-2F-011** | Cross-tenant evidence reads | live PostgreSQL app role | Synthetic Phase 2F fixtures | Each saw own=1, other=0 | PASS | Mandatory |
+| **LIVE-2F-012** | Cross-tenant History reads | live PostgreSQL app role | `science.reasoning_runs` fixtures | Each saw own=1, other=0 | PASS | Mandatory |
+| **LIVE-2F-013** | Cross-tenant Notebook reads | live PostgreSQL app role | Notebook fixtures | Each saw own=1, other=0 | PASS | Mandatory |
+| **LIVE-2F-014** | Worker evidence column boundary | live PostgreSQL worker role | Attempted content update | Rejected with SQLSTATE 42501 | PASS | Mandatory |
+| **LIVE-2F-015** | Evidence immutability trigger | live PostgreSQL trigger | Admin mutation probe, rolled back | Rejected with SQLSTATE 55000 | PASS | Mandatory |
+| **LIVE-2F-016** | Existing tenant isolation suite | live PostgreSQL app role | `backend/tenant_isolation_tests.py` | Nine checks and 5/5 concurrent tenants passed; combined update/delete assertion hit stricter DELETE denial | PARTIAL | Test expectation follow-up |
+| **LIVE-2F-017** | Stale worker becomes no-op | live PostgreSQL worker path | `test_validation_worker_lost_ownership.py` | Initial baseline failed on ambiguous `RETURNING id` | FAIL AT BASELINE | Merge blocker |
+| **LIVE-2F-018** | Qualified retry settlement | live PostgreSQL worker rerun | Same existing suite | Lost ownership, exhaustion, and concurrent successor scenarios passed | PASS AFTER FIX | Review required |
+| **LIVE-2F-019** | Local storage promotion/idempotency/conflict | production-path unit tests | `test_ingestion_phase1b` | 27/27 passed | PASS | Local adapter only |
+| **LIVE-2F-020** | No internal storage-path logging | production-path unit test | `test_local_object_store` | 11 tests passed, 1 skipped; new stderr assertion passed | PASS AFTER FIX | Review required |
+| **LIVE-2F-021** | Concurrent API finalization | deployed service + storage + PostgreSQL | Two simultaneous finalize calls | Not executed | BLOCKED | External staging blocker |
+| **LIVE-2F-022** | Storage/database failure ordering | deployed service fault injection | Six failure points in live report | Not executed | BLOCKED | External staging blocker |
+| **LIVE-2F-023** | Full heartbeat/reclaim race | two live worker processes | Continuous worker orchestration | Lost-ownership functions passed; continuous heartbeat race not executed | PARTIAL | Staging requirement |
+| **LIVE-2F-024** | OAuth and secure session cookie | deployed browser E2E | Two synthetic Google accounts | Not executed; credentials/URLs absent | BLOCKED | External staging blocker |
+| **LIVE-2F-025** | Redis sessions and Gemini quotas | live Redis + deployed server | TTL, revocation, 429 dimensions, fail-closed 503 | Not executed; credentials/URLs absent | BLOCKED | External staging blocker |
+| **LIVE-2F-026** | Configured Gemini and eligible fallback | live provider | Success, consumed quota, injected provider failure | Not executed; provider configuration absent | BLOCKED | External staging blocker |
+| **LIVE-2F-027** | Browser refresh recovery | deployed browser E2E | Upload/validation/result hard refresh | Not executed | BLOCKED | External staging blocker |
+| **LIVE-2F-028** | History/Notebook reload | deployed browser E2E | Close/reopen and server reload | Database row isolation passed; browser path not executed | PARTIAL | External staging blocker |
+| **LIVE-2F-029** | Cross-user direct-object isolation | deployed browser/API | Account B uses account A IDs | Database row isolation passed; deployed API/browser path not executed | PARTIAL | External staging blocker |
+| **LIVE-2F-030** | Local regression gates | build/lint/typechecks/tests | Commands in live report | Build, lint, both typechecks, server 155/155, frontend 23/23, Phase 2F Python 16/16 passed | PASS | Mandatory |
+| **LIVE-2F-031** | Characterization baseline | targeted Vitest | Two characterization files | 4/5; stale `src/App.tsx` path failed | BASELINE FAIL | Repository hygiene |
+
+### Current decision
+
+- Live local PostgreSQL status: **PASS after two narrow fixes**.
+- Shared/deployed staging status: **BLOCKED**.
+- Merge status: **review required; do not merge or push yet**.
+- Production status: **not approved**.
+
+The authoritative execution narrative, safety rules, failure-injection plan,
+findings, and remaining blockers are in
+`docs/verification/PHASE_2F_LIVE_STAGING_VALIDATION.md`.
