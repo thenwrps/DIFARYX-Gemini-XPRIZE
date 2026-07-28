@@ -15,6 +15,21 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Migration 0005 already created science.reasoning_runs for the older
+    # consent/governance audit contract. Preserve that data and free the
+    # canonical name for the Phase 2F evidence-bound reasoning-run contract.
+    # Renaming the primary-key constraint also renames its backing index, whose
+    # schema-level name would otherwise collide with the new table's pkey.
+    op.execute(
+        """
+        ALTER TABLE science.reasoning_runs
+            RENAME TO ai_governance_reasoning_runs;
+        ALTER TABLE science.ai_governance_reasoning_runs
+            RENAME CONSTRAINT reasoning_runs_pkey
+            TO ai_governance_reasoning_runs_pkey;
+        """
+    )
+
     op.execute(
         """
         ALTER TABLE science.datasets

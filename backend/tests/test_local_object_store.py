@@ -1,7 +1,9 @@
 """Unit tests for LocalObjectStore and its security/streaming semantics."""
 
 import asyncio
+from contextlib import redirect_stderr
 import hashlib
+from io import StringIO
 import os
 import sys
 import tempfile
@@ -234,6 +236,28 @@ class TestLocalObjectStore(unittest.TestCase):
             sha_path = final_path.with_suffix(final_path.suffix + ".sha256")
             self.assertFalse(final_path.exists())
             self.assertFalse(sha_path.exists())
+
+        run(_test())
+
+    def test_get_object_does_not_log_internal_paths(self):
+        async def _test():
+            content = b"private staging evidence"
+            result = await self.store.stream_write(
+                "test/private.csv",
+                make_async_iterator([content]),
+                100,
+            )
+            await self.store.promote_staging(
+                result.staging_key,
+                "final/private.csv",
+            )
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                observed = b"".join(
+                    [chunk async for chunk in self.store.get_object("final/private.csv")]
+                )
+            self.assertEqual(observed, content)
+            self.assertEqual(stderr.getvalue(), "")
 
         run(_test())
 

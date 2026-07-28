@@ -704,7 +704,7 @@ async def mark_failed_with_retry(
                   )
                 RETURNING *
             ), next_attempt AS (
-                INSERT INTO science.validation_attempts (
+                INSERT INTO science.validation_attempts AS successor_attempt (
                     organization_id, dataset_id, original_object_id,
                     attempt_number, max_attempts, status, next_retry_at,
                     created_at, updated_at
@@ -716,17 +716,17 @@ async def mark_failed_with_retry(
                 FROM updated
                 ON CONFLICT (organization_id, dataset_id, attempt_number)
                 DO NOTHING
-                RETURNING id
+                RETURNING successor_attempt.id
             ), dataset_updated AS (
-                UPDATE science.datasets
+                UPDATE science.datasets AS retry_dataset
                 SET dataset_status = CAST('pending_validation' AS science.dataset_status),
                     status_changed_at = NOW(),
                     updated_at = NOW()
                 FROM next_attempt
-                WHERE science.datasets.organization_id = CAST(:org_id AS uuid)
-                  AND science.datasets.id = (SELECT dataset_id FROM updated)
+                WHERE retry_dataset.organization_id = CAST(:org_id AS uuid)
+                  AND retry_dataset.id = (SELECT dataset_id FROM updated)
                   AND dataset_status = CAST('validating' AS science.dataset_status)
-                RETURNING id
+                RETURNING retry_dataset.id
             )
             SELECT 1
             FROM updated

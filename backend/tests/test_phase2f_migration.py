@@ -34,6 +34,20 @@ class Phase2FMigrationContractTests(unittest.TestCase):
             READINESS.read_text(encoding="utf-8"),
         )
 
+    def test_preserves_the_existing_governance_reasoning_table(self) -> None:
+        self.assertIn(
+            "RENAME TO ai_governance_reasoning_runs",
+            self.source,
+        )
+        self.assertIn(
+            "TO ai_governance_reasoning_runs_pkey",
+            self.source,
+        )
+        self.assertLess(
+            self.source.index("RENAME TO ai_governance_reasoning_runs"),
+            self.source.index("CREATE TABLE science.reasoning_runs"),
+        )
+
     def test_persistent_tables_force_rls_and_have_tenant_policies(self) -> None:
         for table in (
             "xrd_evidence_snapshots",

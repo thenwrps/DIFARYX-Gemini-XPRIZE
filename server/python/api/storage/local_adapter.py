@@ -212,10 +212,6 @@ class LocalObjectStore(ObjectStore):
     async def get_object(self, object_key: str) -> AsyncIterator[bytes]:
         self._validate_key(object_key)
         path = self._final_path(object_key)
-        import glob, sys
-        sys.stderr.write(f"[DEBUG STORE] get_object key={object_key} base={self._base} resolved_path={path} exists={path.exists()}\n")
-        sys.stderr.write(f"[DEBUG STORE] files in base: {glob.glob(str(self._base) + '/**', recursive=True)}\n")
-        sys.stderr.flush()
         if not path.exists():
             raise FileNotFoundError(object_key)
         async with aiofiles.open(path, "rb") as f:
